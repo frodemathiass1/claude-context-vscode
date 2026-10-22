@@ -65,6 +65,10 @@
   .kx-meter-leg { display: flex; font-size: 0.82em; font-variant-numeric: tabular-nums; color: var(--kx-muted); white-space: nowrap; }
   .kx-meter-leg span + span::before { content: "·"; margin: 0 6px; }
   .kx-meter-leg b { font-weight: 600; color: var(--kx-zone-text, inherit); }
+  /* the prompt-cache counters: warm and cold, beside the zone legend */
+  .kx-cache-counts { font-size: 0.82em; font-variant-numeric: tabular-nums; color: var(--kx-muted); white-space: nowrap; display: inline-flex; align-items: center; }
+  .kx-cache-counts b { font-weight: 600; color: var(--kx-fg); }
+  .kx-cache-counts span + span::before { content: "·"; margin: 0 6px; }
 
   main { padding: 8px 12px 14px; }
   .kx-message { padding: 18px 4px; color: var(--kx-muted); text-align: center; }
@@ -144,6 +148,16 @@
   .kx-meta { grid-area: meta; display: flex; flex-wrap: wrap; gap: 3px 10px; color: var(--kx-muted); font-size: 0.86em; min-width: 0; }
   .kx-meta span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
   .kx-meta svg { width: 12px; height: 12px; opacity: 0.8; }
+  /* the prompt cache: "warm · 47 min" with the TTL as a small outlined pill; a few minutes from cold the
+     text turns orange, so the user can send a turn before the deadline; cold is plain */
+  .kx-cache[data-cache="soon"] { color: var(--kx-orange); font-weight: 600; }
+  .kx-cache[data-cache="soon"] svg { opacity: 1; }
+  .kx-cache[data-cache="cold"] { color: var(--kx-fg); }
+  .kx-ttl {
+    font-size: 0.82em; font-weight: 600; line-height: 1.4; padding: 0 4px; border-radius: 4px;
+    border: 1px solid var(--kx-border-strong); color: var(--kx-muted); font-variant-numeric: tabular-nums;
+  }
+  .kx-ttl[data-ttl="5m"] { color: var(--kx-orange); border-color: currentColor; } /* a drop from 1h is the thing to notice */
   /* the axis line above each group: column names and the marks of the bar; only in the wide layout */
   .kx-axis { display: none; }
 
@@ -186,6 +200,7 @@
     <div class="kx-meter-bar" role="img" aria-label="no sessions"></div>
     <div class="kx-meter-leg"></div>
   </div>
+  <span class="kx-cache-counts" data-testid="cache-counts" title="Prompt cache: how many of the listed sessions have a warm cache now, and how many went cold"><span><b data-testid="cache-warm">0</b> warm</span><span><b data-testid="cache-cold">0</b> cold</span></span>
   <label><input type="checkbox" data-testid="all"> All projects</label>
 </header>
 <div class="kx-error kx-contact" data-testid="contact" hidden>
@@ -205,6 +220,8 @@
   const listEl = document.querySelector('[data-testid="list"]');
   const meterBarEl = document.querySelector(".kx-meter-bar");
   const meterLegEl = document.querySelector(".kx-meter-leg");
+  const cacheWarmEl = document.querySelector('[data-testid="cache-warm"]');
+  const cacheColdEl = document.querySelector('[data-testid="cache-cold"]');
 
   // ── The zones and the scale, as data. The core decides a session's zone (core.cjs zone()); this list
   // orders the zones in the meter and the legend, names them, and picks the colour pair --kx-<zone> (text)
@@ -215,6 +232,11 @@
   const ZONE_NAME = Object.fromEntries(ZONES.map((z) => [z, z]));
   const LIMITS = [100000, 125000, 150000];
   const SCALE = 200000;
+  // The prompt cache (core.cjs: cacheTtlMs, coldInMs, hitShare). The core decides warm or cold; "soon" is the
+  // panel's marker for a warm cache within SOON_MS of its deadline (or half the TTL, so a 5-minute cache is
+  // not "soon" from its first minute). The panel only shows the state; it never sends a turn.
+  const SOON_MS = 5 * 60000;
+  const TTL_TEXT = { 3600000: "1h", 300000: "5m" };
 
   // ── Rendering (DOM API only, never innerHTML with data) ────────────────────
   function tokensText(tokens) {
@@ -232,6 +254,24 @@
     const h = Math.floor(min / 60);
     if (h < 24) return `${h} h ago`;
     return `${Math.floor(h / 24)} d ago`;
+  }
+
+  /** "47 min" until the cache goes cold; "<1 min" in the last minute. The TTL is at most an hour, so minutes suffice. */
+  function leftText(ms) {
+    return ms < 60000 ? "<1 min" : `${Math.ceil(ms / 60000)} min`;
+  }
+
+  function clockText(iso) {
+    const d = new Date(iso);
+    return Number.isFinite(d.getTime()) ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+  }
+
+  /** "warm", "soon" (warm, within SOON_MS or half the TTL of the deadline) or "cold"; null without a TTL. */
+  function cacheState(session) {
+    if (session.cacheState !== "warm" && session.cacheState !== "cold") return null;
+    if (session.cacheState === "cold") return "cold";
+    const soon = Math.min(SOON_MS, (Number.isFinite(session.cacheTtlMs) ? session.cacheTtlMs : SOON_MS * 2) / 2);
+    return Number.isFinite(session.coldInMs) && session.coldInMs <= soon ? "soon" : "warm";
   }
 
   /** "100K and 150K", "100K, 125K and 150K": the limits as words for tooltips. */
@@ -286,6 +326,7 @@
     zap: ["M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"],
     folder: ["M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"],
     moon: ["M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"],
+    timer: ["M10 2h4", "m12 14 3-3", "M12 6a8 8 0 1 0 0 16 8 8 0 0 0 0-16z"],
   };
   function icon(name) {
     const svg = svgEl("svg", { class: "kx-ico", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": 2, "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": "true" });
@@ -378,8 +419,39 @@
     add("cpu", session.modelShort || "unknown");
     add("repeat", `${session.turns} ${session.turns === 1 ? "turn" : "turns"}`);
     add("clock", sinceText(session.sinceMs));
+    const cache = cacheFor(session);
+    if (cache) meta.appendChild(cache);
+    row.dataset.cache = cache ? cache.dataset.cache : "unknown";
     row.appendChild(meta);
     return row;
+  }
+
+  /**
+   * The prompt cache of a session: "warm · 47 min" or "cold" with the TTL as a pill; the tooltip has the
+   * deadline, the hit share of the last turn (read from cache / context) and the tokens written. Nothing
+   * without a TTL (a transcript from before Claude Code wrote usage.cache_creation).
+   */
+  function cacheFor(session) {
+    const state = cacheState(session);
+    if (!state) return null;
+    const span = el("span", "kx-cache");
+    span.dataset.testid = "cache";
+    span.dataset.cache = state;
+    span.appendChild(icon("timer"));
+    span.appendChild(document.createTextNode(state === "cold" ? "cold" : `warm · ${leftText(session.coldInMs)}`));
+    const ttl = TTL_TEXT[session.cacheTtlMs];
+    if (ttl) {
+      const pill = el("span", "kx-ttl", ttl);
+      pill.dataset.ttl = ttl;
+      span.appendChild(pill);
+    }
+    const hit = Number.isFinite(session.hitShare) ? `${Math.round(session.hitShare * 100)} %` : "unknown";
+    const read = Number.isFinite(session.cacheRead) ? tokensText(session.cacheRead) : "unknown";
+    const written = Number.isFinite(session.cacheCreated) ? tokensText(session.cacheCreated) : "unknown";
+    const ttlText = ttl === "1h" ? "1-hour" : ttl === "5m" ? "5-minute" : "unknown";
+    const when = state === "cold" ? `cold since ${clockText(session.coldAt)}` : `cold at ${clockText(session.coldAt)} unless a turn is sent (in ${leftText(session.coldInMs)})`;
+    span.title = `Prompt cache: ${ttlText} TTL, ${when} · last turn: ${read} read from cache (${hit} of the context), ${written} written · a cold cache rewrites the whole context on the next turn`;
+    return span;
   }
 
   function groupHeading(text, n, iconName, className) {
@@ -445,6 +517,9 @@
   function render(data) {
     countEl.textContent = String(data.count || 0);
     renderMeter(data.zoneCounts || {});
+    const cacheCounts = data.cacheCounts || {};
+    cacheWarmEl.textContent = String(Number.isFinite(cacheCounts.warm) ? cacheCounts.warm : 0);
+    cacheColdEl.textContent = String(Number.isFinite(cacheCounts.cold) ? cacheCounts.cold : 0);
     allEl.checked = !!data.all;
     errorsEl.textContent = "";
     errorsEl.hidden = !(data.errors && data.errors.length);

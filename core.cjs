@@ -12,6 +12,12 @@ const path = require("node:path");
 // (the dumb zone "commonly begins around 125K-150K tokens"); the orange band is that range.
 const YELLOW_FROM = 100000, ORANGE_FROM = 125000, RED_ABOVE = 150000;
 const DIM_AFTER_MS = 60 * 60 * 1000;
+// The prompt cache's two TTLs. Every turn re-sends the whole context; while the cache is warm the context is
+// read from it, and the cache is refreshed on every use, so the deadline is the last turn plus the TTL.
+// Prices (platform.claude.com/docs/en/docs/build-with-claude/prompt-caching, read 2026-10-22): a 5-minute
+// write costs 1.25× input, a 1-hour write 2×, a read 0.1× (0.025× on Fable and Mythos 5.1, 0.05× on Opus and
+// Sonnet 5.5). A session that went cold rewrites its whole context on the next turn.
+const TTL_1H_MS = 60 * 60 * 1000, TTL_5M_MS = 5 * 60 * 1000;
 const SERIES_MAX = 200; // the sparkline keeps the last 200 turns, so the payload to the webview stays small
 const DIP_BELOW = 0.7; // a turn is a dip when its context is below 70 % of the previous turn's
 
@@ -72,7 +78,10 @@ function readTail(file, { from, bytes } = {}) {
 }
 
 /**
- * The last assistant entry with usage outside a sidechain (subagent) gives tokens, model and timestamp.
+ * The last assistant entry with usage outside a sidechain (subagent) gives tokens, model and timestamp,
+ * and the prompt cache's counters of that turn (`cacheRead`, `cacheCreated`). `cacheTtlMs` is the TTL of
+ * the last turn that created cache, read from `usage.cache_creation` (ephemeral_1h_input_tokens or
+ * ephemeral_5m_input_tokens above zero); a turn that created nothing says nothing, and it is null until seen.
  * A turn is one API call: Claude Code writes one entry per content block of a response, all sharing
  * message.id, so turns are counted per id. `series` is the token count per turn, oldest first, kept to the
  * last SERIES_MAX turns. The title is the last ai-title entry, else the first user message (meta
@@ -82,6 +91,7 @@ function readTail(file, { from, bytes } = {}) {
 function parseTranscript(lines, previous) {
   const p = previous || {};
   let tokens = p.tokens ?? null, model = p.model ?? null, lastTurn = p.lastTurn ?? null;
+  let cacheTtlMs = p.cacheTtlMs ?? null, cacheRead = p.cacheRead ?? null, cacheCreated = p.cacheCreated ?? null;
   let title = p.title || null, firstUser = p.firstUser || null;
   let turns = p.turns || 0, lastId = p.lastId || null;
   const series = Array.isArray(p.series) ? p.series.slice() : [];
@@ -96,6 +106,9 @@ function parseTranscript(lines, previous) {
     // aborts, and a usage without the three input counters says nothing about the context
     if (!u || entry.message.model === "<synthetic>" || !hasInputCounters(u)) continue;
     tokens = num(u.input_tokens) + num(u.cache_creation_input_tokens) + num(u.cache_read_input_tokens);
+    cacheRead = num(u.cache_read_input_tokens);
+    cacheCreated = num(u.cache_creation_input_tokens);
+    cacheTtlMs = cacheTtl(u.cache_creation) ?? cacheTtlMs;
     model = (entry.message && entry.message.model) || null;
     lastTurn = entry.timestamp || null;
     const id = entry.message.id || entry.uuid || null;
@@ -109,7 +122,7 @@ function parseTranscript(lines, previous) {
       series.push(tokens); // the same turn continued from a state without a series: a point, not a new turn
     }
   }
-  const out = { tokens, model, lastTurn, title: title || firstUser || null, turns, series };
+  const out = { tokens, model, lastTurn, title: title || firstUser || null, turns, series, cacheTtlMs, cacheRead, cacheCreated };
   // hidden state for the continuation: not part of what the panel shows, and not part of toEqual
   Object.defineProperty(out, "lastId", { value: lastId, enumerable: false });
   Object.defineProperty(out, "firstUser", { value: firstUser, enumerable: false });
@@ -129,6 +142,18 @@ function parseEntry(line) {
 }
 
 function num(v) { return Number.isFinite(v) ? v : 0; }
+
+/**
+ * The TTL a turn wrote cache under, from usage.cache_creation: 5 minutes when ephemeral_5m_input_tokens is
+ * above zero (also when the 1-hour counter is: that part goes cold first), 1 hour when only
+ * ephemeral_1h_input_tokens is; null when the turn created nothing or the object is missing (older Claude Code).
+ */
+function cacheTtl(creation) {
+  if (!creation || typeof creation !== "object") return null;
+  if (num(creation.ephemeral_5m_input_tokens) > 0) return TTL_5M_MS;
+  if (num(creation.ephemeral_1h_input_tokens) > 0) return TTL_1H_MS;
+  return null;
+}
 
 function hasInputCounters(u) {
   return [u.input_tokens, u.cache_creation_input_tokens, u.cache_read_input_tokens].some(Number.isFinite);
@@ -153,7 +178,9 @@ function userText(content) {
  * sessionId). The default scope is the sessions inside the window's workspace folders; with `all`
  * the whole machine is included, grouped by project. Sorted busy first, then last turn newest first,
  * unknown last. `zoneCounts` counts the listed sessions per zone; sessions with an unknown count are not
- * counted.
+ * counted. Per session the prompt cache: `hitShare` (cacheRead / tokens of the last turn), `coldAt` (the last
+ * turn plus the TTL), `coldInMs` (until then, negative when past) and `cacheState` ("warm" or "cold", null
+ * without a TTL); `cacheCounts` counts the listed sessions per state.
  */
 function buildSessions({ registry = [], transcripts = {}, now, workspaceFolders = [], all = false }) {
   const nowMs = typeof now === "number" ? now : Date.parse(now);
@@ -165,11 +192,19 @@ function buildSessions({ registry = [], transcripts = {}, now, workspaceFolders 
       const series = Array.isArray(t.series) ? t.series : [];
       const lastMs = t.lastTurn ? Date.parse(t.lastTurn) : NaN;
       const sinceMs = Number.isFinite(lastMs) && Number.isFinite(nowMs) ? Math.max(0, nowMs - lastMs) : null;
+      const cacheTtlMs = Number.isFinite(t.cacheTtlMs) ? t.cacheTtlMs : null;
+      const cacheRead = Number.isFinite(t.cacheRead) ? t.cacheRead : null;
+      const coldMs = cacheTtlMs !== null && Number.isFinite(lastMs) ? lastMs + cacheTtlMs : NaN;
+      const coldInMs = Number.isFinite(coldMs) && Number.isFinite(nowMs) ? coldMs - nowMs : null;
       return {
         pid: r.pid, sessionId: r.sessionId, cwd: r.cwd, project: projectName(r.cwd),
         title: t.title || null, model: t.model || null, modelShort: modelShort(t.model),
         tokens, zone: zone(tokens), turns: t.turns || 0, series, dips: dips(series),
         lastTurn: t.lastTurn || null, sinceMs,
+        cacheTtlMs, cacheRead, cacheCreated: Number.isFinite(t.cacheCreated) ? t.cacheCreated : null,
+        hitShare: cacheRead !== null && tokens ? cacheRead / tokens : null,
+        coldAt: Number.isFinite(coldMs) ? new Date(coldMs).toISOString() : null, coldInMs,
+        cacheState: coldInMs === null ? null : coldInMs > 0 ? "warm" : "cold",
         busy: r.status === "busy", dimmed: sinceMs !== null && sinceMs > DIM_AFTER_MS,
         _lastMs: Number.isFinite(lastMs) ? lastMs : -Infinity,
       };
@@ -184,7 +219,9 @@ function buildSessions({ registry = [], transcripts = {}, now, workspaceFolders 
   }
   const zoneCounts = { green: 0, yellow: 0, orange: 0, red: 0 };
   for (const s of sessions) if (s.zone) zoneCounts[s.zone] += 1;
-  return { sessions, groups, count: sessions.length, zoneCounts };
+  const cacheCounts = { warm: 0, cold: 0 };
+  for (const s of sessions) if (s.cacheState) cacheCounts[s.cacheState] += 1;
+  return { sessions, groups, count: sessions.length, zoneCounts, cacheCounts };
 }
 
 /**

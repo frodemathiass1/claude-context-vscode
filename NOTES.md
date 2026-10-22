@@ -42,6 +42,17 @@ on Windows"), `changelog` (2.1.152, 2.1.234, 2.1.246).
 
 So step 4 of the plan needs no code change: the core already reads Bedrock transcripts correctly.
 
+## The prompt cache in the transcript (seen 2026-10-22, Claude Code 2.1.301–2.1.304)
+
+Every assistant entry's `message.usage` has `cache_creation` with both `ephemeral_1h_input_tokens` and
+`ephemeral_5m_input_tokens` (in either order), next to the flat `cache_creation_input_tokens`, which equals
+their sum. Across the transcripts on this machine a turn writes under one TTL only: the 1-hour one as a
+rule, the 5-minute one on usage overage (seen as `ephemeral_1h_input_tokens: 0` with 29K and 276K under 5m).
+Both above zero in one turn was never seen; the core then reports 5m, the part that goes cold first. The
+prices (platform.claude.com/docs/en/docs/build-with-claude/prompt-caching, read 2026-10-22) are in a
+comment in `core.cjs`; the panel shows no cost, only the state. The cache is refreshed on every use, so
+the deadline is the last turn plus the TTL, per session.
+
 ## Hosting the panel outside VS Code
 
 `panel.html` has a second adapter for when `acquireVsCodeApi` does not exist: it fetches
@@ -62,6 +73,13 @@ context bar, the curve and the meter segments), for `green`, `yellow`, `orange` 
 a third-opaque orange that read brown over the dark side bar (Frode, 2026-10-22). The zone list, the limits (100K, 125K and 150K) and the
 scale (200K) are three constants at the top of the panel's script; a new zone is one entry there, one
 limit and one colour pair, and `core.cjs` decides the zone (`zone()`, `zoneCounts`).
+
+The prompt-cache state uses the same variables: the countdown turns `--kx-orange` a few minutes before
+the deadline, the 5m pill is `--kx-orange` too, and the pill's border is `--kx-border-strong`; no new
+variable since 0.5.0. The payload has `cacheCounts` (`warm`, `cold`) beside `zoneCounts`, and per session
+`cacheTtlMs`, `cacheRead`, `cacheCreated`, `hitShare`, `coldAt`, `coldInMs` and `cacheState`; a host that
+builds a payload by hand (an error reserve) should include `cacheCounts`, although the panel shows 0 / 0
+without it.
 
 The panel keeps `<header>` and `<main>` as its two top-level blocks (plus the two hidden message blocks
 with `data-testid="contact"` and `data-testid="errors"`), so a host can size and centre them.
