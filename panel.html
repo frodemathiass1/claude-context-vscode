@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- csp -->
+<title>Claude Context</title>
+<style nonce="{{nonce}}">
+  /* Own variables; in VS Code they are set from --vscode-* (light/dark follows the editor). A host that
+     serves this file in a browser can set them from its own tokens in a style appended to head. No
+     external CSS here, no theme button. Classes carry the kx- prefix so they never collide with a host
+     page's own classes. */
+  :root {
+    --kx-bg: var(--vscode-sideBar-background, #ffffff);
+    --kx-fg: var(--vscode-foreground, #1f2328);
+    --kx-muted: var(--vscode-descriptionForeground, #6e7781);
+    --kx-border: var(--vscode-sideBarSectionHeader-border, var(--vscode-widget-border, rgba(128, 128, 128, 0.25)));
+    --kx-row-hover: var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.08));
+    --kx-green: var(--vscode-charts-green, #1a7f37);
+    --kx-yellow: var(--vscode-charts-yellow, #9a6700);
+    --kx-red: var(--vscode-charts-red, #cf222e);
+    --kx-accent: var(--vscode-focusBorder, #0969da);
+    --kx-font: var(--vscode-font-family, system-ui, sans-serif);
+    --kx-font-size: var(--vscode-font-size, 13px);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--kx-bg); color: var(--kx-fg);
+    font-family: var(--kx-font); font-size: var(--kx-font-size); line-height: 1.4;
+  }
+  header {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 8px 12px; border-bottom: 1px solid var(--kx-border);
+  }
+  header h1 { font-size: inherit; font-weight: 600; margin: 0; }
+  .kx-head { display: flex; align-items: baseline; gap: 12px; min-width: 0; flex-wrap: wrap; }
+  /* one counter per zone next to the total, coloured as the zones */
+  .kx-zones { display: inline-flex; gap: 10px; font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+  .kx-zone::before {
+    content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+    background: currentColor; margin-right: 4px; vertical-align: 1px;
+  }
+  .kx-zone[data-zone="green"] { color: var(--kx-green); }
+  .kx-zone[data-zone="yellow"] { color: var(--kx-yellow); }
+  .kx-zone[data-zone="red"] { color: var(--kx-red); }
+  header label { display: inline-flex; align-items: center; gap: 6px; color: var(--kx-muted); cursor: pointer; white-space: nowrap; }
+  header input { accent-color: var(--kx-accent); margin: 0; }
+  main { padding: 4px 0 12px; }
+  .kx-message { padding: 12px; color: var(--kx-muted); }
+  .kx-error { padding: 8px 12px; color: var(--kx-red); border-bottom: 1px solid var(--kx-border); font-size: 0.92em; }
+  .kx-contact { display: flex; align-items: center; gap: 10px; }
+  .kx-contact button {
+    font: inherit; font-size: 0.92em; color: var(--kx-fg); background: transparent;
+    border: 1px solid var(--kx-border); border-radius: 4px; padding: 2px 8px; cursor: pointer;
+  }
+  .kx-contact button:hover { background: var(--kx-row-hover); }
+  .kx-group { padding: 10px 12px 2px; font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.04em; color: var(--kx-muted); }
+  .kx-session {
+    display: grid; grid-template-columns: 10px 1fr auto; column-gap: 8px; row-gap: 2px; align-items: center;
+    padding: 6px 12px;
+  }
+  .kx-session:hover { background: var(--kx-row-hover); }
+  .kx-session.kx-dimmed { opacity: 0.5; }
+  .kx-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--kx-muted); grid-row: 1 / span 2; position: relative; }
+  .kx-session.kx-with-curve .kx-dot { grid-row: 1 / span 3; }
+  /* the dot pulses while the session is busy: a ring in the dot's own colour grows and fades */
+  .kx-dot.kx-pulse::after {
+    content: ""; position: absolute; inset: 0; border-radius: 50%; background: inherit;
+    animation: kx-pulse 1.6s ease-out infinite;
+  }
+  @keyframes kx-pulse { from { transform: scale(1); opacity: 0.7; } to { transform: scale(2.8); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .kx-dot.kx-pulse::after { animation: none; } }
+  .kx-dot[data-zone="green"] { background: var(--kx-green); }
+  .kx-dot[data-zone="yellow"] { background: var(--kx-yellow); }
+  .kx-dot[data-zone="red"] { background: var(--kx-red); }
+  .kx-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .kx-tokens { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; text-align: right; }
+  .kx-tokens[data-zone="green"] { color: var(--kx-green); }
+  .kx-tokens[data-zone="yellow"] { color: var(--kx-yellow); }
+  .kx-tokens[data-zone="red"] { color: var(--kx-red); }
+  /* the sparkline fills the row's width; strokes stay 1 px although the viewBox is stretched */
+  .kx-curve { grid-column: 2 / span 2; display: block; width: 100%; height: 24px; overflow: visible; color: var(--kx-muted); }
+  .kx-curve[data-zone="green"] { color: var(--kx-green); }
+  .kx-curve[data-zone="yellow"] { color: var(--kx-yellow); }
+  .kx-curve[data-zone="red"] { color: var(--kx-red); }
+  .kx-limit { stroke: var(--kx-muted); stroke-width: 1; stroke-dasharray: 3 3; opacity: 0.6; }
+  .kx-area { fill: currentColor; opacity: 0.18; stroke: none; }
+  .kx-line { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+  .kx-dip { stroke: var(--kx-fg); stroke-width: 1; opacity: 0.7; }
+  .kx-details { grid-column: 2 / span 2; color: var(--kx-muted); font-size: 0.92em; display: flex; flex-wrap: wrap; gap: 4px 10px; }
+  .kx-badge {
+    display: inline-block; padding: 0 6px; border-radius: 9px; font-size: 0.85em; line-height: 1.5;
+    background: var(--kx-accent); color: var(--kx-bg);
+  }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <div class="kx-head">
+    <h1><span data-testid="count" aria-live="polite">0</span> live Claude sessions</h1>
+    <span class="kx-zones" data-testid="zones">
+      <span class="kx-zone" data-zone="green" data-testid="zone-green">0</span>
+      <span class="kx-zone" data-zone="yellow" data-testid="zone-yellow">0</span>
+      <span class="kx-zone" data-zone="red" data-testid="zone-red">0</span>
+    </span>
+  </div>
+  <label><input type="checkbox" data-testid="all"> All projects</label>
+</header>
+<div class="kx-error kx-contact" data-testid="contact" hidden>
+  <span>Lost contact with the dev server.</span>
+  <button type="button">Try again</button>
+</div>
+<div data-testid="errors" hidden></div>
+<main data-testid="list"></main>
+
+<script nonce="{{nonce}}">
+(function () {
+  "use strict";
+  const countEl = document.querySelector('[data-testid="count"]');
+  const allEl = document.querySelector('[data-testid="all"]');
+  const errorsEl = document.querySelector('[data-testid="errors"]');
+  const contactEl = document.querySelector('[data-testid="contact"]');
+  const listEl = document.querySelector('[data-testid="list"]');
+  const zoneEl = { green: document.querySelector('[data-testid="zone-green"]'), yellow: document.querySelector('[data-testid="zone-yellow"]'), red: document.querySelector('[data-testid="zone-red"]') };
+
+  // ── Rendering (DOM API only, never innerHTML with data) ────────────────────
+  const ZONE_NAME = { green: "green", yellow: "yellow", red: "red" };
+
+  function tokensText(tokens) {
+    if (!Number.isFinite(tokens)) return "unknown";
+    if (tokens < 1000) return String(tokens);
+    if (Math.round(tokens / 1000) < 1000) return `${Math.round(tokens / 1000)}K`;
+    return `${(tokens / 1000000).toFixed(1)}M`;
+  }
+
+  function sinceText(ms) {
+    if (ms === null || ms === undefined) return "no turn";
+    if (ms < 60000) return "just now";
+    const min = Math.floor(ms / 60000);
+    if (min < 60) return `${min} min ago`;
+    const h = Math.floor(min / 60);
+    if (h < 24) return `${h} h ago`;
+    return `${Math.floor(h / 24)} d ago`;
+  }
+
+  function el(tag, className, text) {
+    const e = document.createElement(tag);
+    if (className) e.className = className;
+    if (text !== undefined) e.textContent = text;
+    return e;
+  }
+
+  function svgEl(tag, attrs) {
+    const e = document.createElementNS("http://www.w3.org/2000/svg", tag);
+    for (const k of Object.keys(attrs)) e.setAttribute(k, String(attrs[k]));
+    return e;
+  }
+
+  // ── Sparkline: tokens per turn, oldest left. The viewBox is 100 × 24 and stretched to the row
+  // (preserveAspectRatio none), so x is the turn's share of the width and strokes are non-scaling. The
+  // y-axis runs from 0 to the larger of 200K and the series' top, so the 100K and 150K lines always show
+  // and rows compare. Fewer than two points: no curve.
+  const CURVE_W = 100, CURVE_H = 24, Y_MIN = 200000, LIMITS = [100000, 150000];
+  const num = (n) => String(Math.round(n * 100) / 100);
+
+  function curveFor(session) {
+    // the core only pushes numbers, and dips index this very list, so it is drawn as it comes
+    const series = Array.isArray(session.series) ? session.series : [];
+    if (series.length < 2) return null;
+    const top = Math.max(Y_MIN, ...series);
+    const x = (i) => (i / (series.length - 1)) * CURVE_W;
+    const y = (v) => CURVE_H - 1 - (v / top) * (CURVE_H - 2); // 1 px margin top and bottom for the stroke
+    const dips = Array.isArray(session.dips) ? session.dips.filter((i) => i > 0 && i < series.length) : [];
+    const svg = svgEl("svg", {
+      class: "kx-curve", viewBox: `0 0 ${CURVE_W} ${CURVE_H}`, preserveAspectRatio: "none", role: "img",
+      "data-testid": "curve", "data-points": series.length, "data-zone": session.zone || "unknown",
+      "aria-label": `Tokens per turn, ${series.length} turns, ${dips.length} drops`,
+    });
+    for (const g of LIMITS) svg.appendChild(svgEl("line", { class: "kx-limit", "data-limit": g, x1: 0, x2: CURVE_W, y1: num(y(g)), y2: num(y(g)), "vector-effect": "non-scaling-stroke" }));
+    const points = series.map((v, i) => `${num(x(i))},${num(y(v))}`).join(" L");
+    svg.appendChild(svgEl("path", { class: "kx-area", d: `M0,${CURVE_H} L${points} L${CURVE_W},${CURVE_H} Z` }));
+    svg.appendChild(svgEl("path", { class: "kx-line", d: `M${points}`, "vector-effect": "non-scaling-stroke" }));
+    for (const i of dips) svg.appendChild(svgEl("line", { class: "kx-dip", "data-turn": i, x1: num(x(i)), x2: num(x(i)), y1: 0, y2: CURVE_H, "vector-effect": "non-scaling-stroke" }));
+    return svg;
+  }
+
+  function rowFor(session) {
+    const curve = curveFor(session);
+    const row = el("article", "kx-session" + (session.dimmed ? " kx-dimmed" : "") + (curve ? " kx-with-curve" : ""));
+    row.dataset.session = session.sessionId || "";
+    row.dataset.zone = session.zone || "unknown";
+    const dot = el("span", "kx-dot" + (session.busy ? " kx-pulse" : ""));
+    dot.dataset.zone = session.zone || "unknown";
+    dot.title = `Zone: ${ZONE_NAME[session.zone] || "unknown"}`;
+    row.appendChild(dot);
+    const title = el("div", "kx-title", session.title || "unknown");
+    title.title = session.title || "unknown";
+    row.appendChild(title);
+    const tokens = el("div", "kx-tokens", tokensText(session.tokens));
+    tokens.dataset.zone = session.zone || "unknown";
+    tokens.dataset.testid = "tokens";
+    row.appendChild(tokens);
+    if (curve) row.appendChild(curve);
+    const details = el("div", "kx-details");
+    if (session.busy) details.appendChild(el("span", "kx-badge", "busy"));
+    details.appendChild(el("span", "", session.modelShort || "unknown"));
+    details.appendChild(el("span", "", `zone ${ZONE_NAME[session.zone] || "unknown"}`));
+    details.appendChild(el("span", "", `${session.turns} ${session.turns === 1 ? "turn" : "turns"}`));
+    details.appendChild(el("span", "", sinceText(session.sinceMs)));
+    row.appendChild(details);
+    return row;
+  }
+
+  function render(data) {
+    countEl.textContent = String(data.count || 0);
+    const zones = data.zoneCounts || {};
+    for (const zone of Object.keys(zoneEl)) {
+      const n = Number.isFinite(zones[zone]) ? zones[zone] : 0;
+      zoneEl[zone].textContent = String(n);
+      zoneEl[zone].title = `${n} in the ${ZONE_NAME[zone]} zone`;
+    }
+    allEl.checked = !!data.all;
+    errorsEl.textContent = "";
+    errorsEl.hidden = !(data.errors && data.errors.length);
+    if (!errorsEl.hidden) for (const f of data.errors) errorsEl.appendChild(el("div", "kx-error", f));
+    listEl.textContent = "";
+    if (!data.count) { listEl.appendChild(el("p", "kx-message", "No live Claude sessions")); return; }
+    if (data.groups) {
+      for (const g of data.groups) {
+        listEl.appendChild(el("h2", "kx-group", g.project || "unknown"));
+        for (const session of g.sessions) listEl.appendChild(rowFor(session));
+      }
+    } else {
+      for (const session of data.sessions) listEl.appendChild(rowFor(session));
+    }
+  }
+
+  // ── Adapter: VS Code messages when the webview API exists, else a dev server hosting this file ──
+  const vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : null;
+  if (vscode) {
+    window.addEventListener("message", (e) => { if (e.data && e.data.type === "sessions") render(e.data); });
+    allEl.addEventListener("change", () => vscode.postMessage({ type: "scope", all: allEl.checked }));
+    vscode.postMessage({ type: "ready" });
+  } else {
+    // A dev server serves its own repo only: no project toggle. The list is fetched once from
+    // /claude-context/api/sessions, then the server-sent events stream /claude-context/api/stream pushes
+    // every change as a "sessions" event. When the stream drops (the server restarted or stopped) the
+    // stream is closed and the page says so with "Try again"; no silent reconnects, so what the page
+    // shows is always either live or marked as lost.
+    allEl.parentElement.hidden = true;
+    let stream = null;
+
+    function lost() {
+      if (stream) stream.close();
+      stream = null;
+      contactEl.hidden = false;
+    }
+
+    async function fetchList() {
+      const response = await fetch("/claude-context/api/sessions", { cache: "no-store" });
+      // the dev server's own errors are JSON with error; anything else (a generic 404 page) is just the status
+      const data = /json/.test(response.headers.get("content-type") || "") ? await response.json() : null;
+      if (!response.ok) throw new Error((data && data.error) || `the dev server answered ${response.status}`);
+      render(data);
+    }
+
+    function connect() {
+      stream = new EventSource("/claude-context/api/stream");
+      stream.addEventListener("sessions", (e) => {
+        contactEl.hidden = true;
+        try { render(JSON.parse(e.data)); } catch { /* an incomplete event; the next one draws */ }
+      });
+      stream.onerror = lost;
+    }
+
+    async function start() {
+      lost();
+      contactEl.hidden = true;
+      try { await fetchList(); } catch (e) {
+        render({ count: 0, sessions: [], errors: [String(e && e.message || e)] });
+        lost();
+        return;
+      }
+      connect();
+    }
+
+    contactEl.querySelector("button").addEventListener("click", start);
+    start();
+  }
+})();
+</script>
+</body>
+</html>

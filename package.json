@@ -1,0 +1,45 @@
+{
+  "name": "claude-context",
+  "displayName": "Claude Context",
+  "description": "Shows the context window of every live Claude Code session in a VS Code panel, updated in real time.",
+  "version": "0.2.0",
+  "publisher": "frodemathiassen",
+  "license": "MIT",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/frodemathiass1/claude-context-vscode"
+  },
+  "engines": {
+    "vscode": "^1.131.0"
+  },
+  "categories": ["Other"],
+  "main": "extension.js",
+  "activationEvents": ["onView:claudeContext.panel"],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "claudeContext",
+          "title": "Claude Context",
+          "icon": "icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "claudeContext": [
+        {
+          "type": "webview",
+          "id": "claudeContext.panel",
+          "name": "Claude sessions"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.6"
+  }
+}

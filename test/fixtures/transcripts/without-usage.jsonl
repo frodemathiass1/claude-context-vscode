@@ -1,0 +1,4 @@
+{"parentUuid":null,"isSidechain":false,"type":"user","message":{"role":"user","content":"What time is it?"},"uuid":"u1","timestamp":"2026-10-21T21:00:00.000Z"}
+{"parentUuid":"u1","isSidechain":false,"type":"assistant","message":{"id":"msg_1","model":"claude-opus-5-5","role":"assistant","content":[{"type":"text","text":"Nine."}]},"uuid":"a1","timestamp":"2026-10-21T21:00:10.000Z"}
+{"type":"something-new","field":"value"}
+this is not json
