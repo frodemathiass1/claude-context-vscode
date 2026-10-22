@@ -56,9 +56,10 @@ head. The set since the gauges redesign (2026-10-22): `--kx-bg`, `--kx-fg`, `--k
 `--kx-border-strong`, `--kx-row-hover`, `--kx-accent`, `--kx-font`, `--kx-font-size`, `--kx-mono`,
 `--kx-heading`, `--kx-badge-bg`, `--kx-badge-fg`, `--kx-grid`, `--kx-track`, `--kx-blue`, and per zone the
 pair `--kx-<zone>` (text: the count and the legend numbers) and `--kx-<zone>-fill` (fills: the dot, the
-context bar, the curve and the meter segments), for `green`, `yellow` and `red`. The zone list, the
-limits (100K and 150K) and the scale (200K) are three constants at the top of the panel's script; a new
-zone is one entry there, one limit and one colour pair.
+context bar, the curve and the meter segments), for `green`, `yellow`, `orange` (since the four zones,
+2026-10-22; `--vscode-charts-orange`) and `red`. The zone list, the limits (100K, 125K and 150K) and the
+scale (200K) are three constants at the top of the panel's script; a new zone is one entry there, one
+limit and one colour pair, and `core.cjs` decides the zone (`zone()`, `zoneCounts`).
 
 The panel keeps `<header>` and `<main>` as its two top-level blocks (plus the two hidden message blocks
 with `data-testid="contact"` and `data-testid="errors"`), so a host can size and centre them.

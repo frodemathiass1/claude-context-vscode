@@ -135,12 +135,16 @@ describe("dips", () => {
 });
 
 describe("zone", () => {
-  it("green below 100 000, yellow up to and including 150 000, red above, null without a number", () => {
+  it("green below 100 000, yellow below 125 000, orange up to and including 150 000, red above, null without a number", () => {
+    expect(K.zone(0)).toBe("green");
     expect(K.zone(99999)).toBe("green");
     expect(K.zone(100000)).toBe("yellow");
-    expect(K.zone(150000)).toBe("yellow");
+    expect(K.zone(124999)).toBe("yellow");
+    expect(K.zone(125000)).toBe("orange");
+    expect(K.zone(150000)).toBe("orange");
     expect(K.zone(150001)).toBe("red");
     expect(K.zone(null)).toBeNull();
+    expect(K.zone(NaN)).toBeNull();
   });
 });
 
@@ -237,7 +241,7 @@ describe("buildSessions", () => {
   ];
   const transcripts = {
     old: tail(170500, "2026-10-21T21:20:00.000Z"),           // 1 h 20 min ago → dimmed, red
-    new: tail(143002, "2026-10-21T22:28:00.000Z", { model: "claude-fable-5-1" }), // 12 min ago, yellow
+    new: tail(143002, "2026-10-21T22:28:00.000Z", { model: "claude-fable-5-1" }), // 12 min ago, orange
     busy: tail(20000, "2026-10-21T20:00:00.000Z"),           // busy, although the last turn is old
     other: tail(5000, "2026-10-21T22:39:30.000Z"),
     // "without" has no transcript yet
@@ -253,7 +257,7 @@ describe("buildSessions", () => {
   it("per session: zone, short model name, time since the last turn, dimming after one hour and busy", () => {
     const r = K.buildSessions({ registry, transcripts, now: NOW, workspaceFolders: [MINE], all: false });
     const [busy, fresh, old, without] = r.sessions;
-    expect(fresh).toMatchObject({ tokens: 143002, zone: "yellow", modelShort: "Fable 5.1", turns: 3,
+    expect(fresh).toMatchObject({ tokens: 143002, zone: "orange", modelShort: "Fable 5.1", turns: 3,
       sinceMs: 12 * 60000, busy: false, dimmed: false, project: "my-project", title: "T" });
     expect(old).toMatchObject({ zone: "red", dimmed: true, sinceMs: 80 * 60000, modelShort: "Opus 5.5" });
     expect(busy).toMatchObject({ busy: true, zone: "green", dimmed: true });
@@ -280,10 +284,12 @@ describe("buildSessions", () => {
     expect(without.dips).toEqual([]);
   });
 
-  it("the count per zone covers the listed sessions, unknown is not counted, and with all projects everything shown is counted", () => {
-    expect(K.buildSessions({ registry, transcripts, now: NOW, workspaceFolders: [MINE], all: false }).zoneCounts).toEqual({ green: 1, yellow: 1, red: 1 });
-    expect(K.buildSessions({ registry, transcripts, now: NOW, workspaceFolders: [MINE], all: true }).zoneCounts).toEqual({ green: 2, yellow: 1, red: 1 });
-    expect(K.buildSessions({ registry: [], transcripts: {}, now: NOW, workspaceFolders: [MINE], all: false }).zoneCounts).toEqual({ green: 0, yellow: 0, red: 0 });
+  it("the count per zone covers the listed sessions in all four zones, unknown is not counted, and with all projects everything shown is counted", () => {
+    expect(K.buildSessions({ registry, transcripts, now: NOW, workspaceFolders: [MINE], all: false }).zoneCounts).toEqual({ green: 1, yellow: 0, orange: 1, red: 1 });
+    expect(K.buildSessions({ registry, transcripts, now: NOW, workspaceFolders: [MINE], all: true }).zoneCounts).toEqual({ green: 2, yellow: 0, orange: 1, red: 1 });
+    const withYellow = { ...transcripts, without: tail(110000, NOW) };
+    expect(K.buildSessions({ registry, transcripts: withYellow, now: NOW, workspaceFolders: [MINE], all: false }).zoneCounts).toEqual({ green: 1, yellow: 1, orange: 1, red: 1 });
+    expect(K.buildSessions({ registry: [], transcripts: {}, now: NOW, workspaceFolders: [MINE], all: false }).zoneCounts).toEqual({ green: 0, yellow: 0, orange: 0, red: 0 });
   });
 
   it("a session in a subfolder of the workspace folder belongs to the window, one in a folder with the same prefix does not", () => {
