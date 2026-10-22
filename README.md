@@ -18,12 +18,43 @@ No dependencies, no build step: `extension.js` (the host), `core.cjs` (pure func
 
 ## Install
 
-1. `git clone https://github.com/frodemathiass1/claude-context-vscode`
-2. In VS Code: Ctrl+Shift+P (Cmd+Shift+P on macOS) → **Developer: Install Extension from Location…** →
-   pick the cloned folder.
-3. **Developer: Reload Window**. The "Claude Context" icon appears in the activity bar.
+The extension is not on the Marketplace; VS Code loads it straight from a cloned folder. All commands
+below are run from the Command Palette: Ctrl+Shift+P (Cmd+Shift+P on macOS), type the command name and
+press Enter.
 
-To update: `git pull` in the clone, then **Developer: Reload Window**.
+1. Clone the repo to a folder that stays put (VS Code loads the extension from it on every start):
+
+   ```
+   git clone https://github.com/frodemathiass1/claude-context-vscode
+   ```
+
+   For example `C:\Develop\claude-context-vscode` on Windows or `~/Dev/claude-context-vscode` on macOS.
+2. Command Palette → **Developer: Install Extension from Location…** → pick the cloned folder (the one
+   with `package.json` in it).
+3. Command Palette → **Developer: Reload Window**.
+
+## Open the panel
+
+- Click the **Claude Context** icon (a clock) in the activity bar, the vertical icon bar on the far left.
+  With many icons it may sit behind **…** at the end of the bar; right-click the bar to choose which icons
+  it shows.
+- Or: Command Palette → **Claude Context: Focus on Claude sessions View** (type `Claude sessions`). **View: Open View…**
+  followed by `Claude sessions` does the same.
+
+If neither the icon nor the command shows up, the window was not reloaded after the install: run
+**Developer: Reload Window**. **Extensions: Show Installed Extensions** should list "Claude Context".
+
+To keep the panel visible next to the file explorer or the Claude Code chat, drag the icon to the other
+side of the window, or right-click it → **Move To** → **Secondary Side Bar**.
+
+The panel lists the sessions started inside the window's workspace folders. Tick **All projects** to
+see every live session on the machine, grouped by project.
+
+## Update and uninstall
+
+- Update: `git pull` in the clone, then **Developer: Reload Window**.
+- Uninstall: **Extensions: Show Installed Extensions** → Claude Context → **Uninstall**, then delete the
+  clone.
 
 ## Settings
 
