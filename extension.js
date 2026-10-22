@@ -15,7 +15,11 @@ const VIEW_ID = "claudeContext.panel";
 const SCOPE_KEY = "claudeContext.allProjects";
 const DEBOUNCE_MS = 250;
 const TICK_MS = 30000; // refreshes "x min ago" and catches processes that died without removing their file
-const CLAUDE_DIR = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
+/** The folder Claude Code stores its data in: the setting, else CLAUDE_CONFIG_DIR, else ~/.claude. Read at activation. */
+function claudeDir() {
+  const setting = String(vscode.workspace.getConfiguration("claudeContext").get("claudeDir") || "").trim();
+  return setting || process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
+}
 
 function activate(context) {
   const provider = new ClaudeContextViewProvider(context);
@@ -31,8 +35,9 @@ class ClaudeContextViewProvider {
   constructor(context) {
     this.context = context;
     this.view = null;
-    this.reader = new core.SessionReader(CLAUDE_DIR);
-    this.watcher = new core.SessionWatcher(CLAUDE_DIR, () => this.refresh(), { debounceMs: DEBOUNCE_MS, tickMs: TICK_MS });
+    const dir = claudeDir();
+    this.reader = new core.SessionReader(dir);
+    this.watcher = new core.SessionWatcher(dir,() => this.refresh(), { debounceMs: DEBOUNCE_MS, tickMs: TICK_MS });
   }
 
   resolveWebviewView(view) {

@@ -185,12 +185,22 @@ function buildSessions({ registry = [], transcripts = {}, now, workspaceFolders 
   return { sessions, groups, count: sessions.length, zoneCounts };
 }
 
-function inFolder(cwd, folder) {
-  return cwd === folder || String(cwd).startsWith(folder.endsWith("/") ? folder : `${folder}/`);
+/**
+ * True when `cwd` is `folder` or below it. Both are compared with `/` as the separator and without a
+ * trailing one; on Windows also case-insensitively (VS Code gives `c:\…` where the registry can have `C:\…`).
+ */
+function inFolder(cwd, folder, platform = process.platform) {
+  const c = comparablePath(cwd, platform), f = comparablePath(folder, platform);
+  return c === f || c.startsWith(`${f}/`);
+}
+
+function comparablePath(p, platform) {
+  const s = String(p).replace(/\\/g, "/").replace(/\/+$/, "");
+  return platform === "win32" ? s.toLowerCase() : s;
 }
 
 function projectName(cwd) {
-  const parts = String(cwd).split("/").filter(Boolean);
+  const parts = String(cwd).split(/[\\/]/).filter(Boolean);
   return parts.length ? parts[parts.length - 1] : null;
 }
 
@@ -213,6 +223,7 @@ class SessionReader {
     this.projectsDir = path.join(claudeDir, "projects");
     this.alive = alive || isAlive;
     this.cache = new Map(); // transcript file → { end, state }
+    this.found = new Map(); // sessionId → project folder found by searching, when the slug folder is missing
   }
 
   read({ workspaceFolders, all }) {
@@ -225,18 +236,40 @@ class SessionReader {
     const transcripts = {};
     const projectFolders = new Set();
     const live = new Set();
+    const liveIds = new Set();
     for (const s of inScope) {
       if (!s.cwd || !s.sessionId) continue;
-      const folder = path.join(this.projectsDir, projectSlug(s.cwd));
-      projectFolders.add(folder);
-      if (!fs.existsSync(folder)) { errors.push(`Project folder not found: ${folder}`); continue; }
+      liveIds.add(s.sessionId);
+      const slugFolder = path.join(this.projectsDir, projectSlug(s.cwd));
+      const folder = this.projectFolder(slugFolder, s.sessionId);
+      projectFolders.add(folder || slugFolder);
+      if (!folder) { errors.push(`Project folder not found: ${slugFolder}`); continue; }
       const file = path.join(folder, `${s.sessionId}.jsonl`);
       live.add(file);
       transcripts[s.sessionId] = this.readTranscript(file);
     }
     for (const file of this.cache.keys()) if (!live.has(file)) this.cache.delete(file);
+    for (const id of this.found.keys()) if (!liveIds.has(id)) this.found.delete(id);
     const list = buildSessions({ registry: registry.sessions, transcripts, now: Date.now(), workspaceFolders, all });
     return { ...list, all, errors: [...new Set(errors)], generatedAt: new Date().toISOString(), projectFolders: [...projectFolders] };
+  }
+
+  /**
+   * The slug folder when it exists; otherwise the folder in projects/ that holds `<sessionId>.jsonl`
+   * (names over 200 characters, CLAUDE_CODE_PROJECT_DIR_NAME, a rule that differs), remembered per
+   * sessionId. Null when neither is found.
+   */
+  projectFolder(slugFolder, sessionId) {
+    if (fs.existsSync(slugFolder)) return slugFolder;
+    const known = this.found.get(sessionId);
+    if (known && fs.existsSync(path.join(known, `${sessionId}.jsonl`))) return known;
+    let names;
+    try { names = fs.readdirSync(this.projectsDir); } catch { return null; }
+    for (const name of names) {
+      const folder = path.join(this.projectsDir, name);
+      if (fs.existsSync(path.join(folder, `${sessionId}.jsonl`))) { this.found.set(sessionId, folder); return folder; }
+    }
+    return null;
   }
 
   readTranscript(file) {
@@ -304,4 +337,4 @@ class SessionWatcher {
   }
 }
 
-module.exports = { projectSlug, zone, dips, readRegistry, readTail, parseTranscript, buildSessions, SessionReader, SessionWatcher, isAlive };
+module.exports = { projectSlug, zone, dips, readRegistry, readTail, parseTranscript, buildSessions, inFolder, projectName, SessionReader, SessionWatcher, isAlive };

@@ -15,19 +15,32 @@ on Windows"), `changelog` (2.1.152, 2.1.234, 2.1.246).
 {"pid":1303,"sessionId":"aaaa-1","cwd":"/Users/frode/Dev/my-project","startedAt":1792603960396,"version":"2.1.301","kind":"interactive","entrypoint":"claude-vscode","name":"my-project-08","nameSource":"derived","updatedAt":1792603961075,"status":"busy","statusUpdatedAt":1792603961075}
 ```
 
-## Windows (step 2 of the plan: fill in)
+## Windows (seen 2026-10-22, Windows 11)
 
-- Versions (step 0):
-- Registry fields and the form of `cwd`:
-- `status` values seen:
-- Project folder name for the clone, and the rule it follows:
-- Environment variables VS Code sees (`CLAUDE_CONFIG_DIR`, `CLAUDE_CODE_USE_BEDROCK`):
+- Versions (step 0): VS Code 1.141.2, git 2.56.0.windows.2, Node 26.12.1, Claude Code 2.1.304. `npm test`
+  was green (34 tests) on the fresh clone before any change.
+- Registry fields and the form of `cwd`: the same fields as on macOS plus `procStart`, `peerProtocol`,
+  `peerFeatures`, `pidDomain` (`win32:<host>`), `messagingSocketPath` (a named pipe) and `nameSince`. `cwd`
+  is a Windows path with `\` and the drive letter as VS Code gave it: `c:\Develop\my-project` (lower case)
+  for sessions started in the VS Code extension, `C:\…` for others (worktrees).
+- `status` values seen: `busy`, `idle`.
+- Project folder name and the rule it follows: the documented rule holds. `c:\Develop\my-project` gives
+  `c--Develop-my-project`, and `C:\Develop\my-project\.claude\worktrees\x` gives
+  `C--Develop-my-project--claude-worktrees-x`. The drive letter keeps its case, so both `c--…` and `C--…`
+  folders exist side by side; the file system is case-insensitive, so the lookup finds either.
+- Environment variables VS Code sees: `CLAUDE_CONFIG_DIR` unset (the folder is `%USERPROFILE%\.claude`),
+  `CLAUDE_CODE_USE_BEDROCK=1`.
 
-## Bedrock (step 2 of the plan: fill in)
+## Bedrock (seen 2026-10-22, Claude Code 2.1.304)
 
-- `message.model` in an assistant entry:
-- `message.usage` (flat fields and any nested `cache_creation`):
-- `message.id` and `isSidechain` present:
+- `message.model` in an assistant entry: `claude-opus-5-5`, the same as on the Anthropic API (no
+  `us.anthropic.` or `eu.anthropic.` prefix, although the configured model id has one).
+- `message.usage`: the flat fields `input_tokens`, `cache_creation_input_tokens`, `cache_read_input_tokens`
+  are present, and `cache_creation` is nested next to them with `ephemeral_1h_input_tokens` and
+  `ephemeral_5m_input_tokens` (the sum equals the flat field). Prompt caching works in the region.
+- `message.id` and `isSidechain` present: yes, both (`message.id` starts with `msg_bdrk_`).
+
+So step 4 of the plan needs no code change: the core already reads Bedrock transcripts correctly.
 
 ## Hosting the panel outside VS Code
 

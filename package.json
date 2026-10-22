@@ -17,6 +17,16 @@
   "main": "extension.js",
   "activationEvents": ["onView:claudeContext.panel"],
   "contributes": {
+    "configuration": {
+      "title": "Claude Context",
+      "properties": {
+        "claudeContext.claudeDir": {
+          "type": "string",
+          "default": "",
+          "description": "Folder Claude Code stores its data in. Empty: CLAUDE_CONFIG_DIR, else ~/.claude. Reload the window after changing it."
+        }
+      }
+    },
     "viewsContainers": {
       "activitybar": [
         {

@@ -25,6 +25,26 @@ No dependencies, no build step: `extension.js` (the host), `core.cjs` (pure func
 
 To update: `git pull` in the clone, then **Developer: Reload Window**.
 
+## Settings
+
+- `claudeContext.claudeDir`: the folder Claude Code stores its data in. Empty (the default) means
+  `CLAUDE_CONFIG_DIR`, else `~/.claude`. Set it when the panel says "Registry folder not found", for example
+  because `CLAUDE_CONFIG_DIR` is set in your shell profile but VS Code was started without it. Reload the
+  window after changing it.
+
+## Windows and Amazon Bedrock
+
+Both work without configuration (checked on Windows 11 with Claude Code 2.1.304 on Bedrock). Sessions in a
+subfolder of the workspace, such as git worktrees under `.claude\worktrees\`, count as the window's and are
+named after their own folder. Bedrock transcripts carry the same model names and token fields as the
+Anthropic API.
+
+## Privacy
+
+The title of a session is its AI-generated title or, before there is one, the start of its first message.
+The panel only shows it locally, but it can contain whatever was typed, so keep that in mind when sharing
+your screen.
+
 ## How it works
 
 Claude Code keeps one small file per running process in `~/.claude/sessions/` and the transcript of

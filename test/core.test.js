@@ -149,6 +149,35 @@ describe("projectSlug", () => {
     expect(K.projectSlug("/Users/frode/Dev/my-project")).toBe("-Users-frode-Dev-my-project");
     expect(K.projectSlug("/Users/frode/.claude/skills")).toBe("-Users-frode--claude-skills");
   });
+
+  it("a Windows path gives the folder name seen on Windows: the colon and every backslash become a dash, the drive letter keeps its case", () => {
+    expect(K.projectSlug("C:\\Users\\frode\\Dev\\Repo")).toBe("C--Users-frode-Dev-Repo");
+    expect(K.projectSlug("c:\\Develop\\my-project\\.claude\\worktrees\\x")).toBe("c--Develop-my-project--claude-worktrees-x");
+  });
+});
+
+describe("inFolder", () => {
+  it("backslashes, mixed separators and a trailing separator compare like forward slashes", () => {
+    expect(K.inFolder("C:\\Dev\\Repo", "C:\\Dev\\Repo", "win32")).toBe(true);
+    expect(K.inFolder("C:\\Dev\\Repo\\.claude\\worktrees\\x", "C:\\Dev\\Repo", "win32")).toBe(true);
+    expect(K.inFolder("C:/Dev/Repo\\sub", "C:\\Dev\\Repo\\", "win32")).toBe(true);
+    expect(K.inFolder("C:\\Dev\\Repo2", "C:\\Dev\\Repo", "win32")).toBe(false);
+  });
+
+  it("on Windows the drive letter and the rest compare case-insensitively, elsewhere not", () => {
+    expect(K.inFolder("C:\\Dev\\Repo\\sub", "c:\\Dev\\Repo", "win32")).toBe(true);
+    expect(K.inFolder("c:\\dev\\repo", "C:\\Dev\\Repo", "win32")).toBe(true);
+    expect(K.inFolder("/Users/frode/Repo", "/users/frode/repo", "linux")).toBe(false);
+    expect(K.inFolder("/Users/frode/Repo/sub", "/Users/frode/Repo/", "linux")).toBe(true);
+  });
+});
+
+describe("projectName", () => {
+  it("is the last part of the path, with forward slashes or backslashes", () => {
+    expect(K.projectName("/Users/frode/Dev/my-project")).toBe("my-project");
+    expect(K.projectName("c:\\Develop\\my-project")).toBe("my-project");
+    expect(K.projectName("C:\\Develop\\my-project\\")).toBe("my-project");
+  });
 });
 
 describe("readRegistry", () => {
@@ -265,6 +294,15 @@ describe("buildSessions", () => {
     expect(r.sessions.map((s) => s.sessionId)).toEqual(["below"]);
   });
 
+  it("Windows paths: a worktree below the workspace folder belongs to the window, and the project is the last folder name", () => {
+    const r = K.buildSessions({
+      registry: [reg(1, "root", "c:\\Develop\\my-project", "idle"), reg(2, "tree", "c:\\Develop\\my-project\\.claude\\worktrees\\x", "idle"),
+        reg(3, "elsewhere", "c:\\Develop\\other", "idle")],
+      transcripts: {}, now: NOW, workspaceFolders: ["c:\\Develop\\my-project"], all: false,
+    });
+    expect(r.sessions.map((s) => [s.sessionId, s.project])).toEqual([["root", "my-project"], ["tree", "x"]]);
+  });
+
   it("without workspace folders (no folder open) everything is shown", () => {
     const r = K.buildSessions({ registry: [reg(1, "a", MINE, "idle"), reg(2, "b", OTHER, "idle")],
       transcripts: { a: tail(950, NOW), b: tail(1234567, NOW) }, now: NOW, workspaceFolders: [], all: false });
@@ -317,6 +355,22 @@ describe("SessionReader", () => {
       const result = new K.SessionReader(dir, { alive: () => true }).read({ workspaceFolders: [MINE], all: false });
       expect(result.errors).toEqual([`Project folder not found: ${folder}`]);
       expect(result.sessions.map((s) => [s.sessionId, s.tokens])).toEqual([["aaaa-1", null], ["dead", null]]);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it("when the slug folder is missing, the folder in projects/ that holds the transcript is used and remembered", () => {
+    const { dir } = rig({ withProjectFolder: false });
+    try {
+      const other = path.join(dir, "projects", "renamed-by-claude-code");
+      mkdirSync(other, { recursive: true });
+      mkdirSync(path.join(dir, "projects", "unrelated"));
+      writeFileSync(path.join(other, "aaaa-1.jsonl"), all.join("\n") + "\n");
+      const reader = new K.SessionReader(dir, { alive: (pid) => pid === 1303 });
+      const result = reader.read({ workspaceFolders: [MINE], all: false });
+      expect(result.errors).toEqual([]);
+      expect(result.sessions[0]).toMatchObject({ sessionId: "aaaa-1", turns: 2, tokens: 143002 });
+      expect(result.projectFolders).toEqual([other]);
+      expect(reader.found.get("aaaa-1")).toBe(other);
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
