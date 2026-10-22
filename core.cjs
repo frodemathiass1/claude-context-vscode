@@ -8,7 +8,9 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-const YELLOW_FROM = 100000, RED_ABOVE = 150000; // a quality warning, not the window limit
+// Quality warnings, not the window limit: absolute token counts calibrated on Matt Pocock's smart/dumb zone
+// (the dumb zone "commonly begins around 125K-150K tokens"); the orange band is that range.
+const YELLOW_FROM = 100000, ORANGE_FROM = 125000, RED_ABOVE = 150000;
 const DIM_AFTER_MS = 60 * 60 * 1000;
 const SERIES_MAX = 200; // the sparkline keeps the last 200 turns, so the payload to the webview stays small
 const DIP_BELOW = 0.7; // a turn is a dip when its context is below 70 % of the previous turn's
@@ -18,10 +20,10 @@ function projectSlug(cwd) {
   return String(cwd).replace(/[^A-Za-z0-9]/g, "-");
 }
 
-/** Zone for a token count: green below 100K, yellow up to and including 150K, red above, null when unknown. */
+/** Zone for a token count: green below 100K, yellow below 125K, orange up to and including 150K, red above, null when unknown. */
 function zone(tokens) {
   if (!Number.isFinite(tokens)) return null;
-  return tokens < YELLOW_FROM ? "green" : tokens <= RED_ABOVE ? "yellow" : "red";
+  return tokens < YELLOW_FROM ? "green" : tokens < ORANGE_FROM ? "yellow" : tokens <= RED_ABOVE ? "orange" : "red";
 }
 
 /**
@@ -180,7 +182,7 @@ function buildSessions({ registry = [], transcripts = {}, now, workspaceFolders 
     for (const s of sessions) { if (!byProject.has(s.project)) byProject.set(s.project, []); byProject.get(s.project).push(s); }
     groups = [...byProject].map(([project, list]) => ({ project, sessions: list }));
   }
-  const zoneCounts = { green: 0, yellow: 0, red: 0 };
+  const zoneCounts = { green: 0, yellow: 0, orange: 0, red: 0 };
   for (const s of sessions) if (s.zone) zoneCounts[s.zone] += 1;
   return { sessions, groups, count: sessions.length, zoneCounts };
 }

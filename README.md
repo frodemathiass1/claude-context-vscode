@@ -2,8 +2,11 @@
 
 A VS Code panel that shows the context window of every live Claude Code session on the machine, updated
 in real time. The header has the count and a zone meter (how many sessions are green, below 100K tokens;
-yellow, up to 150K; red, above). The sessions sit under "Working now" and "Idle", one row each: title, a
-context bar scaled 0–200K with marks at 100K and 150K, a sparkline of tokens per turn with a marker at
+yellow, below 125K; orange, up to 150K; red, above). The zones are absolute token counts, not a share of
+the model's window: they follow Matt Pocock's smart zone and dumb zone, where the dumb zone "commonly
+begins around 125K-150K tokens". The sessions sit under "Working now" and "Idle", one row each: title, a
+context bar scaled 0–200K with marks at 100K, 125K and 150K (its tooltip says what to do at the next phase
+boundary in the yellow, orange and red zones), a sparkline of tokens per turn with a marker at
 every compaction or `/clear`, the count in the zone colour, and the model, the number of turns and the
 time since the last turn. Busy sessions pulse and sort first; sessions idle for more than an hour are
 dimmed. The rows stack in the narrow sidebar and spread over four columns when the panel is 620 px or

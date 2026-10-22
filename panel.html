@@ -20,11 +20,15 @@
     /* the zone colours for text (the count, the legend numbers) … */
     --kx-green: var(--vscode-charts-green, #1a7f37);
     --kx-yellow: var(--vscode-charts-yellow, #9a6700);
+    /* not --vscode-charts-orange: VS Code derives it from editor.findMatchHighlightBackground (#EA5C0055),
+       a third-opaque orange that reads brown over a dark side bar. Halfway between the theme's yellow and red instead. */
+    --kx-orange: color-mix(in srgb, var(--kx-yellow) 50%, var(--kx-red));
     --kx-red: var(--vscode-charts-red, #cf222e);
     /* … and for fills (dot, context bar, curve, meter segments), so a host can pick a palette per use.
        Every zone in ZONES below has a pair --kx-<zone> / --kx-<zone>-fill; adding a zone adds a pair here. */
     --kx-green-fill: var(--vscode-charts-green, var(--kx-green));
     --kx-yellow-fill: var(--vscode-charts-yellow, var(--kx-yellow));
+    --kx-orange-fill: color-mix(in srgb, var(--kx-yellow-fill) 50%, var(--kx-red-fill));
     --kx-red-fill: var(--vscode-charts-red, var(--kx-red));
     --kx-blue: var(--vscode-charts-blue, #0969da); /* reserved for busy accents */
     --kx-grid: var(--vscode-charts-lines, color-mix(in srgb, var(--kx-muted) 55%, transparent)); /* limit lines, marks */
@@ -161,6 +165,12 @@
     .kx-axis .kx-scale span:last-child { transform: translateX(-100%); }
     .kx-axis .kx-r { text-align: right; }
   }
+  /* with five marks the labels need about 240 px; until the bar column is that wide (a container of about
+     880 px), every second label drops to a second row so neighbours never overlap */
+  @container (min-width: 620px) and (max-width: 879px) {
+    .kx-axis .kx-scale { height: 2em; }
+    .kx-axis .kx-scale span:nth-child(even) { top: 1em; }
+  }
 
   @media (prefers-reduced-motion: reduce) {
     .kx-dot.kx-pulse::after, .kx-fill.kx-busy::after { animation: none; }
@@ -201,9 +211,9 @@
   // and --kx-<zone>-fill (fills) defined in the style above. LIMITS are the boundaries drawn as dashed lines
   // on the curve, gaps on the context bar and labels on the axis; SCALE is the full width of the bar.
   // A new zone is one entry here, one limit there and one colour pair in the style. ─────────────────
-  const ZONES = ["green", "yellow", "red"];
+  const ZONES = ["green", "yellow", "orange", "red"];
   const ZONE_NAME = Object.fromEntries(ZONES.map((z) => [z, z]));
-  const LIMITS = [100000, 150000];
+  const LIMITS = [100000, 125000, 150000];
   const SCALE = 200000;
 
   // ── Rendering (DOM API only, never innerHTML with data) ────────────────────
@@ -229,6 +239,12 @@
     return items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
   }
   const MARKS_TEXT = listText(LIMITS.map(tokensText));
+  // what to do at the next phase boundary, per zone (Pocock's PHASE-BOUNDARIES.md); shown in the bar's tooltip
+  const ZONE_ADVICE = {
+    yellow: "plan to break at the next phase boundary",
+    orange: `break at the first phase boundary; continue only if the next phase fits under ${tokensText(LIMITS[LIMITS.length - 1])}`,
+    red: "do not start a new phase: /clear, /handoff, a subagent, or /compact",
+  };
   const SCALE_TEXT = `0–${tokensText(SCALE)}`;
   const share = (tokens) => (Number.isFinite(tokens) ? Math.min(1, tokens / SCALE) : 0);
   const pct = (n) => String(Math.round(n * 10000) / 100);
@@ -308,13 +324,14 @@
     return svg;
   }
 
-  /** The context bar: the fill is the count's share of SCALE, a gap at every limit, a hatched end above SCALE. */
+  /** The context bar: the fill is the count's share of SCALE, a gap at every limit, a hatched end above SCALE; the tooltip carries the zone's advice. */
   function barFor(session) {
     const bar = el("div", "kx-bar");
     bar.setAttribute("role", "img");
     bar.dataset.testid = "bar";
     const known = Number.isFinite(session.tokens);
-    bar.title = known ? `${tokensText(session.tokens)} tokens in the context · scale ${SCALE_TEXT}, marks at ${MARKS_TEXT}` : "no count yet";
+    const advice = ZONE_ADVICE[session.zone] ? ` · ${ZONE_ADVICE[session.zone]}` : "";
+    bar.title = known ? `${tokensText(session.tokens)} tokens in the context · scale ${SCALE_TEXT}, marks at ${MARKS_TEXT}${advice}` : "no count yet";
     bar.setAttribute("aria-label", !known ? "no count" : session.tokens > SCALE ? `over the ${tokensText(SCALE)} scale` : `${Math.round(share(session.tokens) * 100)} % of the ${tokensText(SCALE)} scale`);
     const fill = el("span", "kx-fill" + (session.busy ? " kx-busy" : ""));
     fill.style.setProperty("--p", pct(share(session.tokens)));
