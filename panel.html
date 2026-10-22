@@ -15,39 +15,55 @@
     --kx-fg: var(--vscode-foreground, #1f2328);
     --kx-muted: var(--vscode-descriptionForeground, #6e7781);
     --kx-border: var(--vscode-sideBarSectionHeader-border, var(--vscode-widget-border, rgba(128, 128, 128, 0.25)));
+    --kx-border-strong: var(--vscode-editorWidget-border, rgba(128, 128, 128, 0.45)); /* reserved for hover and busy accents */
     --kx-row-hover: var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.08));
+    /* the zone colours for text (the count, the legend numbers) … */
     --kx-green: var(--vscode-charts-green, #1a7f37);
     --kx-yellow: var(--vscode-charts-yellow, #9a6700);
     --kx-red: var(--vscode-charts-red, #cf222e);
+    /* … and for fills (dot, context bar, curve, meter segments), so a host can pick a palette per use.
+       Every zone in ZONES below has a pair --kx-<zone> / --kx-<zone>-fill; adding a zone adds a pair here. */
+    --kx-green-fill: var(--vscode-charts-green, var(--kx-green));
+    --kx-yellow-fill: var(--vscode-charts-yellow, var(--kx-yellow));
+    --kx-red-fill: var(--vscode-charts-red, var(--kx-red));
+    --kx-blue: var(--vscode-charts-blue, #0969da); /* reserved for busy accents */
+    --kx-grid: var(--vscode-charts-lines, color-mix(in srgb, var(--kx-muted) 55%, transparent)); /* limit lines, marks */
+    --kx-track: color-mix(in srgb, var(--kx-fg) 10%, transparent); /* the track behind the bar and the meter */
+    --kx-badge-bg: var(--vscode-badge-background, var(--vscode-focusBorder, #0969da));
+    --kx-badge-fg: var(--vscode-badge-foreground, #ffffff);
+    --kx-heading: var(--vscode-sideBarSectionHeader-foreground, var(--kx-muted));
     --kx-accent: var(--vscode-focusBorder, #0969da);
     --kx-font: var(--vscode-font-family, system-ui, sans-serif);
     --kx-font-size: var(--vscode-font-size, 13px);
+    --kx-mono: var(--vscode-editor-font-family, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
   body {
     background: var(--kx-bg); color: var(--kx-fg);
     font-family: var(--kx-font); font-size: var(--kx-font-size); line-height: 1.4;
+    container-type: inline-size; /* the layout below follows the panel's width, not the window's */
   }
+
+  /* ── Header: the count, the zone meter and the scope ── */
   header {
-    display: flex; align-items: center; justify-content: space-between; gap: 8px;
-    padding: 8px 12px; border-bottom: 1px solid var(--kx-border);
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;
+    padding: 10px 12px; border-bottom: 1px solid var(--kx-border);
   }
-  header h1 { font-size: inherit; font-weight: 600; margin: 0; }
-  .kx-head { display: flex; align-items: baseline; gap: 12px; min-width: 0; flex-wrap: wrap; }
-  /* one counter per zone next to the total, coloured as the zones */
-  .kx-zones { display: inline-flex; gap: 10px; font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
-  .kx-zone::before {
-    content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%;
-    background: currentColor; margin-right: 4px; vertical-align: 1px;
-  }
-  .kx-zone[data-zone="green"] { color: var(--kx-green); }
-  .kx-zone[data-zone="yellow"] { color: var(--kx-yellow); }
-  .kx-zone[data-zone="red"] { color: var(--kx-red); }
-  header label { display: inline-flex; align-items: center; gap: 6px; color: var(--kx-muted); cursor: pointer; white-space: nowrap; }
-  header input { accent-color: var(--kx-accent); margin: 0; }
-  main { padding: 4px 0 12px; }
-  .kx-message { padding: 12px; color: var(--kx-muted); }
+  header h1 { margin: 0; font-size: 1em; font-weight: 600; display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+  header h1 .kx-n { font-family: var(--kx-mono); font-size: 1.35em; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+  header label { display: inline-flex; align-items: center; gap: 6px; color: var(--kx-muted); cursor: pointer; white-space: nowrap; margin-left: auto; font-size: 0.92em; }
+  header input { accent-color: var(--kx-accent); margin: 0; width: 14px; height: 14px; }
+  /* one segment per zone, width = that zone's share of the sessions with a known zone; the legend repeats the numbers */
+  .kx-meter { flex: 1 1 160px; min-width: 140px; display: flex; flex-direction: column; gap: 4px; }
+  .kx-meter-bar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: var(--kx-track); }
+  .kx-meter-bar span { display: block; height: 100%; background: var(--kx-zone-fill, var(--kx-muted)); }
+  .kx-meter-leg { display: flex; font-size: 0.82em; font-variant-numeric: tabular-nums; color: var(--kx-muted); white-space: nowrap; }
+  .kx-meter-leg span + span::before { content: "·"; margin: 0 6px; }
+  .kx-meter-leg b { font-weight: 600; color: var(--kx-zone-text, inherit); }
+
+  main { padding: 8px 12px 14px; }
+  .kx-message { padding: 18px 4px; color: var(--kx-muted); text-align: center; }
   .kx-error { padding: 8px 12px; color: var(--kx-red); border-bottom: 1px solid var(--kx-border); font-size: 0.92em; }
   .kx-contact { display: flex; align-items: center; gap: 10px; }
   .kx-contact button {
@@ -55,56 +71,110 @@
     border: 1px solid var(--kx-border); border-radius: 4px; padding: 2px 8px; cursor: pointer;
   }
   .kx-contact button:hover { background: var(--kx-row-hover); }
-  .kx-group { padding: 10px 12px 2px; font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.04em; color: var(--kx-muted); }
-  .kx-session {
-    display: grid; grid-template-columns: 10px 1fr auto; column-gap: 8px; row-gap: 2px; align-items: center;
-    padding: 6px 12px;
+
+  /* ── Groups: "Working now · n", "Idle · n" and, with all projects, the project above them ── */
+  .kx-group {
+    margin: 10px 0 4px; font-size: 0.78em; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--kx-heading); display: flex; align-items: center; gap: 6px;
   }
+  .kx-group svg { width: 12px; height: 12px; }
+  .kx-group .kx-gn { font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--kx-muted); }
+  .kx-group::after { content: ""; flex: 1; height: 1px; background: var(--kx-border); }
+  .kx-group.kx-project { margin-top: 16px; }
+  .kx-ico { width: 13px; height: 13px; flex: none; vertical-align: -2px; }
+
+  /* ── Row: stacked under 620 px (title row, bar, curve, meta), four columns from 620 px ── */
+  .kx-session {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "title num" "bar bar" "curve curve" "meta meta";
+    gap: 3px 10px; padding: 8px 4px; border-bottom: 1px solid var(--kx-border); align-items: center;
+  }
+  .kx-session:last-child { border-bottom: none; }
   .kx-session:hover { background: var(--kx-row-hover); }
-  .kx-session.kx-dimmed { opacity: 0.5; }
-  .kx-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--kx-muted); grid-row: 1 / span 2; position: relative; }
-  .kx-session.kx-with-curve .kx-dot { grid-row: 1 / span 3; }
+  .kx-session.kx-dimmed { opacity: 0.72; } /* 0.5 took the red count below 3:1 on a light surface */
+  .kx-row-title { grid-area: title; display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .kx-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .kx-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--kx-zone-fill, var(--kx-muted)); position: relative; flex: none; }
   /* the dot pulses while the session is busy: a ring in the dot's own colour grows and fades */
   .kx-dot.kx-pulse::after {
     content: ""; position: absolute; inset: 0; border-radius: 50%; background: inherit;
     animation: kx-pulse 1.6s ease-out infinite;
   }
-  @keyframes kx-pulse { from { transform: scale(1); opacity: 0.7; } to { transform: scale(2.8); opacity: 0; } }
-  @media (prefers-reduced-motion: reduce) { .kx-dot.kx-pulse::after { animation: none; } }
-  .kx-dot[data-zone="green"] { background: var(--kx-green); }
-  .kx-dot[data-zone="yellow"] { background: var(--kx-yellow); }
-  .kx-dot[data-zone="red"] { background: var(--kx-red); }
-  .kx-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-  .kx-tokens { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; text-align: right; }
-  .kx-tokens[data-zone="green"] { color: var(--kx-green); }
-  .kx-tokens[data-zone="yellow"] { color: var(--kx-yellow); }
-  .kx-tokens[data-zone="red"] { color: var(--kx-red); }
-  /* the sparkline fills the row's width; strokes stay 1 px although the viewBox is stretched */
-  .kx-curve { grid-column: 2 / span 2; display: block; width: 100%; height: 24px; overflow: visible; color: var(--kx-muted); }
-  .kx-curve[data-zone="green"] { color: var(--kx-green); }
-  .kx-curve[data-zone="yellow"] { color: var(--kx-yellow); }
-  .kx-curve[data-zone="red"] { color: var(--kx-red); }
-  .kx-limit { stroke: var(--kx-muted); stroke-width: 1; stroke-dasharray: 3 3; opacity: 0.6; }
+  @keyframes kx-pulse { from { transform: scale(1); opacity: 0.7; } to { transform: scale(2.6); opacity: 0; } }
+  .kx-badge {
+    display: inline-flex; align-items: center; gap: 3px; padding: 0 6px; border-radius: 9px;
+    font-size: 0.78em; font-weight: 600; line-height: 1.6; background: var(--kx-badge-bg); color: var(--kx-badge-fg); flex: none;
+  }
+  .kx-badge svg { width: 10px; height: 10px; }
+  /* the count in the zone's text colour, the zone name under it */
+  .kx-count { grid-area: num; display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+  .kx-num {
+    font-family: var(--kx-mono); font-variant-numeric: tabular-nums; font-weight: 700; line-height: 1; white-space: nowrap;
+    font-size: 1.25em; color: var(--kx-zone-text, var(--kx-muted));
+  }
+  .kx-num[data-zone="unknown"] { font-family: inherit; font-size: 1em; font-weight: 500; }
+  .kx-zone-txt { font-size: 0.78em; line-height: 1; color: var(--kx-muted); }
+  /* the context bar: a track scaled 0–200K, the fill in the zone's fill colour, a gap at every limit */
+  .kx-bar { grid-area: bar; position: relative; height: 10px; border-radius: 5px; background: var(--kx-track); overflow: hidden; }
+  .kx-fill {
+    position: absolute; inset: 0 auto 0 0; width: calc(var(--p) * 1%); border-radius: 5px;
+    background: var(--kx-zone-fill, var(--kx-muted)); transition: width 0.5s ease;
+  }
+  /* a slow sheen moves over the fill while the session is busy */
+  .kx-fill.kx-busy::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(90deg, transparent 0, rgba(255, 255, 255, 0.35) 50%, transparent 100%) no-repeat;
+    background-size: 120px 100%; animation: kx-sheen 1.8s linear infinite;
+  }
+  @keyframes kx-sheen { from { background-position: -120px 0; } to { background-position: 120px 0; } }
+  .kx-tick { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--kx-bg); left: calc(var(--t) * 1%); }
+  .kx-over { position: absolute; right: 0; top: 0; bottom: 0; width: 14px; background: repeating-linear-gradient(135deg, transparent 0 3px, var(--kx-bg) 3px 5px); }
+  /* the sparkline fills its column; strokes stay 1 px although the viewBox is stretched */
+  .kx-curve-wrap { grid-area: curve; min-width: 0; }
+  .kx-curve { display: block; width: 100%; height: 18px; overflow: visible; color: var(--kx-zone-fill, var(--kx-muted)); }
+  .kx-limit { stroke: var(--kx-grid); stroke-width: 1; stroke-dasharray: 3 3; }
   .kx-area { fill: currentColor; opacity: 0.18; stroke: none; }
   .kx-line { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
   .kx-dip { stroke: var(--kx-fg); stroke-width: 1; opacity: 0.7; }
-  .kx-details { grid-column: 2 / span 2; color: var(--kx-muted); font-size: 0.92em; display: flex; flex-wrap: wrap; gap: 4px 10px; }
-  .kx-badge {
-    display: inline-block; padding: 0 6px; border-radius: 9px; font-size: 0.85em; line-height: 1.5;
-    background: var(--kx-accent); color: var(--kx-bg);
+  .kx-nocurve { font-size: 0.82em; color: var(--kx-muted); font-style: italic; }
+  .kx-meta { grid-area: meta; display: flex; flex-wrap: wrap; gap: 3px 10px; color: var(--kx-muted); font-size: 0.86em; min-width: 0; }
+  .kx-meta span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+  .kx-meta svg { width: 12px; height: 12px; opacity: 0.8; }
+  /* the axis line above each group: column names and the marks of the bar; only in the wide layout */
+  .kx-axis { display: none; }
+
+  @container (min-width: 620px) {
+    .kx-session {
+      grid-template-columns: minmax(0, 1.2fr) minmax(160px, 1fr) minmax(140px, 0.8fr) minmax(72px, auto);
+      grid-template-areas: "title bar curve num" "meta bar curve num";
+      gap: 2px 14px; padding: 8px 6px;
+    }
+    .kx-num { font-size: 1.45em; }
+    .kx-curve { height: 26px; }
+    .kx-axis {
+      display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(160px, 1fr) minmax(140px, 0.8fr) minmax(72px, auto);
+      gap: 0 14px; padding: 2px 6px 4px; font-size: 0.74em; color: var(--kx-muted); text-transform: uppercase; letter-spacing: 0.05em;
+    }
+    .kx-axis .kx-scale { position: relative; height: 1em; }
+    .kx-axis .kx-scale span { position: absolute; top: 0; transform: translateX(-50%); left: calc(var(--t) * 1%); font-variant-numeric: tabular-nums; }
+    .kx-axis .kx-scale span:first-child { transform: none; }
+    .kx-axis .kx-scale span:last-child { transform: translateX(-100%); }
+    .kx-axis .kx-r { text-align: right; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .kx-dot.kx-pulse::after, .kx-fill.kx-busy::after { animation: none; }
+    .kx-fill { transition: none; }
   }
   [hidden] { display: none !important; }
 </style>
 </head>
 <body>
 <header>
-  <div class="kx-head">
-    <h1><span data-testid="count" aria-live="polite">0</span> live Claude sessions</h1>
-    <span class="kx-zones" data-testid="zones">
-      <span class="kx-zone" data-zone="green" data-testid="zone-green">0</span>
-      <span class="kx-zone" data-zone="yellow" data-testid="zone-yellow">0</span>
-      <span class="kx-zone" data-zone="red" data-testid="zone-red">0</span>
-    </span>
+  <h1><span class="kx-n" data-testid="count" aria-live="polite">0</span> live Claude sessions</h1>
+  <div class="kx-meter" data-testid="zones">
+    <div class="kx-meter-bar" role="img" aria-label="no sessions"></div>
+    <div class="kx-meter-leg"></div>
   </div>
   <label><input type="checkbox" data-testid="all"> All projects</label>
 </header>
@@ -123,11 +193,20 @@
   const errorsEl = document.querySelector('[data-testid="errors"]');
   const contactEl = document.querySelector('[data-testid="contact"]');
   const listEl = document.querySelector('[data-testid="list"]');
-  const zoneEl = { green: document.querySelector('[data-testid="zone-green"]'), yellow: document.querySelector('[data-testid="zone-yellow"]'), red: document.querySelector('[data-testid="zone-red"]') };
+  const meterBarEl = document.querySelector(".kx-meter-bar");
+  const meterLegEl = document.querySelector(".kx-meter-leg");
+
+  // ── The zones and the scale, as data. The core decides a session's zone (core.cjs zone()); this list
+  // orders the zones in the meter and the legend, names them, and picks the colour pair --kx-<zone> (text)
+  // and --kx-<zone>-fill (fills) defined in the style above. LIMITS are the boundaries drawn as dashed lines
+  // on the curve, gaps on the context bar and labels on the axis; SCALE is the full width of the bar.
+  // A new zone is one entry here, one limit there and one colour pair in the style. ─────────────────
+  const ZONES = ["green", "yellow", "red"];
+  const ZONE_NAME = Object.fromEntries(ZONES.map((z) => [z, z]));
+  const LIMITS = [100000, 150000];
+  const SCALE = 200000;
 
   // ── Rendering (DOM API only, never innerHTML with data) ────────────────────
-  const ZONE_NAME = { green: "green", yellow: "yellow", red: "red" };
-
   function tokensText(tokens) {
     if (!Number.isFinite(tokens)) return "unknown";
     if (tokens < 1000) return String(tokens);
@@ -145,6 +224,15 @@
     return `${Math.floor(h / 24)} d ago`;
   }
 
+  /** "100K and 150K", "100K, 125K and 150K": the limits as words for tooltips. */
+  function listText(items) {
+    return items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+  }
+  const MARKS_TEXT = listText(LIMITS.map(tokensText));
+  const SCALE_TEXT = `0–${tokensText(SCALE)}`;
+  const share = (tokens) => (Number.isFinite(tokens) ? Math.min(1, tokens / SCALE) : 0);
+  const pct = (n) => String(Math.round(n * 10000) / 100);
+
   function el(tag, className, text) {
     const e = document.createElement(tag);
     if (className) e.className = className;
@@ -158,26 +246,60 @@
     return e;
   }
 
-  // ── Sparkline: tokens per turn, oldest left. The viewBox is 100 × 24 and stretched to the row
+  /**
+   * Marks an element with its zone: data-zone for styling and tests, and the two custom properties the
+   * style reads (--kx-zone-fill, --kx-zone-text), set through the CSSOM (allowed under the CSP, unlike a
+   * style attribute). Children inherit them, so one call per row colours the dot, the bar, the curve and
+   * the count. An unknown zone sets neither, and the style falls back to the muted colour.
+   */
+  function zoned(e, zone) {
+    const known = ZONES.includes(zone);
+    e.dataset.zone = known ? zone : "unknown";
+    if (known) {
+      e.style.setProperty("--kx-zone-fill", `var(--kx-${zone}-fill)`);
+      e.style.setProperty("--kx-zone-text", `var(--kx-${zone})`);
+    }
+    return e;
+  }
+
+  // Icons: Lucide paths drawn inline (no image files, no icon font)
+  const ICON = {
+    clock: ["M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z", "M12 6v6l4 2"],
+    repeat: ["m17 2 4 4-4 4", "M3 11v-1a4 4 0 0 1 4-4h14", "m7 22-4-4 4-4", "M21 13v1a4 4 0 0 1-4 4H3"],
+    cpu: ["M4 4h16v16H4z", "M9 9h6v6H9z", "M9 1v3", "M15 1v3", "M9 20v3", "M15 20v3", "M20 9h3", "M20 14h3", "M1 9h3", "M1 14h3"],
+    zap: ["M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"],
+    folder: ["M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"],
+    moon: ["M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"],
+  };
+  function icon(name) {
+    const svg = svgEl("svg", { class: "kx-ico", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": 2, "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": "true" });
+    for (const d of ICON[name]) svg.appendChild(svgEl("path", { d }));
+    return svg;
+  }
+
+  // ── Sparkline: tokens per turn, oldest left. The viewBox is 100 × 24 and stretched to its column
   // (preserveAspectRatio none), so x is the turn's share of the width and strokes are non-scaling. The
-  // y-axis runs from 0 to the larger of 200K and the series' top, so the 100K and 150K lines always show
-  // and rows compare. Fewer than two points: no curve.
-  const CURVE_W = 100, CURVE_H = 24, Y_MIN = 200000, LIMITS = [100000, 150000];
+  // y-axis runs from 0 to the larger of SCALE and the series' top, so the limit lines always show and rows
+  // compare. Fewer than two points: no curve.
+  const CURVE_W = 100, CURVE_H = 24;
   const num = (n) => String(Math.round(n * 100) / 100);
 
   function curveFor(session) {
     // the core only pushes numbers, and dips index this very list, so it is drawn as it comes
     const series = Array.isArray(session.series) ? session.series : [];
     if (series.length < 2) return null;
-    const top = Math.max(Y_MIN, ...series);
+    const top = Math.max(SCALE, ...series);
     const x = (i) => (i / (series.length - 1)) * CURVE_W;
     const y = (v) => CURVE_H - 1 - (v / top) * (CURVE_H - 2); // 1 px margin top and bottom for the stroke
     const dips = Array.isArray(session.dips) ? session.dips.filter((i) => i > 0 && i < series.length) : [];
+    const label = `Tokens per turn, ${series.length} ${series.length === 1 ? "turn" : "turns"}, ${dips.length} ${dips.length === 1 ? "drop" : "drops"}`;
     const svg = svgEl("svg", {
       class: "kx-curve", viewBox: `0 0 ${CURVE_W} ${CURVE_H}`, preserveAspectRatio: "none", role: "img",
-      "data-testid": "curve", "data-points": series.length, "data-zone": session.zone || "unknown",
-      "aria-label": `Tokens per turn, ${series.length} turns, ${dips.length} drops`,
+      "data-testid": "curve", "data-points": series.length, "aria-label": label,
     });
+    const title = svgEl("title", {});
+    title.textContent = `${label} · dashed lines at ${MARKS_TEXT}`;
+    svg.appendChild(title);
     for (const g of LIMITS) svg.appendChild(svgEl("line", { class: "kx-limit", "data-limit": g, x1: 0, x2: CURVE_W, y1: num(y(g)), y2: num(y(g)), "vector-effect": "non-scaling-stroke" }));
     const points = series.map((v, i) => `${num(x(i))},${num(y(v))}`).join(" L");
     svg.appendChild(svgEl("path", { class: "kx-area", d: `M0,${CURVE_H} L${points} L${CURVE_W},${CURVE_H} Z` }));
@@ -186,54 +308,158 @@
     return svg;
   }
 
+  /** The context bar: the fill is the count's share of SCALE, a gap at every limit, a hatched end above SCALE. */
+  function barFor(session) {
+    const bar = el("div", "kx-bar");
+    bar.setAttribute("role", "img");
+    bar.dataset.testid = "bar";
+    const known = Number.isFinite(session.tokens);
+    bar.title = known ? `${tokensText(session.tokens)} tokens in the context · scale ${SCALE_TEXT}, marks at ${MARKS_TEXT}` : "no count yet";
+    bar.setAttribute("aria-label", !known ? "no count" : session.tokens > SCALE ? `over the ${tokensText(SCALE)} scale` : `${Math.round(share(session.tokens) * 100)} % of the ${tokensText(SCALE)} scale`);
+    const fill = el("span", "kx-fill" + (session.busy ? " kx-busy" : ""));
+    fill.style.setProperty("--p", pct(share(session.tokens)));
+    bar.appendChild(fill);
+    for (const g of LIMITS) {
+      const tick = el("span", "kx-tick");
+      tick.style.setProperty("--t", pct(g / SCALE));
+      bar.appendChild(tick);
+    }
+    if (known && session.tokens > SCALE) bar.appendChild(el("span", "kx-over"));
+    return bar;
+  }
+
   function rowFor(session) {
-    const curve = curveFor(session);
-    const row = el("article", "kx-session" + (session.dimmed ? " kx-dimmed" : "") + (curve ? " kx-with-curve" : ""));
+    const row = zoned(el("article", "kx-session" + (session.dimmed ? " kx-dimmed" : "")), session.zone);
     row.dataset.session = session.sessionId || "";
-    row.dataset.zone = session.zone || "unknown";
+    const titleRow = el("div", "kx-row-title");
     const dot = el("span", "kx-dot" + (session.busy ? " kx-pulse" : ""));
-    dot.dataset.zone = session.zone || "unknown";
     dot.title = `Zone: ${ZONE_NAME[session.zone] || "unknown"}`;
-    row.appendChild(dot);
+    titleRow.appendChild(dot);
     const title = el("div", "kx-title", session.title || "unknown");
     title.title = session.title || "unknown";
-    row.appendChild(title);
-    const tokens = el("div", "kx-tokens", tokensText(session.tokens));
-    tokens.dataset.zone = session.zone || "unknown";
+    titleRow.appendChild(title);
+    if (session.busy) {
+      const badge = el("span", "kx-badge");
+      badge.appendChild(icon("zap"));
+      badge.appendChild(document.createTextNode("busy"));
+      titleRow.appendChild(badge);
+    }
+    row.appendChild(titleRow);
+    const count = el("div", "kx-count");
+    const tokens = zoned(el("div", "kx-num", tokensText(session.tokens)), session.zone);
     tokens.dataset.testid = "tokens";
-    row.appendChild(tokens);
-    if (curve) row.appendChild(curve);
-    const details = el("div", "kx-details");
-    if (session.busy) details.appendChild(el("span", "kx-badge", "busy"));
-    details.appendChild(el("span", "", session.modelShort || "unknown"));
-    details.appendChild(el("span", "", `zone ${ZONE_NAME[session.zone] || "unknown"}`));
-    details.appendChild(el("span", "", `${session.turns} ${session.turns === 1 ? "turn" : "turns"}`));
-    details.appendChild(el("span", "", sinceText(session.sinceMs)));
-    row.appendChild(details);
+    tokens.setAttribute("aria-label", `${tokensText(session.tokens)} tokens, zone ${ZONE_NAME[session.zone] || "unknown"}`);
+    count.appendChild(tokens);
+    if (ZONE_NAME[session.zone]) count.appendChild(el("span", "kx-zone-txt", ZONE_NAME[session.zone]));
+    row.appendChild(count);
+    row.appendChild(barFor(session));
+    const curveWrap = el("div", "kx-curve-wrap");
+    curveWrap.appendChild(curveFor(session) || el("span", "kx-nocurve", session.turns ? "one turn, no curve yet" : "no turns yet"));
+    row.appendChild(curveWrap);
+    const meta = el("div", "kx-meta");
+    const add = (name, text) => { const s = el("span"); s.appendChild(icon(name)); s.appendChild(document.createTextNode(text)); meta.appendChild(s); };
+    add("cpu", session.modelShort || "unknown");
+    add("repeat", `${session.turns} ${session.turns === 1 ? "turn" : "turns"}`);
+    add("clock", sinceText(session.sinceMs));
+    row.appendChild(meta);
     return row;
+  }
+
+  function groupHeading(text, n, iconName, className) {
+    const h = el("h2", "kx-group" + (className ? ` ${className}` : ""));
+    h.appendChild(icon(iconName));
+    h.appendChild(document.createTextNode(text));
+    h.appendChild(el("span", "kx-gn", `· ${n}`));
+    return h;
+  }
+
+  /** The axis line above a group in the wide layout: the column names and the bar's marks at their positions. */
+  function axisLine() {
+    const axis = el("div", "kx-axis");
+    axis.setAttribute("aria-hidden", "true");
+    axis.appendChild(el("span", "", "session"));
+    const scale = el("div", "kx-scale");
+    for (const v of [0, ...LIMITS, SCALE]) {
+      const s = el("span", "", tokensText(v));
+      s.style.setProperty("--t", pct(v / SCALE));
+      scale.appendChild(s);
+    }
+    axis.appendChild(scale);
+    axis.appendChild(el("span", "", "tokens per turn"));
+    axis.appendChild(el("span", "kx-r", "context"));
+    return axis;
+  }
+
+  /** The sessions as two groups, busy and idle, each with its heading and axis; the order within a group is the list's. */
+  function groupsFor(sessions) {
+    const frag = document.createDocumentFragment();
+    const parts = [["Working now", "zap", sessions.filter((s) => s.busy)], ["Idle", "moon", sessions.filter((s) => !s.busy)]];
+    for (const [text, iconName, list] of parts) {
+      if (!list.length) continue;
+      frag.appendChild(groupHeading(text, list.length, iconName));
+      const rows = el("div", "kx-rows");
+      rows.appendChild(axisLine());
+      for (const s of list) rows.appendChild(rowFor(s));
+      frag.appendChild(rows);
+    }
+    return frag;
+  }
+
+  function renderMeter(zoneCounts) {
+    const counts = ZONES.map((z) => [z, Number.isFinite(zoneCounts[z]) ? zoneCounts[z] : 0]);
+    const known = counts.reduce((sum, [, n]) => sum + n, 0);
+    meterBarEl.textContent = "";
+    meterLegEl.textContent = "";
+    meterBarEl.setAttribute("aria-label", known ? counts.map(([z, n]) => `${n} ${ZONE_NAME[z]}`).join(", ") : "no sessions with a known zone");
+    for (const [z, n] of counts) {
+      const seg = zoned(el("span"), z);
+      seg.style.width = known ? `${pct(n / known)}%` : "0";
+      meterBarEl.appendChild(seg);
+      const item = zoned(el("span"), z);
+      const b = el("b", "", String(n));
+      b.dataset.testid = `zone-${z}`;
+      item.appendChild(b);
+      item.appendChild(document.createTextNode(` ${ZONE_NAME[z]}`));
+      item.title = `${n} in the ${ZONE_NAME[z]} zone`;
+      meterLegEl.appendChild(item);
+    }
   }
 
   function render(data) {
     countEl.textContent = String(data.count || 0);
-    const zones = data.zoneCounts || {};
-    for (const zone of Object.keys(zoneEl)) {
-      const n = Number.isFinite(zones[zone]) ? zones[zone] : 0;
-      zoneEl[zone].textContent = String(n);
-      zoneEl[zone].title = `${n} in the ${ZONE_NAME[zone]} zone`;
-    }
+    renderMeter(data.zoneCounts || {});
     allEl.checked = !!data.all;
     errorsEl.textContent = "";
     errorsEl.hidden = !(data.errors && data.errors.length);
     if (!errorsEl.hidden) for (const f of data.errors) errorsEl.appendChild(el("div", "kx-error", f));
+    // the bar's width transition needs the fill to start where the previous render left it: the previous
+    // widths are kept per session, the new rows start there, and after a forced layout they move
+    const previous = new Map();
+    for (const row of listEl.querySelectorAll(".kx-session")) {
+      const fill = row.querySelector(".kx-fill");
+      if (fill) previous.set(row.dataset.session, fill.style.getPropertyValue("--p"));
+    }
     listEl.textContent = "";
     if (!data.count) { listEl.appendChild(el("p", "kx-message", "No live Claude sessions")); return; }
     if (data.groups) {
       for (const g of data.groups) {
-        listEl.appendChild(el("h2", "kx-group", g.project || "unknown"));
-        for (const session of g.sessions) listEl.appendChild(rowFor(session));
+        listEl.appendChild(groupHeading(g.project || "unknown", g.sessions.length, "folder", "kx-project"));
+        listEl.appendChild(groupsFor(g.sessions));
       }
     } else {
-      for (const session of data.sessions) listEl.appendChild(rowFor(session));
+      listEl.appendChild(groupsFor(data.sessions));
+    }
+    const moving = [];
+    for (const row of listEl.querySelectorAll(".kx-session")) {
+      const fill = row.querySelector(".kx-fill");
+      const from = previous.get(row.dataset.session);
+      if (!fill || from === undefined || from === fill.style.getPropertyValue("--p")) continue;
+      moving.push([fill, fill.style.getPropertyValue("--p")]);
+      fill.style.setProperty("--p", from);
+    }
+    if (moving.length) {
+      void listEl.offsetWidth; // lay out once at the previous widths, so the change below transitions
+      for (const [fill, to] of moving) fill.style.setProperty("--p", to);
     }
   }
 
