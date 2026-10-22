@@ -57,7 +57,9 @@ head. The set since the gauges redesign (2026-10-22): `--kx-bg`, `--kx-fg`, `--k
 `--kx-heading`, `--kx-badge-bg`, `--kx-badge-fg`, `--kx-grid`, `--kx-track`, `--kx-blue`, and per zone the
 pair `--kx-<zone>` (text: the count and the legend numbers) and `--kx-<zone>-fill` (fills: the dot, the
 context bar, the curve and the meter segments), for `green`, `yellow`, `orange` (since the four zones,
-2026-10-22; `--vscode-charts-orange`) and `red`. The zone list, the limits (100K, 125K and 150K) and the
+2026-10-22) and `red`. Orange is mixed halfway between the theme's yellow and red, not read from
+`--vscode-charts-orange`: VS Code derives that one from `editor.findMatchHighlightBackground` (`#EA5C0055`),
+a third-opaque orange that read brown over the dark side bar (Frode, 2026-10-22). The zone list, the limits (100K, 125K and 150K) and the
 scale (200K) are three constants at the top of the panel's script; a new zone is one entry there, one
 limit and one colour pair, and `core.cjs` decides the zone (`zone()`, `zoneCounts`).
 

@@ -20,13 +20,15 @@
     /* the zone colours for text (the count, the legend numbers) … */
     --kx-green: var(--vscode-charts-green, #1a7f37);
     --kx-yellow: var(--vscode-charts-yellow, #9a6700);
-    --kx-orange: var(--vscode-charts-orange, #bc4c00);
+    /* not --vscode-charts-orange: VS Code derives it from editor.findMatchHighlightBackground (#EA5C0055),
+       a third-opaque orange that reads brown over a dark side bar. Halfway between the theme's yellow and red instead. */
+    --kx-orange: color-mix(in srgb, var(--kx-yellow) 50%, var(--kx-red));
     --kx-red: var(--vscode-charts-red, #cf222e);
     /* … and for fills (dot, context bar, curve, meter segments), so a host can pick a palette per use.
        Every zone in ZONES below has a pair --kx-<zone> / --kx-<zone>-fill; adding a zone adds a pair here. */
     --kx-green-fill: var(--vscode-charts-green, var(--kx-green));
     --kx-yellow-fill: var(--vscode-charts-yellow, var(--kx-yellow));
-    --kx-orange-fill: var(--vscode-charts-orange, var(--kx-orange));
+    --kx-orange-fill: color-mix(in srgb, var(--kx-yellow-fill) 50%, var(--kx-red-fill));
     --kx-red-fill: var(--vscode-charts-red, var(--kx-red));
     --kx-blue: var(--vscode-charts-blue, #0969da); /* reserved for busy accents */
     --kx-grid: var(--vscode-charts-lines, color-mix(in srgb, var(--kx-muted) 55%, transparent)); /* limit lines, marks */
