@@ -38,7 +38,7 @@ press Enter.
 - Click the **Claude Context** icon (a clock) in the activity bar, the vertical icon bar on the far left.
   With many icons it may sit behind **…** at the end of the bar; right-click the bar to choose which icons
   it shows.
-- Or: Command Palette → **Focus on Claude sessions View** (type `Claude sessions`). **View: Open View…**
+- Or: Command Palette → **Claude Context: Focus on Claude sessions View** (type `Claude sessions`). **View: Open View…**
   followed by `Claude sessions` does the same.
 
 If neither the icon nor the command shows up, the window was not reloaded after the install: run
