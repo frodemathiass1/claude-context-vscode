@@ -7,3 +7,6 @@ the core reads.
 
 `transcripts/` are hand-made `.jsonl` transcripts in Claude Code's internal format, each exercising one
 rule in `parseTranscript` (see the test names in `../core.test.js`).
+
+`ttl-drop.jsonl` is three turns whose `cache_creation` goes 1-hour, then 5-minute, then nothing: the TTL
+the core reports drops to 5m and stays there.

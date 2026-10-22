@@ -8,8 +8,12 @@ begins around 125K-150K tokens". The sessions sit under "Working now" and "Idle"
 context bar scaled 0–200K with marks at 100K, 125K and 150K (its tooltip says what to do at the next phase
 boundary in the yellow, orange and red zones), a sparkline of tokens per turn with a marker at
 every compaction or `/clear`, the count in the zone colour, and the model, the number of turns and the
-time since the last turn. Busy sessions pulse and sort first; sessions idle for more than an hour are
-dimmed. The rows stack in the narrow sidebar and spread over four columns when the panel is 620 px or
+time since the last turn, and the prompt cache: "warm · 47 min" counts down to the moment the cache goes
+cold (the last turn plus the TTL Claude Code chose, shown as a 1h or 5m pill; a drop to 5m is marked), a
+few minutes before that the text turns orange, and afterwards it says "cold". The tooltip has the deadline,
+how much of the last turn's context was read from cache and how much was written. The header counts the
+warm and cold sessions beside the zone meter. Busy sessions pulse and sort first; sessions idle for more
+than an hour are dimmed. The rows stack in the narrow sidebar and spread over four columns when the panel is 620 px or
 wider. "All projects" lists the whole machine grouped by project; the default is the sessions inside the
 window's workspace folders.
 

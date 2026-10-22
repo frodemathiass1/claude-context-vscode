@@ -42,16 +42,16 @@ describe("parseTranscript", () => {
   });
 
   it("a transcript without usage, with unknown entries and a line that is not JSON, gives null (unknown) and zero turns", () => {
-    expect(K.parseTranscript(lines("without-usage"))).toEqual({ tokens: null, model: null, lastTurn: null, title: "What time is it?", turns: 0, series: [] });
+    expect(K.parseTranscript(lines("without-usage"))).toEqual({ tokens: null, model: null, lastTurn: null, title: "What time is it?", turns: 0, series: [], cacheTtlMs: null, cacheRead: null, cacheCreated: null });
   });
 
   it("a synthetic entry (API error, model <synthetic>, all counters zero) and a usage without input counters are not turns: the number is the previous real reply", () => {
     const t = K.parseTranscript(lines("synthetic-last"));
-    expect(t).toEqual({ tokens: 140005, model: "claude-opus-5-5", lastTurn: "2026-10-21T21:00:10.000Z", title: "Continue", turns: 1, series: [140005] });
+    expect(t).toEqual({ tokens: 140005, model: "claude-opus-5-5", lastTurn: "2026-10-21T21:00:10.000Z", title: "Continue", turns: 1, series: [140005], cacheTtlMs: 3600000, cacheRead: 100000, cacheCreated: 40000 });
   });
 
   it("an empty tail gives unknown for everything", () => {
-    expect(K.parseTranscript([])).toEqual({ tokens: null, model: null, lastTurn: null, title: null, turns: 0, series: [] });
+    expect(K.parseTranscript([])).toEqual({ tokens: null, model: null, lastTurn: null, title: null, turns: 0, series: [], cacheTtlMs: null, cacheRead: null, cacheCreated: null });
   });
 
   it("the tail parsed as a continuation of the previous state gives the same as the whole file at once", () => {
@@ -114,13 +114,55 @@ describe("parseTranscript", () => {
     expect(first.series).toEqual([40004]);
     expect(K.parseTranscript(all.slice(3), first).series).toEqual([40004, 143002]);
   });
+
+  // the prompt cache: the TTL Claude Code chose, read from the last turn that created cache, and the two counters of the last turn
+  it("cacheTtlMs is one hour when the last turn that created cache had ephemeral_1h_input_tokens, and cacheRead and cacheCreated are the last turn's counters", () => {
+    const t = K.parseTranscript(lines("with-title"));
+    expect(t).toMatchObject({ cacheTtlMs: 3600000, cacheRead: 142000, cacheCreated: 1000 });
+  });
+
+  it("the TTL drops to five minutes when a turn creates cache with ephemeral_5m_input_tokens, and a turn that creates nothing keeps the previous TTL", () => {
+    const all = lines("ttl-drop");
+    expect(K.parseTranscript(all.slice(0, 2))).toMatchObject({ cacheTtlMs: 3600000, cacheRead: 0, cacheCreated: 50000 });
+    expect(K.parseTranscript(all.slice(0, 3))).toMatchObject({ cacheTtlMs: 300000, cacheRead: 50000, cacheCreated: 2000 });
+    expect(K.parseTranscript(all)).toMatchObject({ cacheTtlMs: 300000, cacheRead: 52000, cacheCreated: 0, tokens: 52004 });
+  });
+
+  it("the TTL is null until a turn with cache creation is seen: a flat counter without the nested object says nothing, and so does a usage without cache_creation", () => {
+    expect(K.parseTranscript([turn(1, 5000)])).toMatchObject({ cacheTtlMs: null, cacheRead: 0, cacheCreated: 0 });
+    const flatOnly = K.parseTranscript([turn(1, 5000, {}, { cache_creation_input_tokens: 4000 })]);
+    expect(flatOnly).toMatchObject({ cacheTtlMs: null, cacheCreated: 4000, tokens: 9000 });
+    // a nested object with both counters at zero is a turn that created nothing
+    expect(K.parseTranscript([turn(1, 5000, {}, { cache_creation: { ephemeral_1h_input_tokens: 0, ephemeral_5m_input_tokens: 0 } })]).cacheTtlMs).toBeNull();
+  });
+
+  it("a turn that wrote cache under both TTLs reports five minutes: that part goes cold first", () => {
+    const t = K.parseTranscript([turn(1, 5000, {}, { cache_creation_input_tokens: 300, cache_creation: { ephemeral_1h_input_tokens: 200, ephemeral_5m_input_tokens: 100 } })]);
+    expect(t.cacheTtlMs).toBe(300000);
+  });
+
+  it("a sidechain turn with a different TTL does not count: the TTL and the counters are the main session's", () => {
+    expect(K.parseTranscript(lines("sidechain-last"))).toMatchObject({ cacheTtlMs: 3600000, cacheRead: 40000, cacheCreated: 60000 });
+  });
+
+  it("the three cache fields continue over a tail like the others", () => {
+    const all = lines("ttl-drop");
+    const whole = K.parseTranscript(all);
+    const first = K.parseTranscript(all.slice(0, 2));
+    expect(K.parseTranscript(all.slice(2), first)).toEqual(whole);
+    // a tail without any cache creation keeps the TTL of the previous state
+    expect(K.parseTranscript(all.slice(3), K.parseTranscript(all.slice(0, 3)))).toMatchObject({ cacheTtlMs: 300000, cacheRead: 52000 });
+    // a previous state without the fields (older core) starts from null
+    const older = { tokens: 50005, model: "claude-opus-5-5", lastTurn: "x", title: "T", turns: 1, series: [50005] };
+    expect(K.parseTranscript(all.slice(3), older)).toMatchObject({ cacheTtlMs: null, cacheRead: 52000, cacheCreated: 0 });
+  });
 });
 
-/** One assistant entry that is a turn of its own (own message.id) with the given context sum. */
-function turn(i, tokens, extra = {}) {
+/** One assistant entry that is a turn of its own (own message.id) with the given input count; `usage` overrides fields of the usage. */
+function turn(i, tokens, extra = {}, usage = {}) {
   return JSON.stringify({ parentUuid: `u${i}`, isSidechain: false, type: "assistant", uuid: `a${i}`, timestamp: `2026-10-22T10:${String(i % 60).padStart(2, "0")}:00.000Z`,
     message: { id: `msg_${i}`, model: "claude-opus-5-5", role: "assistant", content: [{ type: "text", text: "." }],
-      usage: { input_tokens: tokens, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, output_tokens: 1 } }, ...extra });
+      usage: { input_tokens: tokens, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, output_tokens: 1, ...usage } }, ...extra });
 }
 
 describe("dips", () => {
@@ -239,11 +281,12 @@ describe("buildSessions", () => {
     reg(4, "other", OTHER, "idle"),
     reg(5, "without", MINE, "idle"),
   ];
+  const H1 = 3600000, M5 = 300000;
   const transcripts = {
-    old: tail(170500, "2026-10-21T21:20:00.000Z"),           // 1 h 20 min ago → dimmed, red
-    new: tail(143002, "2026-10-21T22:28:00.000Z", { model: "claude-fable-5-1" }), // 12 min ago, orange
-    busy: tail(20000, "2026-10-21T20:00:00.000Z"),           // busy, although the last turn is old
-    other: tail(5000, "2026-10-21T22:39:30.000Z"),
+    old: tail(170500, "2026-10-21T21:20:00.000Z", { cacheTtlMs: H1, cacheRead: 160000, cacheCreated: 10000 }), // 1 h 20 min ago → dimmed, red, cold
+    new: tail(143002, "2026-10-21T22:28:00.000Z", { model: "claude-fable-5-1", cacheTtlMs: H1, cacheRead: 142000, cacheCreated: 1000 }), // 12 min ago, orange, warm
+    busy: tail(20000, "2026-10-21T20:00:00.000Z", { cacheTtlMs: M5, cacheRead: 0, cacheCreated: 19000 }), // busy, although the last turn is old; cold
+    other: tail(5000, "2026-10-21T22:39:30.000Z", { cacheTtlMs: M5, cacheRead: 4000, cacheCreated: 1000 }), // 30 s ago, warm for 4.5 min
     // "without" has no transcript yet
   };
 
@@ -290,6 +333,37 @@ describe("buildSessions", () => {
     const withYellow = { ...transcripts, without: tail(110000, NOW) };
     expect(K.buildSessions({ registry, transcripts: withYellow, now: NOW, workspaceFolders: [MINE], all: false }).zoneCounts).toEqual({ green: 1, yellow: 1, orange: 1, red: 1 });
     expect(K.buildSessions({ registry: [], transcripts: {}, now: NOW, workspaceFolders: [MINE], all: false }).zoneCounts).toEqual({ green: 0, yellow: 0, orange: 0, red: 0 });
+  });
+
+  // the prompt cache per session: hit share of the last turn, the deadline the cache goes cold, and the state now
+  it("per session: hit share of the last turn, the cold deadline from the last turn plus the TTL, the time left, and warm or cold now", () => {
+    const r = K.buildSessions({ registry, transcripts, now: NOW, workspaceFolders: [MINE], all: true });
+    const by = Object.fromEntries(r.sessions.map((s) => [s.sessionId, s]));
+    expect(by.new).toMatchObject({ cacheTtlMs: H1, cacheRead: 142000, cacheCreated: 1000, coldAt: "2026-10-21T23:28:00.000Z", coldInMs: 48 * 60000, cacheState: "warm" });
+    expect(by.new.hitShare).toBeCloseTo(142000 / 143002, 6);
+    expect(by.old).toMatchObject({ coldAt: "2026-10-21T22:20:00.000Z", coldInMs: -20 * 60000, cacheState: "cold" });
+    expect(by.busy).toMatchObject({ cacheTtlMs: M5, coldAt: "2026-10-21T20:05:00.000Z", cacheState: "cold", hitShare: 0 });
+    expect(by.other).toMatchObject({ coldInMs: 4.5 * 60000, cacheState: "warm" });
+    expect(by.other.hitShare).toBeCloseTo(0.8, 6);
+    expect(by.without).toMatchObject({ cacheTtlMs: null, cacheRead: null, cacheCreated: null, hitShare: null, coldAt: null, coldInMs: null, cacheState: null });
+  });
+
+  it("a session at exactly the deadline is cold, a transcript without a TTL (older Claude Code) has no deadline, and a hit share needs a count", () => {
+    const at = tail(100000, "2026-10-21T21:40:00.000Z", { cacheTtlMs: H1, cacheRead: 90000, cacheCreated: 0 }); // 21:40 + 1 h = NOW
+    const noTtl = tail(100000, NOW, { cacheRead: 90000, cacheCreated: 0 });
+    const noCount = { title: "T", cacheTtlMs: H1, cacheRead: 0, cacheCreated: 0 };
+    const r = K.buildSessions({ registry: [reg(1, "at", MINE, "idle"), reg(2, "noTtl", MINE, "idle"), reg(3, "noCount", MINE, "idle")],
+      transcripts: { at, noTtl, noCount }, now: NOW, workspaceFolders: [MINE], all: false });
+    const by = Object.fromEntries(r.sessions.map((s) => [s.sessionId, s]));
+    expect(by.at).toMatchObject({ coldInMs: 0, cacheState: "cold" });
+    expect(by.noTtl).toMatchObject({ cacheTtlMs: null, cacheRead: 90000, hitShare: 0.9, coldAt: null, coldInMs: null, cacheState: null });
+    expect(by.noCount).toMatchObject({ tokens: null, hitShare: null, coldAt: null, cacheState: null });
+  });
+
+  it("the header counts warm and cold over the listed sessions; sessions without a TTL are not counted", () => {
+    expect(K.buildSessions({ registry, transcripts, now: NOW, workspaceFolders: [MINE], all: false }).cacheCounts).toEqual({ warm: 1, cold: 2 });
+    expect(K.buildSessions({ registry, transcripts, now: NOW, workspaceFolders: [MINE], all: true }).cacheCounts).toEqual({ warm: 2, cold: 2 });
+    expect(K.buildSessions({ registry: [], transcripts: {}, now: NOW, workspaceFolders: [MINE], all: false }).cacheCounts).toEqual({ warm: 0, cold: 0 });
   });
 
   it("a session in a subfolder of the workspace folder belongs to the window, one in a folder with the same prefix does not", () => {
@@ -350,7 +424,8 @@ describe("SessionReader", () => {
 
       appendFileSync(file, all.slice(5).join("\n") + "\n");
       const second = reader.read({ workspaceFolders: [MINE], all: false });
-      expect(second.sessions[0]).toMatchObject({ turns: 2, tokens: 143002, model: "claude-opus-5-5" });
+      expect(second.sessions[0]).toMatchObject({ turns: 2, tokens: 143002, model: "claude-opus-5-5", cacheTtlMs: 3600000, cacheRead: 142000, cacheCreated: 1000, cacheState: "cold" });
+      expect(second.cacheCounts).toEqual({ warm: 0, cold: 1 }); // the fixture's last turn is 2026-10-21, long past its hour
       expect(typeof second.generatedAt).toBe("string");
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
