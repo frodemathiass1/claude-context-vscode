@@ -49,3 +49,16 @@ So step 4 of the plan needs no code change: the core already reads Bedrock trans
 with a non-2xx status) and then listens to server-sent events on `/claude-context/api/stream`, where
 every event is named `sessions` and carries the same JSON. A host that wants the panel in a browser
 serves the file and those two routes with `core.cjs`.
+
+The panel's colours and fonts are the `--kx-*` variables at the top of `panel.html`, each defaulting to a
+`--vscode-*` variable with a plain fallback. A host sets them from its own tokens in a style appended to
+head. The set since the gauges redesign (2026-10-22): `--kx-bg`, `--kx-fg`, `--kx-muted`, `--kx-border`,
+`--kx-border-strong`, `--kx-row-hover`, `--kx-accent`, `--kx-font`, `--kx-font-size`, `--kx-mono`,
+`--kx-heading`, `--kx-badge-bg`, `--kx-badge-fg`, `--kx-grid`, `--kx-track`, `--kx-blue`, and per zone the
+pair `--kx-<zone>` (text: the count and the legend numbers) and `--kx-<zone>-fill` (fills: the dot, the
+context bar, the curve and the meter segments), for `green`, `yellow` and `red`. The zone list, the
+limits (100K and 150K) and the scale (200K) are three constants at the top of the panel's script; a new
+zone is one entry there, one limit and one colour pair.
+
+The panel keeps `<header>` and `<main>` as its two top-level blocks (plus the two hidden message blocks
+with `data-testid="contact"` and `data-testid="errors"`), so a host can size and centre them.

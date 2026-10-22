@@ -1,11 +1,14 @@
 # Claude Context
 
 A VS Code panel that shows the context window of every live Claude Code session on the machine, updated
-in real time: title, model, tokens in the context, a colour zone (green below 100K, yellow up to 150K,
-red above), a sparkline of tokens per turn with a marker at every compaction or `/clear`, the number of
-turns and the time since the last turn. Sessions that are busy pulse and sort first; sessions idle for
-more than an hour are dimmed. "All projects" lists the whole machine grouped by project; the default is
-the sessions inside the window's workspace folders.
+in real time. The header has the count and a zone meter (how many sessions are green, below 100K tokens;
+yellow, up to 150K; red, above). The sessions sit under "Working now" and "Idle", one row each: title, a
+context bar scaled 0–200K with marks at 100K and 150K, a sparkline of tokens per turn with a marker at
+every compaction or `/clear`, the count in the zone colour, and the model, the number of turns and the
+time since the last turn. Busy sessions pulse and sort first; sessions idle for more than an hour are
+dimmed. The rows stack in the narrow sidebar and spread over four columns when the panel is 620 px or
+wider. "All projects" lists the whole machine grouped by project; the default is the sessions inside the
+window's workspace folders.
 
 No dependencies, no build step: `extension.js` (the host), `core.cjs` (pure functions) and `panel.html`
 (the webview).
