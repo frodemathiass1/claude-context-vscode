@@ -42,16 +42,16 @@ describe("parseTranscript", () => {
   });
 
   it("a transcript without usage, with unknown entries and a line that is not JSON, gives null (unknown) and zero turns", () => {
-    expect(K.parseTranscript(lines("without-usage"))).toEqual({ tokens: null, model: null, lastTurn: null, title: "What time is it?", turns: 0, series: [], cacheTtlMs: null, cacheRead: null, cacheCreated: null, compactions: [], outputSeries: [], thinkingSeries: [], outputTotal: 0, thinkingTotal: 0, effort: null, baseline: null, baselineAt: null, baselineCause: null });
+    expect(K.parseTranscript(lines("without-usage"))).toEqual({ tokens: null, model: null, lastTurn: null, title: "What time is it?", turns: 0, series: [], cacheTtlMs: null, cacheRead: null, cacheCreated: null, compactions: [], outputSeries: [], thinkingSeries: [], outputTotal: 0, thinkingTotal: 0, effort: null, baseline: null, baselineAt: null, baselineCause: null, growthBySource: {} });
   });
 
   it("a synthetic entry (API error, model <synthetic>, all counters zero) and a usage without input counters are not turns: the number is the previous real reply", () => {
     const t = K.parseTranscript(lines("synthetic-last"));
-    expect(t).toEqual({ tokens: 140005, model: "claude-opus-5-5", lastTurn: "2026-10-21T21:00:10.000Z", title: "Continue", turns: 1, series: [140005], cacheTtlMs: 3600000, cacheRead: 100000, cacheCreated: 40000, compactions: [], outputSeries: [30], thinkingSeries: [0], outputTotal: 30, thinkingTotal: 0, effort: null, baseline: 140005, baselineAt: 0, baselineCause: "start" });
+    expect(t).toEqual({ tokens: 140005, model: "claude-opus-5-5", lastTurn: "2026-10-21T21:00:10.000Z", title: "Continue", turns: 1, series: [140005], cacheTtlMs: 3600000, cacheRead: 100000, cacheCreated: 40000, compactions: [], outputSeries: [30], thinkingSeries: [0], outputTotal: 30, thinkingTotal: 0, effort: null, baseline: 140005, baselineAt: 0, baselineCause: "start", growthBySource: {} });
   });
 
   it("an empty tail gives unknown for everything", () => {
-    expect(K.parseTranscript([])).toEqual({ tokens: null, model: null, lastTurn: null, title: null, turns: 0, series: [], cacheTtlMs: null, cacheRead: null, cacheCreated: null, compactions: [], outputSeries: [], thinkingSeries: [], outputTotal: 0, thinkingTotal: 0, effort: null, baseline: null, baselineAt: null, baselineCause: null });
+    expect(K.parseTranscript([])).toEqual({ tokens: null, model: null, lastTurn: null, title: null, turns: 0, series: [], cacheTtlMs: null, cacheRead: null, cacheCreated: null, compactions: [], outputSeries: [], thinkingSeries: [], outputTotal: 0, thinkingTotal: 0, effort: null, baseline: null, baselineAt: null, baselineCause: null, growthBySource: {} });
   });
 
   it("the tail parsed as a continuation of the previous state gives the same as the whole file at once", () => {
@@ -255,7 +255,62 @@ describe("parseTranscript", () => {
     const later = [...all.slice(0, 10), boundary, ...all.slice(10)];
     expect(K.parseTranscript(later)).toMatchObject({ baseline: 11000, baselineAt: 9, baselineCause: "compaction" });
   });
+
+  // the growth by source: each turn's growth split over the previous output and what entered since
+  it("one tool per turn: the growth is the previous turn's output first, the rest the tool's result", () => {
+    const t = K.parseTranscript([said("go"), call(1, 10000, 200, [["t1", "Read"]]), result([["t1", "x".repeat(4000)]]),
+      call(2, 13200, 300, [["t2", "Bash"]]), result([["t2", "y".repeat(100)]]), call(3, 14000, 50)]);
+    expect(t.growthBySource).toEqual({ output: 500, Read: 3000, Bash: 500 });
+  });
+
+  it("two tools in one turn split the rest in proportion to the length of their results; an image weighs a fixed length", () => {
+    const two = [call(1, 10000, 100, [["a", "Read"], ["b", "Grep"]]), result([["a", "x".repeat(3000)]]), result([["b", [{ type: "text", text: "y".repeat(1000) }]]]), call(2, 14100, 10)];
+    expect(K.parseTranscript(two).growthBySource).toEqual({ output: 100, Read: 3000, Grep: 1000 });
+    // the image's base64 is long, but it counts as IMAGE_CHARS (3 500), as much as the 3 500 characters of text
+    const image = [{ type: "image", source: { type: "base64", media_type: "image/png", data: "A".repeat(500000) } }];
+    const mixed = [call(1, 10000, 0, [["a", "Read"], ["b", "Grep"]]), result([["a", image], ["b", "y".repeat(3500)]]), call(2, 12000, 0)];
+    expect(K.parseTranscript(mixed).growthBySource).toEqual({ Read: 1000, Grep: 1000 });
+  });
+
+  it("the user's text is \"you\", rendered attachments and meta entries \"other\"; with nothing seen the rest is \"other\"", () => {
+    const t = K.parseTranscript([call(1, 10000, 100), said("x".repeat(600)), attached("z".repeat(300)), said("m".repeat(100), { isMeta: true }),
+      JSON.stringify({ type: "attachment", isSidechain: false, attachment: { type: "deferred_tools_record" } }), call(2, 11100, 5), call(3, 11150, 0)]);
+    // turn 2: 100 output, 1 000 split 600 / 400; turn 3: 5 output, 45 with nothing seen
+    expect(t.growthBySource).toEqual({ output: 105, you: 600, other: 445 });
+  });
+
+  it("a fall is not attributed, a compaction starts over, and sidechain results and results without a known call do not take a tool's name", () => {
+    expect(K.parseTranscript([call(1, 10000, 100, [["a", "Read"]]), result([["a", "x".repeat(900)]]), call(2, 8000, 0)]).growthBySource).toEqual({});
+    const boundary = JSON.stringify({ type: "system", subtype: "compact_boundary", isSidechain: false, compactMetadata: { trigger: "auto" } });
+    const all = [call(1, 10000, 100, [["a", "Read"]]), result([["a", "x".repeat(900)]]), call(2, 20000, 100), boundary, said("go"),
+      call(3, 5000, 100, [["b", "Bash"]]), result([["b", "y".repeat(10)]]), call(4, 6000, 0)];
+    expect(K.parseTranscript(all.slice(0, 3)).growthBySource).toEqual({ output: 100, Read: 9900 });
+    expect(K.parseTranscript(all).growthBySource).toEqual({ output: 100, Bash: 900 });
+    const side = [call(1, 10000, 0, [["a", "Read"]]), result([["a", "x".repeat(500)]], { isSidechain: true }), result([["zz", "y".repeat(500)]]), call(2, 11000, 0)];
+    expect(K.parseTranscript(side).growthBySource).toEqual({ other: 1000 });
+  });
+
+  it("the growth continues over a tail cut anywhere: between a call and its result, and between a result and the next turn", () => {
+    const all = [said("go"), call(1, 10000, 200, [["t1", "Read"], ["t2", "Bash"]]), attached("r".repeat(50)), result([["t1", "x".repeat(4000)]]), result([["t2", "y".repeat(700)]]),
+      call(2, 15000, 300, [["t3", "Agent"]]), call(2, 15000, 300, [["t4", "Read"]]), result([["t3", "z".repeat(2000)]]), result([["t4", "w".repeat(10)]]), said("more"), call(3, 18000, 40)];
+    const whole = K.parseTranscript(all);
+    expect(Object.keys(whole.growthBySource).sort()).toEqual(["Agent", "Bash", "Read", "other", "output", "you"]);
+    for (let cut = 1; cut < all.length; cut++) expect(K.parseTranscript(all.slice(cut), K.parseTranscript(all.slice(0, cut)))).toEqual(whole);
+  });
 });
+
+/** An assistant turn of its own (turn() with output_tokens) whose content is the given tool calls, [id, name] each. */
+function call(i, tokens, output, tools = []) {
+  const e = JSON.parse(turn(i, tokens, {}, { output_tokens: output }));
+  e.message.content = tools.map(([id, name]) => ({ type: "tool_use", id, name, input: {} }));
+  return JSON.stringify(e);
+}
+/** A user entry with tool results, [tool_use_id, content] each. */
+function result(pairs, extra = {}) {
+  return JSON.stringify({ type: "user", isSidechain: false, ...extra, message: { role: "user", content: pairs.map(([id, content]) => ({ type: "tool_result", tool_use_id: id, content })) } });
+}
+function said(content, extra = {}) { return JSON.stringify({ type: "user", isSidechain: false, ...extra, message: { role: "user", content } }); }
+function attached(content) { return JSON.stringify({ type: "attachment", isSidechain: false, attachment: { type: "date" }, rendered: [{ content }] }); }
 
 /** One assistant entry that is a turn of its own (own message.id) with the given input count; `usage` overrides fields of the usage. */
 function turn(i, tokens, extra = {}, usage = {}) {
@@ -455,6 +510,13 @@ describe("buildSessions", () => {
       now: NOW, workspaceFolders: [MINE], all: false });
     expect(odd).toMatchObject({ baselineMedian: 62000, baselineSessions: 3 });
     expect(K.buildSessions({ registry, transcripts, now: NOW, workspaceFolders: [MINE], all: false })).toMatchObject({ baselineMedian: null, baselineSessions: 0 });
+  });
+
+  it("the growth by source passes through, an empty object without a transcript", () => {
+    const r = K.buildSessions({ registry, transcripts: { ...transcripts, new: tail(143002, NOW, { growthBySource: { Read: 41200, output: 9600 } }) },
+      now: NOW, workspaceFolders: [MINE], all: false });
+    expect(r.sessions.find((s) => s.sessionId === "new").growthBySource).toEqual({ Read: 41200, output: 9600 });
+    expect(r.sessions.find((s) => s.sessionId === "without").growthBySource).toEqual({});
   });
 
   it("the count per zone covers the listed sessions in all four zones, unknown is not counted, and with all projects everything shown is counted", () => {

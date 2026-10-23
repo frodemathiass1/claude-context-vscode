@@ -126,7 +126,8 @@
   .kx-num[data-zone="unknown"] { font-family: inherit; font-size: 1em; font-weight: 500; }
   .kx-zone-txt { font-size: 0.78em; line-height: 1; color: var(--kx-muted); }
   /* the context bar: a track scaled 0–200K, the fill in the zone's fill colour, a gap at every limit */
-  .kx-bar { grid-area: bar; position: relative; height: 10px; border-radius: 5px; background: var(--kx-track); overflow: hidden; }
+  .kx-bar-col { grid-area: bar; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  .kx-bar { position: relative; height: 10px; border-radius: 5px; background: var(--kx-track); overflow: hidden; }
   .kx-fill {
     position: absolute; inset: 0 auto 0 0; width: calc(var(--p) * 1%); border-radius: 5px;
     background: var(--kx-zone-fill, var(--kx-muted)); transition: width 0.5s ease; overflow: hidden;
@@ -142,6 +143,8 @@
   @keyframes kx-sheen { from { background-position: -120px 0; } to { background-position: 120px 0; } }
   .kx-tick { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--kx-bg); left: calc(var(--t) * 1%); }
   .kx-over { position: absolute; right: 0; top: 0; bottom: 0; width: 14px; background: repeating-linear-gradient(135deg, transparent 0 3px, var(--kx-bg) 3px 5px); }
+  /* under the bar: the top sources of the conversation's growth, an estimate */
+  .kx-growth { font-size: 0.8em; color: var(--kx-muted); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   /* the sparkline fills its column; strokes stay 1 px although the viewBox is stretched */
   .kx-curve-wrap { grid-area: curve; min-width: 0; }
   .kx-curve { display: block; width: 100%; height: 18px; overflow: visible; color: var(--kx-zone-fill, var(--kx-muted)); }
@@ -436,6 +439,27 @@
     return span;
   }
 
+  /** "browser_click" for "mcp__royktest__browser_click": an MCP tool by its own name, without the server. */
+  const sourceName = (source) => (/^mcp__/.test(source) ? source.split("__").pop() : source);
+  const GROWTH_TOP = 3;
+
+  /**
+   * "≈ Bash 39K · Read 27K · output 10K": the largest sources of the segment's growth (core.cjs growthBySource),
+   * every source in the tooltip with its share. Nothing before the second turn of a segment.
+   */
+  function growthFor(session) {
+    const g = session.growthBySource && typeof session.growthBySource === "object" ? session.growthBySource : {};
+    const list = Object.entries(g).filter(([, n]) => Number.isFinite(n) && n > 0).sort((a, b) => b[1] - a[1]);
+    if (!list.length) return null;
+    const sum = list.reduce((a, [, n]) => a + n, 0);
+    const line = el("div", "kx-growth", `≈ ${list.slice(0, GROWTH_TOP).map(([k, n]) => `${sourceName(k)} ${tokensText(n)}`).join(" · ")}`);
+    line.dataset.testid = "growth";
+    const since = session.baselineCause === "compaction" ? "since the compaction" : "since the first turn";
+    line.title = `Where the context grew ${since}, estimated: ${list.map(([k, n]) => `${sourceName(k)} ${tokensText(n)} (${Math.round((n / sum) * 100)} %)`).join(", ")}`
+      + ` · per turn, what the model wrote (output) first, the rest split by length over the tool results (by tool), your messages (you) and attachments and reminders (other); a fall is not counted`;
+    return line;
+  }
+
   /** "start 62K · conversation 41K", or "start after compaction 35K · …"; empty without a baseline. */
   function baselineText(session) {
     if (!Number.isFinite(session.baseline) || !Number.isFinite(session.tokens)) return "";
@@ -499,7 +523,11 @@
     count.appendChild(tokens);
     if (ZONE_NAME[session.zone]) count.appendChild(el("span", "kx-zone-txt", ZONE_NAME[session.zone]));
     row.appendChild(count);
-    row.appendChild(barFor(session));
+    const barCol = el("div", "kx-bar-col");
+    barCol.appendChild(barFor(session));
+    const growth = growthFor(session);
+    if (growth) barCol.appendChild(growth);
+    row.appendChild(barCol);
     const curveWrap = el("div", "kx-curve-wrap");
     curveWrap.appendChild(curveFor(session) || el("span", "kx-nocurve", session.turns ? "one turn, no curve yet" : "no turns yet"));
     const outputBars = outputFor(session);

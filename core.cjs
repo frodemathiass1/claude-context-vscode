@@ -20,6 +20,11 @@ const DIM_AFTER_MS = 60 * 60 * 1000;
 const TTL_1H_MS = 60 * 60 * 1000, TTL_5M_MS = 5 * 60 * 1000;
 const SERIES_MAX = 200; // the sparkline keeps the last 200 turns, so the payload to the webview stays small
 const DIP_BELOW = 0.7; // a turn is a dip when its context is below 70 % of the previous turn's
+// What an image weighs against text when a turn's growth is split by length. Measured in the owner's transcripts
+// on 2026-10-23: one image grew the context by a median 1 643 tokens (113 gaps with an image and little else),
+// text by one token per 2.06 characters (1 059 gaps without images). The vision docs' rule, ⌈w/28⌉ × ⌈h/28⌉ up
+// to 4 784 tokens, needs the dimensions, which the transcript does not have.
+const IMAGE_CHARS = 3500;
 
 /** The folder name Claude Code gives a project under projects/: every non-alphanumeric char becomes "-". */
 function projectSlug(cwd) {
@@ -94,7 +99,14 @@ function readTail(file, { from, bytes } = {}) {
  * skill and tool listings) plus the first message. A segment starts with the transcript (a new session or a
  * /clear) or at a compaction, which `baselineCause` says ("start", "compaction"); later blocks of that turn
  * update it like the series. `baselineAt` is the segment's first index in `series`, null once it is trimmed
- * out (the baseline stays). A state parsed by an older core gets no baseline: its first turn is unknown. The title is the last ai-title entry, else
+ * out (the baseline stays). A state parsed by an older core gets no baseline: its first turn is unknown.
+ * `growthBySource` estimates where the segment's context went since its first turn. The growth from one turn
+ * to the next (a fall is skipped) goes first to "output", up to the previous turn's output_tokens (what the
+ * model wrote is read back as input), and the rest is split by length over what entered between the two
+ * turns: each tool result under its tool's name, the user's text as "you", meta entries and rendered
+ * attachments as "other" (all of it when nothing was seen). Token counts per result are not in the transcript,
+ * so the split is an estimate. The open tool calls (id → name) and the characters since the last turn are
+ * hidden state. The title is the last ai-title entry, else
  * the first user message (meta entries and tool results skipped) collapsed to one line. With `previous`, the
  * lines are parsed as the continuation of an already parsed transcript, so the host reads only the new bytes.
  */
@@ -108,6 +120,9 @@ function parseTranscript(lines, previous) {
   let outputTotal = p.outputTotal || 0, thinkingTotal = p.thinkingTotal || 0, effort = p.effort ?? null;
   let turnOutput = p.turnOutput || 0, turnThinking = p.turnThinking || 0;
   let baseline = p.baseline ?? null, baselineAt = p.baselineAt ?? null, baselineCause = p.baselineCause ?? null, baselineId = p.baselineId ?? null;
+  let growthBySource = { ...p.growthBySource }, pendingInput = { ...p.pendingInput };
+  const toolNames = { ...p.toolNames };
+  const enter = (source, chars) => { if (chars > 0) pendingInput[source] = (pendingInput[source] || 0) + chars; };
   const series = Array.isArray(p.series) ? p.series.slice() : [];
   const outputSeries = Array.isArray(p.outputSeries) ? p.outputSeries.slice() : [];
   const thinkingSeries = Array.isArray(p.thinkingSeries) ? p.thinkingSeries.slice() : [];
@@ -117,12 +132,26 @@ function parseTranscript(lines, previous) {
     if (!entry || entry.isSidechain) continue;
     if (entry.type === "system" && entry.subtype === "compact_boundary") { pendingCompaction = compaction(entry.compactMetadata); continue; }
     if (entry.type === "ai-title") { if (entry.aiTitle) title = String(entry.aiTitle); continue; }
-    if (entry.type === "user") { if (!firstUser && !entry.isMeta) firstUser = userText(entry.message && entry.message.content); continue; }
+    if (entry.type === "attachment") { if (Array.isArray(entry.rendered)) for (const r of entry.rendered) enter("other", contentChars(r && r.content)); continue; }
+    if (entry.type === "user") {
+      const content = entry.message && entry.message.content;
+      if (!firstUser && !entry.isMeta) firstUser = userText(content);
+      const own = entry.isMeta ? "other" : "you";
+      if (!Array.isArray(content)) enter(own, contentChars(content));
+      else for (const b of content) {
+        if (b && b.type === "tool_result") { enter(toolNames[b.tool_use_id] || "other", contentChars(b.content)); delete toolNames[b.tool_use_id]; }
+        else enter(own, contentChars([b]));
+      }
+      continue;
+    }
     if (entry.type !== "assistant") continue;
+    const blocks = entry.message && Array.isArray(entry.message.content) ? entry.message.content : [];
+    for (const b of blocks) if (b && b.type === "tool_use" && b.id) toolNames[b.id] = typeof b.name === "string" ? b.name : "other";
     const u = entry.message && entry.message.usage;
     // not an API call: Claude Code writes "<synthetic>" entries with zero usage on API errors and
     // aborts, and a usage without the three input counters says nothing about the context
     if (!u || entry.message.model === "<synthetic>" || !hasInputCounters(u)) continue;
+    const before = tokens;
     tokens = num(u.input_tokens) + num(u.cache_creation_input_tokens) + num(u.cache_read_input_tokens);
     cacheRead = num(u.cache_read_input_tokens);
     cacheCreated = num(u.cache_creation_input_tokens);
@@ -140,7 +169,9 @@ function parseTranscript(lines, previous) {
       outputTotal += output; thinkingTotal += thinking;
       let cause = turns === 1 ? "start" : null;
       if (pendingCompaction) { compactions.push({ at: series.length - 1, ...pendingCompaction }); pendingCompaction = null; cause = "compaction"; }
-      if (cause) { baseline = tokens; baselineAt = series.length - 1; baselineCause = cause; baselineId = id; }
+      if (cause) { baseline = tokens; baselineAt = series.length - 1; baselineCause = cause; baselineId = id; growthBySource = {}; }
+      else if (before !== null) attribute(growthBySource, tokens - before, turnOutput, pendingInput);
+      pendingInput = {};
       if (series.length > SERIES_MAX) {
         series.shift();
         compactions = compactions.map((c) => ({ ...c, at: c.at - 1 })).filter((c) => c.at >= 0);
@@ -159,7 +190,7 @@ function parseTranscript(lines, previous) {
     turnOutput = output; turnThinking = thinking;
   }
   const out = { tokens, model, lastTurn, title: title || firstUser || null, turns, series, cacheTtlMs, cacheRead, cacheCreated, compactions,
-    outputSeries, thinkingSeries, outputTotal, thinkingTotal, effort, baseline, baselineAt, baselineCause };
+    outputSeries, thinkingSeries, outputTotal, thinkingTotal, effort, baseline, baselineAt, baselineCause, growthBySource };
   // hidden state for the continuation: not part of what the panel shows, and not part of toEqual
   Object.defineProperty(out, "lastId", { value: lastId, enumerable: false });
   Object.defineProperty(out, "turnOutput", { value: turnOutput, enumerable: false });
@@ -167,7 +198,35 @@ function parseTranscript(lines, previous) {
   Object.defineProperty(out, "firstUser", { value: firstUser, enumerable: false });
   Object.defineProperty(out, "pendingCompaction", { value: pendingCompaction, enumerable: false });
   Object.defineProperty(out, "baselineId", { value: baselineId, enumerable: false });
+  Object.defineProperty(out, "pendingInput", { value: pendingInput, enumerable: false });
+  Object.defineProperty(out, "toolNames", { value: toolNames, enumerable: false });
   return out;
+}
+
+/**
+ * Adds one turn's growth to `into`: first "output", up to what the previous turn wrote, then the rest split
+ * over `inputs` (source → characters) in proportion, rounded to whole tokens; "other" when no input was seen.
+ */
+function attribute(into, growth, output, inputs) {
+  if (!(growth > 0)) return;
+  const add = (source, n) => { if (n > 0) into[source] = (into[source] || 0) + n; };
+  const own = Math.min(num(output), growth);
+  add("output", own);
+  const rest = growth - own, total = Object.values(inputs).reduce((a, b) => a + b, 0);
+  if (!total) { add("other", rest); return; }
+  for (const [source, chars] of Object.entries(inputs)) add(source, Math.round((rest * chars) / total));
+}
+
+/** The length of a message content (a string or blocks): text by its characters, an image as IMAGE_CHARS, any other block as its JSON. */
+function contentChars(content) {
+  if (typeof content === "string") return content.length;
+  if (!Array.isArray(content)) return 0;
+  let n = 0;
+  for (const b of content) {
+    if (!b || typeof b !== "object") continue;
+    n += b.type === "text" && typeof b.text === "string" ? b.text.length : b.type === "image" ? IMAGE_CHARS : JSON.stringify(b).length;
+  }
+  return n;
 }
 
 /** A compaction from compact_boundary's compactMetadata; a missing field is null. */
@@ -259,6 +318,7 @@ function buildSessions({ registry = [], transcripts = {}, now, workspaceFolders 
         effort: typeof t.effort === "string" ? t.effort : null,
         baseline: Number.isFinite(t.baseline) ? t.baseline : null, baselineAt: Number.isFinite(t.baselineAt) ? t.baselineAt : null,
         baselineCause: t.baselineCause === "start" || t.baselineCause === "compaction" ? t.baselineCause : null,
+        growthBySource: t.growthBySource && typeof t.growthBySource === "object" ? t.growthBySource : {},
         cacheTtlMs, cacheRead, cacheCreated: Number.isFinite(t.cacheCreated) ? t.cacheCreated : null,
         hitShare: cacheRead !== null && tokens ? cacheRead / tokens : null,
         coldAt: Number.isFinite(coldMs) ? new Date(coldMs).toISOString() : null, coldInMs,
