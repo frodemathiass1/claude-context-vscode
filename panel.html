@@ -69,6 +69,9 @@
   .kx-cache-counts { font-size: 0.82em; font-variant-numeric: tabular-nums; color: var(--kx-muted); white-space: nowrap; display: inline-flex; align-items: center; }
   .kx-cache-counts b { font-weight: 600; color: var(--kx-fg); }
   .kx-cache-counts span + span::before { content: "·"; margin: 0 6px; }
+  /* the median start cost of the sessions that began fresh, beside the cache counters */
+  .kx-start-median { font-size: 0.82em; font-variant-numeric: tabular-nums; color: var(--kx-muted); white-space: nowrap; }
+  .kx-start-median b { font-weight: 600; color: var(--kx-fg); }
 
   main { padding: 8px 12px 14px; }
   .kx-message { padding: 18px 4px; color: var(--kx-muted); text-align: center; }
@@ -126,8 +129,10 @@
   .kx-bar { grid-area: bar; position: relative; height: 10px; border-radius: 5px; background: var(--kx-track); overflow: hidden; }
   .kx-fill {
     position: absolute; inset: 0 auto 0 0; width: calc(var(--p) * 1%); border-radius: 5px;
-    background: var(--kx-zone-fill, var(--kx-muted)); transition: width 0.5s ease;
+    background: var(--kx-zone-fill, var(--kx-muted)); transition: width 0.5s ease; overflow: hidden;
   }
+  /* the segment's fixed load (its first turn) as a muted shade at the start of the fill; the rest is the conversation */
+  .kx-base { position: absolute; inset: 0 auto 0 0; width: calc(var(--b) * 1%); background: color-mix(in srgb, var(--kx-zone-fill, var(--kx-muted)) 45%, var(--kx-bg)); }
   /* a slow sheen moves over the fill while the session is busy */
   .kx-fill.kx-busy::after {
     content: ""; position: absolute; inset: 0;
@@ -207,6 +212,7 @@
     <div class="kx-meter-bar" role="img" aria-label="no sessions"></div>
     <div class="kx-meter-leg"></div>
   </div>
+  <span class="kx-start-median" data-testid="start-median" hidden><b></b> start</span>
   <span class="kx-cache-counts" data-testid="cache-counts" title="Prompt cache: how many of the listed sessions have a warm cache now, and how many went cold"><span><b data-testid="cache-warm">0</b> warm</span><span><b data-testid="cache-cold">0</b> cold</span></span>
   <label><input type="checkbox" data-testid="all"> All projects</label>
 </header>
@@ -229,6 +235,7 @@
   const meterLegEl = document.querySelector(".kx-meter-leg");
   const cacheWarmEl = document.querySelector('[data-testid="cache-warm"]');
   const cacheColdEl = document.querySelector('[data-testid="cache-cold"]');
+  const startMedianEl = document.querySelector('[data-testid="start-median"]');
 
   // ── The zones and the scale, as data. The core decides a session's zone (core.cjs zone()); this list
   // orders the zones in the meter and the legend, names them, and picks the colour pair --kx-<zone> (text)
@@ -429,17 +436,35 @@
     return span;
   }
 
-  /** The context bar: the fill is the count's share of SCALE, a gap at every limit, a hatched end above SCALE; the tooltip carries the zone's advice. */
+  /** "start 62K · conversation 41K", or "start after compaction 35K · …"; empty without a baseline. */
+  function baselineText(session) {
+    if (!Number.isFinite(session.baseline) || !Number.isFinite(session.tokens)) return "";
+    const start = session.baselineCause === "compaction" ? "start after compaction" : "start";
+    return `${start} ${tokensText(session.baseline)} · conversation ${tokensText(Math.max(0, session.tokens - session.baseline))}`;
+  }
+
+  /**
+   * The context bar: the fill is the count's share of SCALE, its first part the segment's start (the baseline)
+   * in a muted shade, a gap at every limit, a hatched end above SCALE; the tooltip carries the split and the zone's advice.
+   */
   function barFor(session) {
     const bar = el("div", "kx-bar");
     bar.setAttribute("role", "img");
     bar.dataset.testid = "bar";
     const known = Number.isFinite(session.tokens);
     const advice = ZONE_ADVICE[session.zone] ? ` · ${ZONE_ADVICE[session.zone]}` : "";
-    bar.title = known ? `${tokensText(session.tokens)} tokens in the context · scale ${SCALE_TEXT}, marks at ${MARKS_TEXT}${advice}` : "no count yet";
+    const split = baselineText(session);
+    bar.title = known ? `${tokensText(session.tokens)} tokens in the context${split ? `: ${split}` : ""} · scale ${SCALE_TEXT}, marks at ${MARKS_TEXT}${advice}` : "no count yet";
     bar.setAttribute("aria-label", !known ? "no count" : session.tokens > SCALE ? `over the ${tokensText(SCALE)} scale` : `${Math.round(share(session.tokens) * 100)} % of the ${tokensText(SCALE)} scale`);
     const fill = el("span", "kx-fill" + (session.busy ? " kx-busy" : ""));
     fill.style.setProperty("--p", pct(share(session.tokens)));
+    if (split) {
+      const base = el("span", "kx-base");
+      base.dataset.testid = "baseline";
+      base.dataset.cause = session.baselineCause || "unknown";
+      base.style.setProperty("--b", pct(Math.min(1, session.baseline / session.tokens)));
+      fill.appendChild(base);
+    }
     bar.appendChild(fill);
     for (const g of LIMITS) {
       const tick = el("span", "kx-tick");
@@ -589,6 +614,12 @@
     const cacheCounts = data.cacheCounts || {};
     cacheWarmEl.textContent = String(Number.isFinite(cacheCounts.warm) ? cacheCounts.warm : 0);
     cacheColdEl.textContent = String(Number.isFinite(cacheCounts.cold) ? cacheCounts.cold : 0);
+    startMedianEl.hidden = !Number.isFinite(data.baselineMedian);
+    if (!startMedianEl.hidden) {
+      startMedianEl.firstChild.textContent = tokensText(data.baselineMedian);
+      const n = data.baselineSessions;
+      startMedianEl.title = `Start cost: the median first turn of the ${n === 1 ? "session" : `${n} sessions`} listed here that began fresh (not after a compaction). It is the fixed load (CLAUDE.md, memory, skill and tool listings) plus the first message, so a long first prompt raises it`;
+    }
     allEl.checked = !!data.all;
     errorsEl.textContent = "";
     errorsEl.hidden = !(data.errors && data.errors.length);

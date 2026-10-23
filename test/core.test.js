@@ -42,16 +42,16 @@ describe("parseTranscript", () => {
   });
 
   it("a transcript without usage, with unknown entries and a line that is not JSON, gives null (unknown) and zero turns", () => {
-    expect(K.parseTranscript(lines("without-usage"))).toEqual({ tokens: null, model: null, lastTurn: null, title: "What time is it?", turns: 0, series: [], cacheTtlMs: null, cacheRead: null, cacheCreated: null, compactions: [], outputSeries: [], thinkingSeries: [], outputTotal: 0, thinkingTotal: 0, effort: null });
+    expect(K.parseTranscript(lines("without-usage"))).toEqual({ tokens: null, model: null, lastTurn: null, title: "What time is it?", turns: 0, series: [], cacheTtlMs: null, cacheRead: null, cacheCreated: null, compactions: [], outputSeries: [], thinkingSeries: [], outputTotal: 0, thinkingTotal: 0, effort: null, baseline: null, baselineAt: null, baselineCause: null });
   });
 
   it("a synthetic entry (API error, model <synthetic>, all counters zero) and a usage without input counters are not turns: the number is the previous real reply", () => {
     const t = K.parseTranscript(lines("synthetic-last"));
-    expect(t).toEqual({ tokens: 140005, model: "claude-opus-5-5", lastTurn: "2026-10-21T21:00:10.000Z", title: "Continue", turns: 1, series: [140005], cacheTtlMs: 3600000, cacheRead: 100000, cacheCreated: 40000, compactions: [], outputSeries: [30], thinkingSeries: [0], outputTotal: 30, thinkingTotal: 0, effort: null });
+    expect(t).toEqual({ tokens: 140005, model: "claude-opus-5-5", lastTurn: "2026-10-21T21:00:10.000Z", title: "Continue", turns: 1, series: [140005], cacheTtlMs: 3600000, cacheRead: 100000, cacheCreated: 40000, compactions: [], outputSeries: [30], thinkingSeries: [0], outputTotal: 30, thinkingTotal: 0, effort: null, baseline: 140005, baselineAt: 0, baselineCause: "start" });
   });
 
   it("an empty tail gives unknown for everything", () => {
-    expect(K.parseTranscript([])).toEqual({ tokens: null, model: null, lastTurn: null, title: null, turns: 0, series: [], cacheTtlMs: null, cacheRead: null, cacheCreated: null, compactions: [], outputSeries: [], thinkingSeries: [], outputTotal: 0, thinkingTotal: 0, effort: null });
+    expect(K.parseTranscript([])).toEqual({ tokens: null, model: null, lastTurn: null, title: null, turns: 0, series: [], cacheTtlMs: null, cacheRead: null, cacheCreated: null, compactions: [], outputSeries: [], thinkingSeries: [], outputTotal: 0, thinkingTotal: 0, effort: null, baseline: null, baselineAt: null, baselineCause: null });
   });
 
   it("the tail parsed as a continuation of the previous state gives the same as the whole file at once", () => {
@@ -218,6 +218,42 @@ describe("parseTranscript", () => {
     const t = K.parseTranscript(many);
     expect(t.outputSeries.length).toBe(200);
     expect(t.outputTotal).toBe(410);
+  });
+
+  // the baseline: the first turn of the current segment, which starts with the transcript or at a compaction
+  it("the baseline is the first turn's count, from the start of the transcript", () => {
+    expect(K.parseTranscript(lines("with-title"))).toMatchObject({ baseline: 40004, baselineAt: 0, baselineCause: "start" });
+  });
+
+  it("a compaction starts a new segment: the baseline is the first turn after it", () => {
+    expect(K.parseTranscript(lines("compaction"))).toMatchObject({ baseline: 35000, baselineAt: 3, baselineCause: "compaction" });
+    // a boundary with no turn after it yet keeps the segment that is
+    expect(K.parseTranscript(lines("compaction").slice(0, 7))).toMatchObject({ baseline: 80000, baselineAt: 0, baselineCause: "start" });
+  });
+
+  it("a later block of the first turn updates the baseline, a block of a later turn does not", () => {
+    const first = [turn(1, 5000), turn(1, 6000), turn(2, 9000), turn(2, 9500)];
+    expect(K.parseTranscript(first)).toMatchObject({ baseline: 6000, baselineAt: 0, series: [6000, 9500] });
+    // also when the tail is cut between the two blocks of the first turn
+    expect(K.parseTranscript(first.slice(1), K.parseTranscript(first.slice(0, 1)))).toEqual(K.parseTranscript(first));
+  });
+
+  it("the baseline continues over a tail, and is null before any turn and for a state from an older core", () => {
+    const all = lines("compaction");
+    const whole = K.parseTranscript(all);
+    for (const cut of [1, 2, 7, 8, 9]) expect(K.parseTranscript(all.slice(cut), K.parseTranscript(all.slice(0, cut)))).toEqual(whole);
+    expect(K.parseTranscript(all.slice(0, 1))).toMatchObject({ baseline: null, baselineAt: null, baselineCause: null });
+    // an older state has turns but no baseline: the next turn is not the first, so the baseline stays unknown
+    const older = { tokens: 80000, model: "claude-opus-5-5", lastTurn: "x", title: "T", turns: 1, series: [80000] };
+    expect(K.parseTranscript(all.slice(2, 4), older)).toMatchObject({ baseline: null, baselineCause: null });
+  });
+
+  it("baselineAt follows the series when it is trimmed to 200 turns and is null once the first turn falls out; the baseline stays", () => {
+    const all = Array.from({ length: 201 }, (_, j) => turn(j + 1, 1000 * (j + 1)));
+    expect(K.parseTranscript(all)).toMatchObject({ baseline: 1000, baselineAt: null, baselineCause: "start" });
+    const boundary = JSON.stringify({ type: "system", subtype: "compact_boundary", isSidechain: false, compactMetadata: { trigger: "auto" } });
+    const later = [...all.slice(0, 10), boundary, ...all.slice(10)];
+    expect(K.parseTranscript(later)).toMatchObject({ baseline: 11000, baselineAt: 9, baselineCause: "compaction" });
   });
 });
 
@@ -405,6 +441,20 @@ describe("buildSessions", () => {
       now: NOW, workspaceFolders: [MINE], all: false });
     expect(r.sessions.find((s) => s.sessionId === "new")).toMatchObject({ outputSeries: [5, 7], thinkingSeries: [1, 2], outputTotal: 12, thinkingTotal: 3, effort: "high" });
     expect(r.sessions.find((s) => s.sessionId === "without")).toMatchObject({ outputSeries: [], thinkingSeries: [], outputTotal: null, thinkingTotal: null, effort: null });
+  });
+
+  it("the baseline fields pass through, and the header has the median baseline of the sessions whose segment is a start", () => {
+    const at = (baseline, baselineCause) => tail(143002, NOW, { baseline, baselineAt: 0, baselineCause });
+    const r = K.buildSessions({ registry, transcripts: { ...transcripts, new: at(62000, "start"), old: at(30000, "compaction"), busy: at(40000, "start") },
+      now: NOW, workspaceFolders: [MINE], all: false });
+    expect(r.sessions.find((s) => s.sessionId === "new")).toMatchObject({ baseline: 62000, baselineAt: 0, baselineCause: "start" });
+    expect(r.sessions.find((s) => s.sessionId === "without")).toMatchObject({ baseline: null, baselineAt: null, baselineCause: null });
+    // the compaction (30K) is left out: the median of 40K and 62K
+    expect(r).toMatchObject({ baselineMedian: 51000, baselineSessions: 2 });
+    const odd = K.buildSessions({ registry, transcripts: { ...transcripts, new: at(62000, "start"), old: at(70000, "start"), busy: at(40000, "start") },
+      now: NOW, workspaceFolders: [MINE], all: false });
+    expect(odd).toMatchObject({ baselineMedian: 62000, baselineSessions: 3 });
+    expect(K.buildSessions({ registry, transcripts, now: NOW, workspaceFolders: [MINE], all: false })).toMatchObject({ baselineMedian: null, baselineSessions: 0 });
   });
 
   it("the count per zone covers the listed sessions in all four zones, unknown is not counted, and with all projects everything shown is counted", () => {
