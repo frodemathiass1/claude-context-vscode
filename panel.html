@@ -143,7 +143,9 @@
   .kx-limit { stroke: var(--kx-grid); stroke-width: 1; stroke-dasharray: 3 3; }
   .kx-area { fill: currentColor; opacity: 0.18; stroke: none; }
   .kx-line { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
-  .kx-dip { stroke: var(--kx-fg); stroke-width: 1; opacity: 0.7; }
+  /* a compaction (read from the transcript) is a solid mark; a dip (a guessed drop) is dotted */
+  .kx-compact { stroke: var(--kx-fg); stroke-width: 1.5; opacity: 0.85; }
+  .kx-dip { stroke: var(--kx-fg); stroke-width: 1; opacity: 0.7; stroke-dasharray: 2 2; }
   .kx-nocurve { font-size: 0.82em; color: var(--kx-muted); font-style: italic; }
   .kx-meta { grid-area: meta; display: flex; flex-wrap: wrap; gap: 3px 10px; color: var(--kx-muted); font-size: 0.86em; min-width: 0; }
   .kx-meta span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
@@ -261,6 +263,21 @@
     return ms < 60000 ? "<1 min" : `${Math.ceil(ms / 60000)} min`;
   }
 
+  /** "1 min 54 s", "40 s"; empty without a number. */
+  function durationText(ms) {
+    if (!Number.isFinite(ms)) return "";
+    const s = Math.round(ms / 1000);
+    return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min${s % 60 ? ` ${s % 60} s` : ""}`;
+  }
+
+  /** "auto-compacted 1.0M → 66K (1 min 54 s)": one compaction for the curve's tooltip. */
+  function compactionText(c) {
+    const how = c.trigger === "auto" ? "auto-compacted" : c.trigger === "manual" ? "compacted (/compact)" : "compacted";
+    const counts = Number.isFinite(c.preTokens) && Number.isFinite(c.postTokens) ? ` ${tokensText(c.preTokens)} → ${tokensText(c.postTokens)}` : "";
+    const took = durationText(c.durationMs);
+    return `${how}${counts}${took ? ` (${took})` : ""}`;
+  }
+
   function clockText(iso) {
     const d = new Date(iso);
     return Number.isFinite(d.getTime()) ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
@@ -349,19 +366,23 @@
     const x = (i) => (i / (series.length - 1)) * CURVE_W;
     const y = (v) => CURVE_H - 1 - (v / top) * (CURVE_H - 2); // 1 px margin top and bottom for the stroke
     const dips = Array.isArray(session.dips) ? session.dips.filter((i) => i > 0 && i < series.length) : [];
-    const label = `Tokens per turn, ${series.length} ${series.length === 1 ? "turn" : "turns"}, ${dips.length} ${dips.length === 1 ? "drop" : "drops"}`;
+    const compactions = Array.isArray(session.compactions) ? session.compactions.filter((c) => c && c.at > 0 && c.at < series.length) : [];
+    const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+    const label = `Tokens per turn, ${plural(series.length, "turn", "turns")}, ${plural(compactions.length, "compaction", "compactions")}, ${plural(dips.length, "other drop", "other drops")}`;
     const svg = svgEl("svg", {
       class: "kx-curve", viewBox: `0 0 ${CURVE_W} ${CURVE_H}`, preserveAspectRatio: "none", role: "img",
       "data-testid": "curve", "data-points": series.length, "aria-label": label,
     });
     const title = svgEl("title", {});
-    title.textContent = `${label} · dashed lines at ${MARKS_TEXT}`;
+    const marks = compactions.map((c) => ` · turn ${c.at + 1}: ${compactionText(c)}`).join("");
+    title.textContent = `${label} · dashed lines at ${MARKS_TEXT}${marks}${dips.length ? " · dotted marks: drops without a compaction entry" : ""}`;
     svg.appendChild(title);
     for (const g of LIMITS) svg.appendChild(svgEl("line", { class: "kx-limit", "data-limit": g, x1: 0, x2: CURVE_W, y1: num(y(g)), y2: num(y(g)), "vector-effect": "non-scaling-stroke" }));
     const points = series.map((v, i) => `${num(x(i))},${num(y(v))}`).join(" L");
     svg.appendChild(svgEl("path", { class: "kx-area", d: `M0,${CURVE_H} L${points} L${CURVE_W},${CURVE_H} Z` }));
     svg.appendChild(svgEl("path", { class: "kx-line", d: `M${points}`, "vector-effect": "non-scaling-stroke" }));
     for (const i of dips) svg.appendChild(svgEl("line", { class: "kx-dip", "data-turn": i, x1: num(x(i)), x2: num(x(i)), y1: 0, y2: CURVE_H, "vector-effect": "non-scaling-stroke" }));
+    for (const c of compactions) svg.appendChild(svgEl("line", { class: "kx-compact", "data-turn": c.at, "data-trigger": c.trigger || "unknown", x1: num(x(c.at)), x2: num(x(c.at)), y1: 0, y2: CURVE_H, "vector-effect": "non-scaling-stroke" }));
     return svg;
   }
 

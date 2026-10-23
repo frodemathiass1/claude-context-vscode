@@ -84,9 +84,11 @@ function readTail(file, { from, bytes } = {}) {
  * ephemeral_5m_input_tokens above zero); a turn that created nothing says nothing, and it is null until seen.
  * A turn is one API call: Claude Code writes one entry per content block of a response, all sharing
  * message.id, so turns are counted per id. `series` is the token count per turn, oldest first, kept to the
- * last SERIES_MAX turns. The title is the last ai-title entry, else the first user message (meta
- * entries and tool results skipped) collapsed to one line. With `previous`, the lines are parsed as the
- * continuation of an already parsed transcript, so the host reads only the new bytes.
+ * last SERIES_MAX turns. `compactions` are the compact_boundary entries Claude Code writes, each at `at`, the
+ * index in `series` of the first turn after it, with the trigger ("auto", "manual") and the counts before and
+ * after; a /clear starts a new transcript, so it never shows here. The title is the last ai-title entry, else
+ * the first user message (meta entries and tool results skipped) collapsed to one line. With `previous`, the
+ * lines are parsed as the continuation of an already parsed transcript, so the host reads only the new bytes.
  */
 function parseTranscript(lines, previous) {
   const p = previous || {};
@@ -94,10 +96,13 @@ function parseTranscript(lines, previous) {
   let cacheTtlMs = p.cacheTtlMs ?? null, cacheRead = p.cacheRead ?? null, cacheCreated = p.cacheCreated ?? null;
   let title = p.title || null, firstUser = p.firstUser || null;
   let turns = p.turns || 0, lastId = p.lastId || null;
+  let pendingCompaction = p.pendingCompaction || null;
   const series = Array.isArray(p.series) ? p.series.slice() : [];
+  let compactions = Array.isArray(p.compactions) ? p.compactions.map((c) => ({ ...c })) : [];
   for (const line of lines) {
     const entry = parseEntry(line);
     if (!entry || entry.isSidechain) continue;
+    if (entry.type === "system" && entry.subtype === "compact_boundary") { pendingCompaction = compaction(entry.compactMetadata); continue; }
     if (entry.type === "ai-title") { if (entry.aiTitle) title = String(entry.aiTitle); continue; }
     if (entry.type === "user") { if (!firstUser && !entry.isMeta) firstUser = userText(entry.message && entry.message.content); continue; }
     if (entry.type !== "assistant") continue;
@@ -115,18 +120,30 @@ function parseTranscript(lines, previous) {
     if (id !== lastId) {
       turns += 1; lastId = id;
       series.push(tokens);
-      if (series.length > SERIES_MAX) series.shift();
+      if (pendingCompaction) { compactions.push({ at: series.length - 1, ...pendingCompaction }); pendingCompaction = null; }
+      if (series.length > SERIES_MAX) {
+        series.shift();
+        compactions = compactions.map((c) => ({ ...c, at: c.at - 1 })).filter((c) => c.at >= 0);
+      }
     } else if (series.length) {
       series[series.length - 1] = tokens; // another content block of the same turn
     } else {
       series.push(tokens); // the same turn continued from a state without a series: a point, not a new turn
     }
   }
-  const out = { tokens, model, lastTurn, title: title || firstUser || null, turns, series, cacheTtlMs, cacheRead, cacheCreated };
+  const out = { tokens, model, lastTurn, title: title || firstUser || null, turns, series, cacheTtlMs, cacheRead, cacheCreated, compactions };
   // hidden state for the continuation: not part of what the panel shows, and not part of toEqual
   Object.defineProperty(out, "lastId", { value: lastId, enumerable: false });
   Object.defineProperty(out, "firstUser", { value: firstUser, enumerable: false });
+  Object.defineProperty(out, "pendingCompaction", { value: pendingCompaction, enumerable: false });
   return out;
+}
+
+/** A compaction from compact_boundary's compactMetadata; a missing field is null. */
+function compaction(meta) {
+  const m = meta && typeof meta === "object" ? meta : {};
+  const n = (v) => (Number.isFinite(v) ? v : null);
+  return { trigger: typeof m.trigger === "string" ? m.trigger : null, preTokens: n(m.preTokens), postTokens: n(m.postTokens), durationMs: n(m.durationMs) };
 }
 
 /** Indexes in `series` where the count fell below DIP_BELOW of the previous turn (a compaction or a /clear). */
@@ -190,6 +207,8 @@ function buildSessions({ registry = [], transcripts = {}, now, workspaceFolders 
       const t = transcripts[r.sessionId] || {};
       const tokens = Number.isFinite(t.tokens) ? t.tokens : null;
       const series = Array.isArray(t.series) ? t.series : [];
+      const compactions = Array.isArray(t.compactions) ? t.compactions : [];
+      const compactedAt = new Set(compactions.map((c) => c.at));
       const lastMs = t.lastTurn ? Date.parse(t.lastTurn) : NaN;
       const sinceMs = Number.isFinite(lastMs) && Number.isFinite(nowMs) ? Math.max(0, nowMs - lastMs) : null;
       const cacheTtlMs = Number.isFinite(t.cacheTtlMs) ? t.cacheTtlMs : null;
@@ -199,7 +218,8 @@ function buildSessions({ registry = [], transcripts = {}, now, workspaceFolders 
       return {
         pid: r.pid, sessionId: r.sessionId, cwd: r.cwd, project: projectName(r.cwd),
         title: t.title || null, model: t.model || null, modelShort: modelShort(t.model),
-        tokens, zone: zone(tokens), turns: t.turns || 0, series, dips: dips(series),
+        tokens, zone: zone(tokens), turns: t.turns || 0, series, compactions,
+        dips: dips(series).filter((i) => !compactedAt.has(i)), // a compaction is marked as such, not again as a dip
         lastTurn: t.lastTurn || null, sinceMs,
         cacheTtlMs, cacheRead, cacheCreated: Number.isFinite(t.cacheCreated) ? t.cacheCreated : null,
         hitShare: cacheRead !== null && tokens ? cacheRead / tokens : null,

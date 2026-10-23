@@ -6,8 +6,10 @@ yellow, below 125K; orange, up to 150K; red, above). The zones are absolute toke
 the model's window: they follow Matt Pocock's smart zone and dumb zone, where the dumb zone "commonly
 begins around 125K-150K tokens". The sessions sit under "Working now" and "Idle", one row each: title, a
 context bar scaled 0–200K with marks at 100K, 125K and 150K (its tooltip says what to do at the next phase
-boundary in the yellow, orange and red zones), a sparkline of tokens per turn with a marker at
-every compaction or `/clear`, the count in the zone colour, and the model, the number of turns and the
+boundary in the yellow, orange and red zones), a sparkline of tokens per turn with a solid
+mark at every compaction Claude Code recorded (the tooltip says whether it was automatic and the count
+before and after) and a dotted one at any other sharp drop (a `/clear` starts a new transcript, so it
+starts a new curve), the count in the zone colour, and the model, the number of turns and the
 time since the last turn, and the prompt cache: "warm · 47 min" counts down to the moment the cache goes
 cold (the last turn plus the TTL Claude Code chose, shown as a 1h or 5m pill; a drop to 5m is marked), a
 few minutes before that the text turns orange, and afterwards it says "cold". The tooltip has the deadline,

@@ -42,16 +42,16 @@ describe("parseTranscript", () => {
   });
 
   it("a transcript without usage, with unknown entries and a line that is not JSON, gives null (unknown) and zero turns", () => {
-    expect(K.parseTranscript(lines("without-usage"))).toEqual({ tokens: null, model: null, lastTurn: null, title: "What time is it?", turns: 0, series: [], cacheTtlMs: null, cacheRead: null, cacheCreated: null });
+    expect(K.parseTranscript(lines("without-usage"))).toEqual({ tokens: null, model: null, lastTurn: null, title: "What time is it?", turns: 0, series: [], cacheTtlMs: null, cacheRead: null, cacheCreated: null, compactions: [] });
   });
 
   it("a synthetic entry (API error, model <synthetic>, all counters zero) and a usage without input counters are not turns: the number is the previous real reply", () => {
     const t = K.parseTranscript(lines("synthetic-last"));
-    expect(t).toEqual({ tokens: 140005, model: "claude-opus-5-5", lastTurn: "2026-10-21T21:00:10.000Z", title: "Continue", turns: 1, series: [140005], cacheTtlMs: 3600000, cacheRead: 100000, cacheCreated: 40000 });
+    expect(t).toEqual({ tokens: 140005, model: "claude-opus-5-5", lastTurn: "2026-10-21T21:00:10.000Z", title: "Continue", turns: 1, series: [140005], cacheTtlMs: 3600000, cacheRead: 100000, cacheCreated: 40000, compactions: [] });
   });
 
   it("an empty tail gives unknown for everything", () => {
-    expect(K.parseTranscript([])).toEqual({ tokens: null, model: null, lastTurn: null, title: null, turns: 0, series: [], cacheTtlMs: null, cacheRead: null, cacheCreated: null });
+    expect(K.parseTranscript([])).toEqual({ tokens: null, model: null, lastTurn: null, title: null, turns: 0, series: [], cacheTtlMs: null, cacheRead: null, cacheCreated: null, compactions: [] });
   });
 
   it("the tail parsed as a continuation of the previous state gives the same as the whole file at once", () => {
@@ -155,6 +155,39 @@ describe("parseTranscript", () => {
     // a previous state without the fields (older core) starts from null
     const older = { tokens: 50005, model: "claude-opus-5-5", lastTurn: "x", title: "T", turns: 1, series: [50005] };
     expect(K.parseTranscript(all.slice(3), older)).toMatchObject({ cacheTtlMs: null, cacheRead: 52000, cacheCreated: 0 });
+  });
+
+  // compactions: the compact_boundary entry Claude Code writes, at the first turn after it
+  it("a compact_boundary gives a compaction at the index of the first turn after it, with the trigger and the counts before and after", () => {
+    const t = K.parseTranscript(lines("compaction"));
+    expect(t.series).toEqual([80000, 120000, 160000, 35000, 40000]);
+    expect(t.compactions).toEqual([{ at: 3, trigger: "auto", preTokens: 160500, postTokens: 30000, durationMs: 114000 }]);
+    expect(K.parseTranscript(lines("with-title")).compactions).toEqual([]);
+  });
+
+  it("the compactions continue over a tail, also when the tail ends right after the boundary", () => {
+    const all = lines("compaction");
+    const whole = K.parseTranscript(all);
+    for (const cut of [2, 6, 7, 8]) expect(K.parseTranscript(all.slice(cut), K.parseTranscript(all.slice(0, cut)))).toEqual(whole);
+    // a boundary with no turn after it yet is not a compaction in the series
+    expect(K.parseTranscript(all.slice(0, 7)).compactions).toEqual([]);
+  });
+
+  it("the compaction index follows the series when it is trimmed to 200 turns, and drops out with its turn", () => {
+    const boundary = JSON.stringify({ type: "system", subtype: "compact_boundary", isSidechain: false, compactMetadata: { trigger: "manual", preTokens: 9, postTokens: 1 } });
+    const all = [];
+    for (let i = 1; i <= 205; i++) { if (i === 10) all.push(boundary); all.push(turn(i, 1000 * i)); }
+    // turn 10 is index 9; five turns fall out, so it is index 4
+    expect(K.parseTranscript(all).compactions).toEqual([{ at: 4, trigger: "manual", preTokens: 9, postTokens: 1, durationMs: null }]);
+    all.push(...Array.from({ length: 5 }, (_, j) => turn(206 + j, 1000)));
+    expect(K.parseTranscript(all).compactions).toEqual([]);
+  });
+
+  it("a boundary without metadata or in a sidechain: the first gives a compaction without numbers, the second nothing", () => {
+    const bare = JSON.stringify({ type: "system", subtype: "compact_boundary", isSidechain: false });
+    const side = JSON.stringify({ type: "system", subtype: "compact_boundary", isSidechain: true, compactMetadata: { trigger: "auto" } });
+    expect(K.parseTranscript([turn(1, 5000), bare, turn(2, 1000)]).compactions).toEqual([{ at: 1, trigger: null, preTokens: null, postTokens: null, durationMs: null }]);
+    expect(K.parseTranscript([turn(1, 5000), side, turn(2, 1000)]).compactions).toEqual([]);
   });
 });
 
@@ -325,6 +358,16 @@ describe("buildSessions", () => {
     const without = r.sessions.find((s) => s.sessionId === "without");
     expect(without.series).toEqual([]);
     expect(without.dips).toEqual([]);
+  });
+
+  it("the compactions pass through, and a dip at the turn of a compaction is not listed again", () => {
+    const compactions = [{ at: 2, trigger: "auto", preTokens: 150000, postTokens: 50000, durationMs: 1000 }];
+    const r = K.buildSessions({ registry, transcripts: { ...transcripts, new: tail(143002, NOW, { series: [140000, 150000, 55000, 143002, 20000], compactions }) },
+      now: NOW, workspaceFolders: [MINE], all: false });
+    const fresh = r.sessions.find((s) => s.sessionId === "new");
+    expect(fresh.compactions).toEqual(compactions);
+    expect(fresh.dips).toEqual([4]);
+    expect(r.sessions.find((s) => s.sessionId === "without").compactions).toEqual([]);
   });
 
   it("the count per zone covers the listed sessions in all four zones, unknown is not counted, and with all projects everything shown is counted", () => {
