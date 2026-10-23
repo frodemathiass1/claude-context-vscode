@@ -105,7 +105,8 @@ function readTail(file, { from, bytes } = {}) {
  * model wrote is read back as input), and the rest is split by length over what entered between the two
  * turns: each tool result under its tool's name, the user's text as "you", meta entries and rendered
  * attachments as "other" (all of it when nothing was seen). Token counts per result are not in the transcript,
- * so the split is an estimate. The open tool calls (id → name) and the characters since the last turn are
+ * so the split is an estimate; earlier thinking stays in the context, so "output" is not overstated (NOTES.md,
+ * "Where the context grows"). The open tool calls (id → name) and the characters since the last turn are
  * hidden state. The title is the last ai-title entry, else
  * the first user message (meta entries and tool results skipped) collapsed to one line. With `previous`, the
  * lines are parsed as the continuation of an already parsed transcript, so the host reads only the new bytes.
