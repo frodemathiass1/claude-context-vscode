@@ -6,13 +6,21 @@ yellow, below 125K; orange, up to 150K; red, above). The zones are absolute toke
 the model's window: they follow Matt Pocock's smart zone and dumb zone, where the dumb zone "commonly
 begins around 125K-150K tokens". The sessions sit under "Working now" and "Idle", one row each: title, a
 context bar scaled 0–200K with marks at 100K, 125K and 150K (its tooltip says what to do at the next phase
-boundary in the yellow, orange and red zones), a sparkline of tokens per turn with a marker at
-every compaction or `/clear`, the count in the zone colour, and the model, the number of turns and the
+boundary in the yellow, orange and red zones), whose first part, in a muted shade, is the start of the session:
+the first turn, which holds the fixed load (CLAUDE.md, memory, skill and tool listings) and the first message
+("start 29K · conversation 87K"; after a compaction it starts again at the first turn after it), with an
+estimate under it of where the conversation's growth went ("≈ Bash 50K · output 46K · Read 27K": per turn,
+what the model wrote first, the rest split by length over the tool results, your messages and attachments;
+every source in the tooltip), a sparkline of tokens per turn with a solid
+mark at every compaction Claude Code recorded (the tooltip says whether it was automatic and the count
+before and after) and a dotted one at any other sharp drop (a `/clear` starts a new transcript, so it
+starts a new curve), thin bars under it with the output tokens per turn (the thinking part drawn stronger), the count in the zone colour, and the model with the effort of the last turn ("Opus 5.5 · xhigh"), the number of turns, the output tokens of the session ("44K out"; the tooltip has the last turn and the thinking share) and the
 time since the last turn, and the prompt cache: "warm · 47 min" counts down to the moment the cache goes
 cold (the last turn plus the TTL Claude Code chose, shown as a 1h or 5m pill; a drop to 5m is marked), a
 few minutes before that the text turns orange, and afterwards it says "cold". The tooltip has the deadline,
 how much of the last turn's context was read from cache and how much was written. The header counts the
-warm and cold sessions beside the zone meter. Busy sessions pulse and sort first; sessions idle for more
+warm and cold sessions beside the zone meter, and the median start of the sessions that began fresh, so
+a CLAUDE.md that grew shows at a glance. Busy sessions pulse and sort first; sessions idle for more
 than an hour are dimmed. The rows stack in the narrow sidebar and spread over four columns when the panel is 620 px or
 wider. "All projects" lists the whole machine grouped by project; the default is the sessions inside the
 window's workspace folders.

@@ -53,6 +53,31 @@ prices (platform.claude.com/docs/en/docs/build-with-claude/prompt-caching, read 
 comment in `core.cjs`; the panel shows no cost, only the state. The cache is refreshed on every use, so
 the deadline is the last turn plus the TTL, per session.
 
+## Where the context grows (measured 2026-10-23, 319 transcripts, 13 149 gaps between turns)
+
+The facts behind `baseline` and `growthBySource`, measured in the owner's transcripts (Opus 5, Opus 5.5,
+Fable 5.1):
+
+- A `/clear` always starts a new transcript (116 of 116: the command is the first line of a new file), so
+  a segment starts at the start of a file or at a `compact_boundary`.
+- The input counters are equal on every block of a response (15 591 of 15 591 blocks with the same
+  `message.id`), like the output counters.
+- Earlier thinking stays in the context. In 610 turns where the previous turn thought at least 500 tokens
+  and almost nothing entered after it, the context grew by the previous turn's whole `output_tokens`
+  plus about 10 % (median 1.10, p10 1.03); if thinking were dropped it would grow by output minus
+  thinking. Turns without thinking give the same 1.10, so the 10 % is framing and reminders. The
+  "output" share is therefore not overstated.
+- Tool results cost about the same per character: Bash 2.04 characters per token (1 197 gaps, p25–p75
+  1.97–2.12), Read 2.04 (79 gaps). Rarer tools run higher, Skill 2.55, Agent 2.58, WebSearch 2.62, so
+  they are overstated by 25–50 % when they share a gap with Bash or Read. 65 % of the growth is in gaps
+  with one dominant source, where nothing is split.
+- One image grows the context by a median 1 643 tokens (113 gaps), but from about 600 to 3 800 (p10–p90),
+  so the fixed weight (`IMAGE_CHARS`) is rough per image; it matters only when an image shares a gap
+  with other input.
+- Attachments enter the context only when they have `rendered` (the text sent to the model); the rest
+  (`deferred_tools_record`, `prompt_snapshot`, `batching_reminder_sent` and others) are bookkeeping.
+- The context fell between two turns once in 13 149 gaps.
+
 ## Hosting the panel outside VS Code
 
 `panel.html` has a second adapter for when `acquireVsCodeApi` does not exist: it fetches

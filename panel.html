@@ -69,6 +69,9 @@
   .kx-cache-counts { font-size: 0.82em; font-variant-numeric: tabular-nums; color: var(--kx-muted); white-space: nowrap; display: inline-flex; align-items: center; }
   .kx-cache-counts b { font-weight: 600; color: var(--kx-fg); }
   .kx-cache-counts span + span::before { content: "·"; margin: 0 6px; }
+  /* the median start cost of the sessions that began fresh, beside the cache counters */
+  .kx-start-median { font-size: 0.82em; font-variant-numeric: tabular-nums; color: var(--kx-muted); white-space: nowrap; }
+  .kx-start-median b { font-weight: 600; color: var(--kx-fg); }
 
   main { padding: 8px 12px 14px; }
   .kx-message { padding: 18px 4px; color: var(--kx-muted); text-align: center; }
@@ -123,11 +126,14 @@
   .kx-num[data-zone="unknown"] { font-family: inherit; font-size: 1em; font-weight: 500; }
   .kx-zone-txt { font-size: 0.78em; line-height: 1; color: var(--kx-muted); }
   /* the context bar: a track scaled 0–200K, the fill in the zone's fill colour, a gap at every limit */
-  .kx-bar { grid-area: bar; position: relative; height: 10px; border-radius: 5px; background: var(--kx-track); overflow: hidden; }
+  .kx-bar-col { grid-area: bar; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  .kx-bar { position: relative; height: 10px; border-radius: 5px; background: var(--kx-track); overflow: hidden; }
   .kx-fill {
     position: absolute; inset: 0 auto 0 0; width: calc(var(--p) * 1%); border-radius: 5px;
-    background: var(--kx-zone-fill, var(--kx-muted)); transition: width 0.5s ease;
+    background: var(--kx-zone-fill, var(--kx-muted)); transition: width 0.5s ease; overflow: hidden;
   }
+  /* the segment's fixed load (its first turn) as a muted shade at the start of the fill; the rest is the conversation */
+  .kx-base { position: absolute; inset: 0 auto 0 0; width: calc(var(--b) * 1%); background: color-mix(in srgb, var(--kx-zone-fill, var(--kx-muted)) 45%, var(--kx-bg)); }
   /* a slow sheen moves over the fill while the session is busy */
   .kx-fill.kx-busy::after {
     content: ""; position: absolute; inset: 0;
@@ -137,14 +143,22 @@
   @keyframes kx-sheen { from { background-position: -120px 0; } to { background-position: 120px 0; } }
   .kx-tick { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--kx-bg); left: calc(var(--t) * 1%); }
   .kx-over { position: absolute; right: 0; top: 0; bottom: 0; width: 14px; background: repeating-linear-gradient(135deg, transparent 0 3px, var(--kx-bg) 3px 5px); }
+  /* under the bar: the top sources of the conversation's growth, an estimate */
+  .kx-growth { font-size: 0.8em; color: var(--kx-muted); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   /* the sparkline fills its column; strokes stay 1 px although the viewBox is stretched */
   .kx-curve-wrap { grid-area: curve; min-width: 0; }
   .kx-curve { display: block; width: 100%; height: 18px; overflow: visible; color: var(--kx-zone-fill, var(--kx-muted)); }
   .kx-limit { stroke: var(--kx-grid); stroke-width: 1; stroke-dasharray: 3 3; }
   .kx-area { fill: currentColor; opacity: 0.18; stroke: none; }
   .kx-line { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
-  .kx-dip { stroke: var(--kx-fg); stroke-width: 1; opacity: 0.7; }
+  /* a compaction (read from the transcript) is a solid mark; a dip (a guessed drop) is dotted */
+  .kx-compact { stroke: var(--kx-fg); stroke-width: 1.5; opacity: 0.85; }
+  .kx-dip { stroke: var(--kx-fg); stroke-width: 1; opacity: 0.7; stroke-dasharray: 2 2; }
   .kx-nocurve { font-size: 0.82em; color: var(--kx-muted); font-style: italic; }
+  /* output per turn under the curve, on its own scale: the whole bar faint, the thinking part of it stronger */
+  .kx-out { display: block; width: 100%; height: 7px; margin-top: 2px; color: var(--kx-muted); }
+  .kx-out-all { fill: currentColor; opacity: 0.35; }
+  .kx-out-think { fill: currentColor; opacity: 0.8; }
   .kx-meta { grid-area: meta; display: flex; flex-wrap: wrap; gap: 3px 10px; color: var(--kx-muted); font-size: 0.86em; min-width: 0; }
   .kx-meta span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
   .kx-meta svg { width: 12px; height: 12px; opacity: 0.8; }
@@ -169,6 +183,7 @@
     }
     .kx-num { font-size: 1.45em; }
     .kx-curve { height: 26px; }
+    .kx-out { height: 9px; }
     .kx-axis {
       display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(160px, 1fr) minmax(140px, 0.8fr) minmax(72px, auto);
       gap: 0 14px; padding: 2px 6px 4px; font-size: 0.74em; color: var(--kx-muted); text-transform: uppercase; letter-spacing: 0.05em;
@@ -200,6 +215,7 @@
     <div class="kx-meter-bar" role="img" aria-label="no sessions"></div>
     <div class="kx-meter-leg"></div>
   </div>
+  <span class="kx-start-median" data-testid="start-median" hidden><b></b> start</span>
   <span class="kx-cache-counts" data-testid="cache-counts" title="Prompt cache: how many of the listed sessions have a warm cache now, and how many went cold"><span><b data-testid="cache-warm">0</b> warm</span><span><b data-testid="cache-cold">0</b> cold</span></span>
   <label><input type="checkbox" data-testid="all"> All projects</label>
 </header>
@@ -222,6 +238,7 @@
   const meterLegEl = document.querySelector(".kx-meter-leg");
   const cacheWarmEl = document.querySelector('[data-testid="cache-warm"]');
   const cacheColdEl = document.querySelector('[data-testid="cache-cold"]');
+  const startMedianEl = document.querySelector('[data-testid="start-median"]');
 
   // ── The zones and the scale, as data. The core decides a session's zone (core.cjs zone()); this list
   // orders the zones in the meter and the legend, names them, and picks the colour pair --kx-<zone> (text)
@@ -259,6 +276,21 @@
   /** "47 min" until the cache goes cold; "<1 min" in the last minute. The TTL is at most an hour, so minutes suffice. */
   function leftText(ms) {
     return ms < 60000 ? "<1 min" : `${Math.ceil(ms / 60000)} min`;
+  }
+
+  /** "1 min 54 s", "40 s"; empty without a number. */
+  function durationText(ms) {
+    if (!Number.isFinite(ms)) return "";
+    const s = Math.round(ms / 1000);
+    return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min${s % 60 ? ` ${s % 60} s` : ""}`;
+  }
+
+  /** "auto-compacted 1.0M → 66K (1 min 54 s)": one compaction for the curve's tooltip. */
+  function compactionText(c) {
+    const how = c.trigger === "auto" ? "auto-compacted" : c.trigger === "manual" ? "compacted (/compact)" : "compacted";
+    const counts = Number.isFinite(c.preTokens) && Number.isFinite(c.postTokens) ? ` ${tokensText(c.preTokens)} → ${tokensText(c.postTokens)}` : "";
+    const took = durationText(c.durationMs);
+    return `${how}${counts}${took ? ` (${took})` : ""}`;
   }
 
   function clockText(iso) {
@@ -327,6 +359,7 @@
     folder: ["M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"],
     moon: ["M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"],
     timer: ["M10 2h4", "m12 14 3-3", "M12 6a8 8 0 1 0 0 16 8 8 0 0 0 0-16z"],
+    pen: ["M12 20h9", "M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838a.5.5 0 0 1-.62-.62l.838-2.872a2 2 0 0 1 .506-.854z"],
   };
   function icon(name) {
     const svg = svgEl("svg", { class: "kx-ico", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": 2, "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": "true" });
@@ -349,33 +382,113 @@
     const x = (i) => (i / (series.length - 1)) * CURVE_W;
     const y = (v) => CURVE_H - 1 - (v / top) * (CURVE_H - 2); // 1 px margin top and bottom for the stroke
     const dips = Array.isArray(session.dips) ? session.dips.filter((i) => i > 0 && i < series.length) : [];
-    const label = `Tokens per turn, ${series.length} ${series.length === 1 ? "turn" : "turns"}, ${dips.length} ${dips.length === 1 ? "drop" : "drops"}`;
+    const compactions = Array.isArray(session.compactions) ? session.compactions.filter((c) => c && c.at > 0 && c.at < series.length) : [];
+    const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+    const label = `Tokens per turn, ${plural(series.length, "turn", "turns")}, ${plural(compactions.length, "compaction", "compactions")}, ${plural(dips.length, "other drop", "other drops")}`;
     const svg = svgEl("svg", {
       class: "kx-curve", viewBox: `0 0 ${CURVE_W} ${CURVE_H}`, preserveAspectRatio: "none", role: "img",
       "data-testid": "curve", "data-points": series.length, "aria-label": label,
     });
     const title = svgEl("title", {});
-    title.textContent = `${label} · dashed lines at ${MARKS_TEXT}`;
+    const marks = compactions.map((c) => ` · turn ${c.at + 1}: ${compactionText(c)}`).join("");
+    title.textContent = `${label} · dashed lines at ${MARKS_TEXT}${marks}${dips.length ? " · dotted marks: drops without a compaction entry" : ""}`;
     svg.appendChild(title);
     for (const g of LIMITS) svg.appendChild(svgEl("line", { class: "kx-limit", "data-limit": g, x1: 0, x2: CURVE_W, y1: num(y(g)), y2: num(y(g)), "vector-effect": "non-scaling-stroke" }));
     const points = series.map((v, i) => `${num(x(i))},${num(y(v))}`).join(" L");
     svg.appendChild(svgEl("path", { class: "kx-area", d: `M0,${CURVE_H} L${points} L${CURVE_W},${CURVE_H} Z` }));
     svg.appendChild(svgEl("path", { class: "kx-line", d: `M${points}`, "vector-effect": "non-scaling-stroke" }));
     for (const i of dips) svg.appendChild(svgEl("line", { class: "kx-dip", "data-turn": i, x1: num(x(i)), x2: num(x(i)), y1: 0, y2: CURVE_H, "vector-effect": "non-scaling-stroke" }));
+    for (const c of compactions) svg.appendChild(svgEl("line", { class: "kx-compact", "data-turn": c.at, "data-trigger": c.trigger || "unknown", x1: num(x(c.at)), x2: num(x(c.at)), y1: 0, y2: CURVE_H, "vector-effect": "non-scaling-stroke" }));
     return svg;
   }
 
-  /** The context bar: the fill is the count's share of SCALE, a gap at every limit, a hatched end above SCALE; the tooltip carries the zone's advice. */
+  /**
+   * Output per turn as bars under the curve, one per turn of the series (the output series is aligned to its
+   * right end, so an older state with a shorter one still lines up), scaled to the session's own largest turn.
+   * The thinking part of each bar is drawn over it, from the bottom. Nothing when no turn wrote anything.
+   */
+  const OUT_H = 8;
+  function outputFor(session) {
+    const series = Array.isArray(session.series) ? session.series : [];
+    const output = Array.isArray(session.outputSeries) ? session.outputSeries.slice(-series.length) : [];
+    const thinking = Array.isArray(session.thinkingSeries) ? session.thinkingSeries.slice(-series.length) : [];
+    const top = Math.max(0, ...output);
+    if (series.length < 2 || !top) return null;
+    const offset = series.length - output.length, w = CURVE_W / series.length, gap = series.length <= 60 ? w * 0.2 : 0;
+    const bar = (i, v) => (v > 0 ? `M${num((i + offset) * w)},${OUT_H} h${num(w - gap)} v${num(-(v / top) * OUT_H)} h${num(gap - w)} Z` : "");
+    const svg = svgEl("svg", { class: "kx-out", viewBox: `0 0 ${CURVE_W} ${OUT_H}`, preserveAspectRatio: "none", role: "img", "data-testid": "output", "data-bars": output.length, "aria-label": `Output tokens per turn, largest ${tokensText(top)}` });
+    const title = svgEl("title", {});
+    title.textContent = `Output tokens per turn (faint) and the thinking part of them (strong), scaled to the largest turn: ${tokensText(top)}`;
+    svg.appendChild(title);
+    svg.appendChild(svgEl("path", { class: "kx-out-all", d: output.map((v, i) => bar(i, v)).join(" ") || "M0,0" }));
+    svg.appendChild(svgEl("path", { class: "kx-out-think", d: thinking.map((v, i) => bar(i, Math.min(v, output[i] || 0))).join(" ") || "M0,0" }));
+    return svg;
+  }
+
+  /** "48K out" with the last turn and the thinking share in the tooltip; null before the first turn. */
+  function outputMeta(session) {
+    if (!session.turns || !Number.isFinite(session.outputTotal)) return null;
+    const span = el("span", "kx-output");
+    span.dataset.testid = "output-total";
+    span.appendChild(icon("pen"));
+    span.appendChild(document.createTextNode(`${tokensText(session.outputTotal)} out`));
+    const out = Array.isArray(session.outputSeries) ? session.outputSeries : [], th = Array.isArray(session.thinkingSeries) ? session.thinkingSeries : [];
+    const last = out.length ? `last turn ${tokensText(out[out.length - 1])} out, ${tokensText(th[th.length - 1] || 0)} thinking · ` : "";
+    const shareText = session.outputTotal > 0 && Number.isFinite(session.thinkingTotal) ? `, ${Math.round((session.thinkingTotal / session.outputTotal) * 100)} % thinking` : "";
+    span.title = `Output: ${last}session ${tokensText(session.outputTotal)} out${shareText} · what the model writes is read back as input on the next turn`;
+    return span;
+  }
+
+  /** "browser_click" for "mcp__royktest__browser_click": an MCP tool by its own name, without the server. */
+  const sourceName = (source) => (/^mcp__/.test(source) ? source.split("__").pop() : source);
+  const GROWTH_TOP = 3;
+
+  /**
+   * "≈ Bash 39K · Read 27K · output 10K": the largest sources of the segment's growth (core.cjs growthBySource),
+   * every source in the tooltip with its share. Nothing before the second turn of a segment.
+   */
+  function growthFor(session) {
+    const g = session.growthBySource && typeof session.growthBySource === "object" ? session.growthBySource : {};
+    const list = Object.entries(g).filter(([, n]) => Number.isFinite(n) && n > 0).sort((a, b) => b[1] - a[1]);
+    if (!list.length) return null;
+    const sum = list.reduce((a, [, n]) => a + n, 0);
+    const line = el("div", "kx-growth", `≈ ${list.slice(0, GROWTH_TOP).map(([k, n]) => `${sourceName(k)} ${tokensText(n)}`).join(" · ")}`);
+    line.dataset.testid = "growth";
+    const since = session.baselineCause === "compaction" ? "since the compaction" : "since the first turn";
+    line.title = `Where the context grew ${since}, estimated: ${list.map(([k, n]) => `${sourceName(k)} ${tokensText(n)} (${Math.round((n / sum) * 100)} %)`).join(", ")}`
+      + ` · per turn, what the model wrote (output) first, the rest split by length over the tool results (by tool), your messages (you) and attachments and reminders (other); a fall is not counted`;
+    return line;
+  }
+
+  /** "start 62K · conversation 41K", or "start after compaction 35K · …"; empty without a baseline. */
+  function baselineText(session) {
+    if (!Number.isFinite(session.baseline) || !Number.isFinite(session.tokens)) return "";
+    const start = session.baselineCause === "compaction" ? "start after compaction" : "start";
+    return `${start} ${tokensText(session.baseline)} · conversation ${tokensText(Math.max(0, session.tokens - session.baseline))}`;
+  }
+
+  /**
+   * The context bar: the fill is the count's share of SCALE, its first part the segment's start (the baseline)
+   * in a muted shade, a gap at every limit, a hatched end above SCALE; the tooltip carries the split and the zone's advice.
+   */
   function barFor(session) {
     const bar = el("div", "kx-bar");
     bar.setAttribute("role", "img");
     bar.dataset.testid = "bar";
     const known = Number.isFinite(session.tokens);
     const advice = ZONE_ADVICE[session.zone] ? ` · ${ZONE_ADVICE[session.zone]}` : "";
-    bar.title = known ? `${tokensText(session.tokens)} tokens in the context · scale ${SCALE_TEXT}, marks at ${MARKS_TEXT}${advice}` : "no count yet";
+    const split = baselineText(session);
+    bar.title = known ? `${tokensText(session.tokens)} tokens in the context${split ? `: ${split}` : ""} · scale ${SCALE_TEXT}, marks at ${MARKS_TEXT}${advice}` : "no count yet";
     bar.setAttribute("aria-label", !known ? "no count" : session.tokens > SCALE ? `over the ${tokensText(SCALE)} scale` : `${Math.round(share(session.tokens) * 100)} % of the ${tokensText(SCALE)} scale`);
     const fill = el("span", "kx-fill" + (session.busy ? " kx-busy" : ""));
     fill.style.setProperty("--p", pct(share(session.tokens)));
+    if (split) {
+      const base = el("span", "kx-base");
+      base.dataset.testid = "baseline";
+      base.dataset.cause = session.baselineCause || "unknown";
+      base.style.setProperty("--b", pct(Math.min(1, session.baseline / session.tokens)));
+      fill.appendChild(base);
+    }
     bar.appendChild(fill);
     for (const g of LIMITS) {
       const tick = el("span", "kx-tick");
@@ -410,14 +523,23 @@
     count.appendChild(tokens);
     if (ZONE_NAME[session.zone]) count.appendChild(el("span", "kx-zone-txt", ZONE_NAME[session.zone]));
     row.appendChild(count);
-    row.appendChild(barFor(session));
+    const barCol = el("div", "kx-bar-col");
+    barCol.appendChild(barFor(session));
+    const growth = growthFor(session);
+    if (growth) barCol.appendChild(growth);
+    row.appendChild(barCol);
     const curveWrap = el("div", "kx-curve-wrap");
     curveWrap.appendChild(curveFor(session) || el("span", "kx-nocurve", session.turns ? "one turn, no curve yet" : "no turns yet"));
+    const outputBars = outputFor(session);
+    if (outputBars) curveWrap.appendChild(outputBars);
     row.appendChild(curveWrap);
     const meta = el("div", "kx-meta");
     const add = (name, text) => { const s = el("span"); s.appendChild(icon(name)); s.appendChild(document.createTextNode(text)); meta.appendChild(s); };
-    add("cpu", session.modelShort || "unknown");
+    add("cpu", (session.modelShort || "unknown") + (session.effort ? ` · ${session.effort}` : ""));
+    if (session.effort) meta.lastChild.title = `Model and the effort level of the last turn`;
     add("repeat", `${session.turns} ${session.turns === 1 ? "turn" : "turns"}`);
+    const output = outputMeta(session);
+    if (output) meta.appendChild(output);
     add("clock", sinceText(session.sinceMs));
     const cache = cacheFor(session);
     if (cache) meta.appendChild(cache);
@@ -520,6 +642,12 @@
     const cacheCounts = data.cacheCounts || {};
     cacheWarmEl.textContent = String(Number.isFinite(cacheCounts.warm) ? cacheCounts.warm : 0);
     cacheColdEl.textContent = String(Number.isFinite(cacheCounts.cold) ? cacheCounts.cold : 0);
+    startMedianEl.hidden = !Number.isFinite(data.baselineMedian);
+    if (!startMedianEl.hidden) {
+      startMedianEl.firstChild.textContent = tokensText(data.baselineMedian);
+      const n = data.baselineSessions;
+      startMedianEl.title = `Start cost: the median first turn of the ${n === 1 ? "session" : `${n} sessions`} listed here that began fresh (not after a compaction). It is the fixed load (CLAUDE.md, memory, skill and tool listings) plus the first message, so a long first prompt raises it`;
+    }
     allEl.checked = !!data.all;
     errorsEl.textContent = "";
     errorsEl.hidden = !(data.errors && data.errors.length);

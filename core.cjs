@@ -20,6 +20,11 @@ const DIM_AFTER_MS = 60 * 60 * 1000;
 const TTL_1H_MS = 60 * 60 * 1000, TTL_5M_MS = 5 * 60 * 1000;
 const SERIES_MAX = 200; // the sparkline keeps the last 200 turns, so the payload to the webview stays small
 const DIP_BELOW = 0.7; // a turn is a dip when its context is below 70 % of the previous turn's
+// What an image weighs against text when a turn's growth is split by length. Measured in the owner's transcripts
+// on 2026-10-23: one image grew the context by a median 1 643 tokens (113 gaps with an image and little else),
+// text by one token per 2.06 characters (1 059 gaps without images). The vision docs' rule, ⌈w/28⌉ × ⌈h/28⌉ up
+// to 4 784 tokens, needs the dimensions, which the transcript does not have.
+const IMAGE_CHARS = 3500;
 
 /** The folder name Claude Code gives a project under projects/: every non-alphanumeric char becomes "-". */
 function projectSlug(cwd) {
@@ -84,9 +89,27 @@ function readTail(file, { from, bytes } = {}) {
  * ephemeral_5m_input_tokens above zero); a turn that created nothing says nothing, and it is null until seen.
  * A turn is one API call: Claude Code writes one entry per content block of a response, all sharing
  * message.id, so turns are counted per id. `series` is the token count per turn, oldest first, kept to the
- * last SERIES_MAX turns. The title is the last ai-title entry, else the first user message (meta
- * entries and tool results skipped) collapsed to one line. With `previous`, the lines are parsed as the
- * continuation of an already parsed transcript, so the host reads only the new bytes.
+ * last SERIES_MAX turns. `compactions` are the compact_boundary entries Claude Code writes, each at `at`, the
+ * index in `series` of the first turn after it, with the trigger ("auto", "manual") and the counts before and
+ * after; a /clear starts a new transcript, so it never shows here. `outputSeries` and `thinkingSeries` are the
+ * output tokens per turn and the thinking part of them (usage.output_tokens, output_tokens_details.thinking_tokens),
+ * aligned with `series` and counted once per turn (every block of a response carries the same counters);
+ * `outputTotal` and `thinkingTotal` sum them over the whole transcript, and `effort` is the last turn's.
+ * `baseline` is the token count of the first turn of the current segment: the fixed load (CLAUDE.md, memory,
+ * skill and tool listings) plus the first message. A segment starts with the transcript (a new session or a
+ * /clear) or at a compaction, which `baselineCause` says ("start", "compaction"); later blocks of that turn
+ * update it like the series. `baselineAt` is the segment's first index in `series`, null once it is trimmed
+ * out (the baseline stays). A state parsed by an older core gets no baseline: its first turn is unknown.
+ * `growthBySource` estimates where the segment's context went since its first turn. The growth from one turn
+ * to the next (a fall is skipped) goes first to "output", up to the previous turn's output_tokens (what the
+ * model wrote is read back as input), and the rest is split by length over what entered between the two
+ * turns: each tool result under its tool's name, the user's text as "you", meta entries and rendered
+ * attachments as "other" (all of it when nothing was seen). Token counts per result are not in the transcript,
+ * so the split is an estimate; earlier thinking stays in the context, so "output" is not overstated (NOTES.md,
+ * "Where the context grows"). The open tool calls (id → name) and the characters since the last turn are
+ * hidden state. The title is the last ai-title entry, else
+ * the first user message (meta entries and tool results skipped) collapsed to one line. With `previous`, the
+ * lines are parsed as the continuation of an already parsed transcript, so the host reads only the new bytes.
  */
 function parseTranscript(lines, previous) {
   const p = previous || {};
@@ -94,39 +117,124 @@ function parseTranscript(lines, previous) {
   let cacheTtlMs = p.cacheTtlMs ?? null, cacheRead = p.cacheRead ?? null, cacheCreated = p.cacheCreated ?? null;
   let title = p.title || null, firstUser = p.firstUser || null;
   let turns = p.turns || 0, lastId = p.lastId || null;
+  let pendingCompaction = p.pendingCompaction || null;
+  let outputTotal = p.outputTotal || 0, thinkingTotal = p.thinkingTotal || 0, effort = p.effort ?? null;
+  let turnOutput = p.turnOutput || 0, turnThinking = p.turnThinking || 0;
+  let baseline = p.baseline ?? null, baselineAt = p.baselineAt ?? null, baselineCause = p.baselineCause ?? null, baselineId = p.baselineId ?? null;
+  let growthBySource = { ...p.growthBySource }, pendingInput = { ...p.pendingInput };
+  const toolNames = { ...p.toolNames };
+  const enter = (source, chars) => { if (chars > 0) pendingInput[source] = (pendingInput[source] || 0) + chars; };
   const series = Array.isArray(p.series) ? p.series.slice() : [];
+  const outputSeries = Array.isArray(p.outputSeries) ? p.outputSeries.slice() : [];
+  const thinkingSeries = Array.isArray(p.thinkingSeries) ? p.thinkingSeries.slice() : [];
+  let compactions = Array.isArray(p.compactions) ? p.compactions.map((c) => ({ ...c })) : [];
   for (const line of lines) {
     const entry = parseEntry(line);
     if (!entry || entry.isSidechain) continue;
+    if (entry.type === "system" && entry.subtype === "compact_boundary") { pendingCompaction = compaction(entry.compactMetadata); continue; }
     if (entry.type === "ai-title") { if (entry.aiTitle) title = String(entry.aiTitle); continue; }
-    if (entry.type === "user") { if (!firstUser && !entry.isMeta) firstUser = userText(entry.message && entry.message.content); continue; }
+    if (entry.type === "attachment") { if (Array.isArray(entry.rendered)) for (const r of entry.rendered) enter("other", contentChars(r && r.content)); continue; }
+    if (entry.type === "user") {
+      const content = entry.message && entry.message.content;
+      if (!firstUser && !entry.isMeta) firstUser = userText(content);
+      const own = entry.isMeta ? "other" : "you";
+      if (!Array.isArray(content)) enter(own, contentChars(content));
+      else for (const b of content) {
+        if (b && b.type === "tool_result") { enter(toolNames[b.tool_use_id] || "other", contentChars(b.content)); delete toolNames[b.tool_use_id]; }
+        else enter(own, contentChars([b]));
+      }
+      continue;
+    }
     if (entry.type !== "assistant") continue;
+    const blocks = entry.message && Array.isArray(entry.message.content) ? entry.message.content : [];
+    for (const b of blocks) if (b && b.type === "tool_use" && b.id) toolNames[b.id] = typeof b.name === "string" ? b.name : "other";
     const u = entry.message && entry.message.usage;
     // not an API call: Claude Code writes "<synthetic>" entries with zero usage on API errors and
     // aborts, and a usage without the three input counters says nothing about the context
     if (!u || entry.message.model === "<synthetic>" || !hasInputCounters(u)) continue;
+    const before = tokens;
     tokens = num(u.input_tokens) + num(u.cache_creation_input_tokens) + num(u.cache_read_input_tokens);
     cacheRead = num(u.cache_read_input_tokens);
     cacheCreated = num(u.cache_creation_input_tokens);
     cacheTtlMs = cacheTtl(u.cache_creation) ?? cacheTtlMs;
     model = (entry.message && entry.message.model) || null;
     lastTurn = entry.timestamp || null;
+    effort = typeof entry.effort === "string" ? entry.effort : null;
+    const output = num(u.output_tokens);
+    const thinking = num(u.output_tokens_details && u.output_tokens_details.thinking_tokens);
     const id = entry.message.id || entry.uuid || null;
     if (id !== lastId) {
       turns += 1; lastId = id;
       series.push(tokens);
-      if (series.length > SERIES_MAX) series.shift();
-    } else if (series.length) {
-      series[series.length - 1] = tokens; // another content block of the same turn
+      outputSeries.push(output); thinkingSeries.push(thinking);
+      outputTotal += output; thinkingTotal += thinking;
+      let cause = turns === 1 ? "start" : null;
+      if (pendingCompaction) { compactions.push({ at: series.length - 1, ...pendingCompaction }); pendingCompaction = null; cause = "compaction"; }
+      if (cause) { baseline = tokens; baselineAt = series.length - 1; baselineCause = cause; baselineId = id; growthBySource = {}; }
+      else if (before !== null) attribute(growthBySource, tokens - before, turnOutput, pendingInput);
+      pendingInput = {};
+      if (series.length > SERIES_MAX) {
+        series.shift();
+        compactions = compactions.map((c) => ({ ...c, at: c.at - 1 })).filter((c) => c.at >= 0);
+        if (baselineAt !== null) baselineAt = baselineAt > 0 ? baselineAt - 1 : null;
+      }
+      if (outputSeries.length > SERIES_MAX) { outputSeries.shift(); thinkingSeries.shift(); }
     } else {
-      series.push(tokens); // the same turn continued from a state without a series: a point, not a new turn
+      if (series.length) series[series.length - 1] = tokens; // another content block of the same turn
+      else series.push(tokens); // the same turn continued from a state without a series: a point, not a new turn
+      if (id !== null && id === baselineId) baseline = tokens;
+      // every block of a response carries the response's output counters, so the turn counts them once
+      outputTotal += output - turnOutput; thinkingTotal += thinking - turnThinking;
+      if (outputSeries.length) { outputSeries[outputSeries.length - 1] = output; thinkingSeries[thinkingSeries.length - 1] = thinking; }
+      else { outputSeries.push(output); thinkingSeries.push(thinking); }
     }
+    turnOutput = output; turnThinking = thinking;
   }
-  const out = { tokens, model, lastTurn, title: title || firstUser || null, turns, series, cacheTtlMs, cacheRead, cacheCreated };
+  const out = { tokens, model, lastTurn, title: title || firstUser || null, turns, series, cacheTtlMs, cacheRead, cacheCreated, compactions,
+    outputSeries, thinkingSeries, outputTotal, thinkingTotal, effort, baseline, baselineAt, baselineCause, growthBySource };
   // hidden state for the continuation: not part of what the panel shows, and not part of toEqual
   Object.defineProperty(out, "lastId", { value: lastId, enumerable: false });
+  Object.defineProperty(out, "turnOutput", { value: turnOutput, enumerable: false });
+  Object.defineProperty(out, "turnThinking", { value: turnThinking, enumerable: false });
   Object.defineProperty(out, "firstUser", { value: firstUser, enumerable: false });
+  Object.defineProperty(out, "pendingCompaction", { value: pendingCompaction, enumerable: false });
+  Object.defineProperty(out, "baselineId", { value: baselineId, enumerable: false });
+  Object.defineProperty(out, "pendingInput", { value: pendingInput, enumerable: false });
+  Object.defineProperty(out, "toolNames", { value: toolNames, enumerable: false });
   return out;
+}
+
+/**
+ * Adds one turn's growth to `into`: first "output", up to what the previous turn wrote, then the rest split
+ * over `inputs` (source → characters) in proportion, rounded to whole tokens; "other" when no input was seen.
+ */
+function attribute(into, growth, output, inputs) {
+  if (!(growth > 0)) return;
+  const add = (source, n) => { if (n > 0) into[source] = (into[source] || 0) + n; };
+  const own = Math.min(num(output), growth);
+  add("output", own);
+  const rest = growth - own, total = Object.values(inputs).reduce((a, b) => a + b, 0);
+  if (!total) { add("other", rest); return; }
+  for (const [source, chars] of Object.entries(inputs)) add(source, Math.round((rest * chars) / total));
+}
+
+/** The length of a message content (a string or blocks): text by its characters, an image as IMAGE_CHARS, any other block as its JSON. */
+function contentChars(content) {
+  if (typeof content === "string") return content.length;
+  if (!Array.isArray(content)) return 0;
+  let n = 0;
+  for (const b of content) {
+    if (!b || typeof b !== "object") continue;
+    n += b.type === "text" && typeof b.text === "string" ? b.text.length : b.type === "image" ? IMAGE_CHARS : JSON.stringify(b).length;
+  }
+  return n;
+}
+
+/** A compaction from compact_boundary's compactMetadata; a missing field is null. */
+function compaction(meta) {
+  const m = meta && typeof meta === "object" ? meta : {};
+  const n = (v) => (Number.isFinite(v) ? v : null);
+  return { trigger: typeof m.trigger === "string" ? m.trigger : null, preTokens: n(m.preTokens), postTokens: n(m.postTokens), durationMs: n(m.durationMs) };
 }
 
 /** Indexes in `series` where the count fell below DIP_BELOW of the previous turn (a compaction or a /clear). */
@@ -180,7 +288,9 @@ function userText(content) {
  * unknown last. `zoneCounts` counts the listed sessions per zone; sessions with an unknown count are not
  * counted. Per session the prompt cache: `hitShare` (cacheRead / tokens of the last turn), `coldAt` (the last
  * turn plus the TTL), `coldInMs` (until then, negative when past) and `cacheState` ("warm" or "cold", null
- * without a TTL); `cacheCounts` counts the listed sessions per state.
+ * without a TTL); `cacheCounts` counts the listed sessions per state. `baselineMedian` is the median baseline
+ * of the listed sessions whose segment is a start (after a compaction the baseline holds the summary too), null
+ * when there are none, so a CLAUDE.md that grew shows as a higher start for every new session.
  */
 function buildSessions({ registry = [], transcripts = {}, now, workspaceFolders = [], all = false }) {
   const nowMs = typeof now === "number" ? now : Date.parse(now);
@@ -190,6 +300,8 @@ function buildSessions({ registry = [], transcripts = {}, now, workspaceFolders 
       const t = transcripts[r.sessionId] || {};
       const tokens = Number.isFinite(t.tokens) ? t.tokens : null;
       const series = Array.isArray(t.series) ? t.series : [];
+      const compactions = Array.isArray(t.compactions) ? t.compactions : [];
+      const compactedAt = new Set(compactions.map((c) => c.at));
       const lastMs = t.lastTurn ? Date.parse(t.lastTurn) : NaN;
       const sinceMs = Number.isFinite(lastMs) && Number.isFinite(nowMs) ? Math.max(0, nowMs - lastMs) : null;
       const cacheTtlMs = Number.isFinite(t.cacheTtlMs) ? t.cacheTtlMs : null;
@@ -199,8 +311,15 @@ function buildSessions({ registry = [], transcripts = {}, now, workspaceFolders 
       return {
         pid: r.pid, sessionId: r.sessionId, cwd: r.cwd, project: projectName(r.cwd),
         title: t.title || null, model: t.model || null, modelShort: modelShort(t.model),
-        tokens, zone: zone(tokens), turns: t.turns || 0, series, dips: dips(series),
+        tokens, zone: zone(tokens), turns: t.turns || 0, series, compactions,
+        dips: dips(series).filter((i) => !compactedAt.has(i)), // a compaction is marked as such, not again as a dip
         lastTurn: t.lastTurn || null, sinceMs,
+        outputSeries: Array.isArray(t.outputSeries) ? t.outputSeries : [], thinkingSeries: Array.isArray(t.thinkingSeries) ? t.thinkingSeries : [],
+        outputTotal: Number.isFinite(t.outputTotal) ? t.outputTotal : null, thinkingTotal: Number.isFinite(t.thinkingTotal) ? t.thinkingTotal : null,
+        effort: typeof t.effort === "string" ? t.effort : null,
+        baseline: Number.isFinite(t.baseline) ? t.baseline : null, baselineAt: Number.isFinite(t.baselineAt) ? t.baselineAt : null,
+        baselineCause: t.baselineCause === "start" || t.baselineCause === "compaction" ? t.baselineCause : null,
+        growthBySource: t.growthBySource && typeof t.growthBySource === "object" ? t.growthBySource : {},
         cacheTtlMs, cacheRead, cacheCreated: Number.isFinite(t.cacheCreated) ? t.cacheCreated : null,
         hitShare: cacheRead !== null && tokens ? cacheRead / tokens : null,
         coldAt: Number.isFinite(coldMs) ? new Date(coldMs).toISOString() : null, coldInMs,
@@ -221,7 +340,10 @@ function buildSessions({ registry = [], transcripts = {}, now, workspaceFolders 
   for (const s of sessions) if (s.zone) zoneCounts[s.zone] += 1;
   const cacheCounts = { warm: 0, cold: 0 };
   for (const s of sessions) if (s.cacheState) cacheCounts[s.cacheState] += 1;
-  return { sessions, groups, count: sessions.length, zoneCounts, cacheCounts };
+  const starts = sessions.filter((s) => s.baselineCause === "start" && s.baseline !== null).map((s) => s.baseline).sort((a, b) => a - b);
+  const mid = starts.length >> 1;
+  const baselineMedian = !starts.length ? null : starts.length % 2 ? starts[mid] : (starts[mid - 1] + starts[mid]) / 2;
+  return { sessions, groups, count: sessions.length, zoneCounts, cacheCounts, baselineMedian, baselineSessions: starts.length };
 }
 
 /**
