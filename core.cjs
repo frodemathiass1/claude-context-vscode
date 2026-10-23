@@ -86,7 +86,10 @@ function readTail(file, { from, bytes } = {}) {
  * message.id, so turns are counted per id. `series` is the token count per turn, oldest first, kept to the
  * last SERIES_MAX turns. `compactions` are the compact_boundary entries Claude Code writes, each at `at`, the
  * index in `series` of the first turn after it, with the trigger ("auto", "manual") and the counts before and
- * after; a /clear starts a new transcript, so it never shows here. The title is the last ai-title entry, else
+ * after; a /clear starts a new transcript, so it never shows here. `outputSeries` and `thinkingSeries` are the
+ * output tokens per turn and the thinking part of them (usage.output_tokens, output_tokens_details.thinking_tokens),
+ * aligned with `series` and counted once per turn (every block of a response carries the same counters);
+ * `outputTotal` and `thinkingTotal` sum them over the whole transcript, and `effort` is the last turn's. The title is the last ai-title entry, else
  * the first user message (meta entries and tool results skipped) collapsed to one line. With `previous`, the
  * lines are parsed as the continuation of an already parsed transcript, so the host reads only the new bytes.
  */
@@ -97,7 +100,11 @@ function parseTranscript(lines, previous) {
   let title = p.title || null, firstUser = p.firstUser || null;
   let turns = p.turns || 0, lastId = p.lastId || null;
   let pendingCompaction = p.pendingCompaction || null;
+  let outputTotal = p.outputTotal || 0, thinkingTotal = p.thinkingTotal || 0, effort = p.effort ?? null;
+  let turnOutput = p.turnOutput || 0, turnThinking = p.turnThinking || 0;
   const series = Array.isArray(p.series) ? p.series.slice() : [];
+  const outputSeries = Array.isArray(p.outputSeries) ? p.outputSeries.slice() : [];
+  const thinkingSeries = Array.isArray(p.thinkingSeries) ? p.thinkingSeries.slice() : [];
   let compactions = Array.isArray(p.compactions) ? p.compactions.map((c) => ({ ...c })) : [];
   for (const line of lines) {
     const entry = parseEntry(line);
@@ -116,24 +123,37 @@ function parseTranscript(lines, previous) {
     cacheTtlMs = cacheTtl(u.cache_creation) ?? cacheTtlMs;
     model = (entry.message && entry.message.model) || null;
     lastTurn = entry.timestamp || null;
+    effort = typeof entry.effort === "string" ? entry.effort : null;
+    const output = num(u.output_tokens);
+    const thinking = num(u.output_tokens_details && u.output_tokens_details.thinking_tokens);
     const id = entry.message.id || entry.uuid || null;
     if (id !== lastId) {
       turns += 1; lastId = id;
       series.push(tokens);
+      outputSeries.push(output); thinkingSeries.push(thinking);
+      outputTotal += output; thinkingTotal += thinking;
       if (pendingCompaction) { compactions.push({ at: series.length - 1, ...pendingCompaction }); pendingCompaction = null; }
       if (series.length > SERIES_MAX) {
         series.shift();
         compactions = compactions.map((c) => ({ ...c, at: c.at - 1 })).filter((c) => c.at >= 0);
       }
-    } else if (series.length) {
-      series[series.length - 1] = tokens; // another content block of the same turn
+      if (outputSeries.length > SERIES_MAX) { outputSeries.shift(); thinkingSeries.shift(); }
     } else {
-      series.push(tokens); // the same turn continued from a state without a series: a point, not a new turn
+      if (series.length) series[series.length - 1] = tokens; // another content block of the same turn
+      else series.push(tokens); // the same turn continued from a state without a series: a point, not a new turn
+      // every block of a response carries the response's output counters, so the turn counts them once
+      outputTotal += output - turnOutput; thinkingTotal += thinking - turnThinking;
+      if (outputSeries.length) { outputSeries[outputSeries.length - 1] = output; thinkingSeries[thinkingSeries.length - 1] = thinking; }
+      else { outputSeries.push(output); thinkingSeries.push(thinking); }
     }
+    turnOutput = output; turnThinking = thinking;
   }
-  const out = { tokens, model, lastTurn, title: title || firstUser || null, turns, series, cacheTtlMs, cacheRead, cacheCreated, compactions };
+  const out = { tokens, model, lastTurn, title: title || firstUser || null, turns, series, cacheTtlMs, cacheRead, cacheCreated, compactions,
+    outputSeries, thinkingSeries, outputTotal, thinkingTotal, effort };
   // hidden state for the continuation: not part of what the panel shows, and not part of toEqual
   Object.defineProperty(out, "lastId", { value: lastId, enumerable: false });
+  Object.defineProperty(out, "turnOutput", { value: turnOutput, enumerable: false });
+  Object.defineProperty(out, "turnThinking", { value: turnThinking, enumerable: false });
   Object.defineProperty(out, "firstUser", { value: firstUser, enumerable: false });
   Object.defineProperty(out, "pendingCompaction", { value: pendingCompaction, enumerable: false });
   return out;
@@ -221,6 +241,9 @@ function buildSessions({ registry = [], transcripts = {}, now, workspaceFolders 
         tokens, zone: zone(tokens), turns: t.turns || 0, series, compactions,
         dips: dips(series).filter((i) => !compactedAt.has(i)), // a compaction is marked as such, not again as a dip
         lastTurn: t.lastTurn || null, sinceMs,
+        outputSeries: Array.isArray(t.outputSeries) ? t.outputSeries : [], thinkingSeries: Array.isArray(t.thinkingSeries) ? t.thinkingSeries : [],
+        outputTotal: Number.isFinite(t.outputTotal) ? t.outputTotal : null, thinkingTotal: Number.isFinite(t.thinkingTotal) ? t.thinkingTotal : null,
+        effort: typeof t.effort === "string" ? t.effort : null,
         cacheTtlMs, cacheRead, cacheCreated: Number.isFinite(t.cacheCreated) ? t.cacheCreated : null,
         hitShare: cacheRead !== null && tokens ? cacheRead / tokens : null,
         coldAt: Number.isFinite(coldMs) ? new Date(coldMs).toISOString() : null, coldInMs,

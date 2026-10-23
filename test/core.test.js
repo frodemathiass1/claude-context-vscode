@@ -42,16 +42,16 @@ describe("parseTranscript", () => {
   });
 
   it("a transcript without usage, with unknown entries and a line that is not JSON, gives null (unknown) and zero turns", () => {
-    expect(K.parseTranscript(lines("without-usage"))).toEqual({ tokens: null, model: null, lastTurn: null, title: "What time is it?", turns: 0, series: [], cacheTtlMs: null, cacheRead: null, cacheCreated: null, compactions: [] });
+    expect(K.parseTranscript(lines("without-usage"))).toEqual({ tokens: null, model: null, lastTurn: null, title: "What time is it?", turns: 0, series: [], cacheTtlMs: null, cacheRead: null, cacheCreated: null, compactions: [], outputSeries: [], thinkingSeries: [], outputTotal: 0, thinkingTotal: 0, effort: null });
   });
 
   it("a synthetic entry (API error, model <synthetic>, all counters zero) and a usage without input counters are not turns: the number is the previous real reply", () => {
     const t = K.parseTranscript(lines("synthetic-last"));
-    expect(t).toEqual({ tokens: 140005, model: "claude-opus-5-5", lastTurn: "2026-10-21T21:00:10.000Z", title: "Continue", turns: 1, series: [140005], cacheTtlMs: 3600000, cacheRead: 100000, cacheCreated: 40000, compactions: [] });
+    expect(t).toEqual({ tokens: 140005, model: "claude-opus-5-5", lastTurn: "2026-10-21T21:00:10.000Z", title: "Continue", turns: 1, series: [140005], cacheTtlMs: 3600000, cacheRead: 100000, cacheCreated: 40000, compactions: [], outputSeries: [30], thinkingSeries: [0], outputTotal: 30, thinkingTotal: 0, effort: null });
   });
 
   it("an empty tail gives unknown for everything", () => {
-    expect(K.parseTranscript([])).toEqual({ tokens: null, model: null, lastTurn: null, title: null, turns: 0, series: [], cacheTtlMs: null, cacheRead: null, cacheCreated: null, compactions: [] });
+    expect(K.parseTranscript([])).toEqual({ tokens: null, model: null, lastTurn: null, title: null, turns: 0, series: [], cacheTtlMs: null, cacheRead: null, cacheCreated: null, compactions: [], outputSeries: [], thinkingSeries: [], outputTotal: 0, thinkingTotal: 0, effort: null });
   });
 
   it("the tail parsed as a continuation of the previous state gives the same as the whole file at once", () => {
@@ -188,6 +188,36 @@ describe("parseTranscript", () => {
     const side = JSON.stringify({ type: "system", subtype: "compact_boundary", isSidechain: true, compactMetadata: { trigger: "auto" } });
     expect(K.parseTranscript([turn(1, 5000), bare, turn(2, 1000)]).compactions).toEqual([{ at: 1, trigger: null, preTokens: null, postTokens: null, durationMs: null }]);
     expect(K.parseTranscript([turn(1, 5000), side, turn(2, 1000)]).compactions).toEqual([]);
+  });
+
+  // output: what the model wrote per turn, thinking included, and the effort it ran at
+  it("output and thinking per turn are aligned with the series and summed for the transcript; effort is the last turn's", () => {
+    const t = K.parseTranscript(lines("compaction"));
+    expect(t.outputSeries).toEqual([100, 100, 100, 100, 100]);
+    expect(t.thinkingSeries).toEqual([20, 20, 20, 20, 20]);
+    expect(t).toMatchObject({ outputTotal: 500, thinkingTotal: 100, effort: "xhigh" });
+  });
+
+  it("every block of a response carries the same output counters, so a turn counts them once; a later block with other numbers replaces them", () => {
+    const out = (o, th) => ({ output_tokens: o, output_tokens_details: { thinking_tokens: th } });
+    const block = (i, o, th, effort) => turn(i, 5000, { effort }, out(o, th));
+    const same = [block(1, 700, 100, "medium"), block(1, 700, 100, "medium"), block(1, 700, 100, "medium"), block(2, 50, 0, "xhigh")];
+    expect(K.parseTranscript(same)).toMatchObject({ outputSeries: [700, 50], thinkingSeries: [100, 0], outputTotal: 750, thinkingTotal: 100, effort: "xhigh", turns: 2 });
+    const growing = [block(1, 300, 10), block(1, 700, 100)];
+    expect(K.parseTranscript(growing)).toMatchObject({ outputSeries: [700], outputTotal: 700, thinkingTotal: 100 });
+    // cut between two blocks of the same turn: the continuation does not count the turn twice
+    expect(K.parseTranscript(same.slice(1), K.parseTranscript(same.slice(0, 1)))).toEqual(K.parseTranscript(same));
+  });
+
+  it("a usage without output_tokens_details gives zero thinking, an entry without effort gives no effort, and the output fields continue over a tail", () => {
+    expect(K.parseTranscript([turn(1, 5000, {}, { output_tokens: 42 })])).toMatchObject({ outputSeries: [42], thinkingSeries: [0], outputTotal: 42, thinkingTotal: 0, effort: null });
+    const all = lines("compaction");
+    expect(K.parseTranscript(all.slice(4), K.parseTranscript(all.slice(0, 4)))).toEqual(K.parseTranscript(all));
+    // past the 200 limit the output series is trimmed with the series, the totals are not
+    const many = Array.from({ length: 205 }, (_, j) => turn(j + 1, 1000, {}, { output_tokens: 2 }));
+    const t = K.parseTranscript(many);
+    expect(t.outputSeries.length).toBe(200);
+    expect(t.outputTotal).toBe(410);
   });
 });
 
@@ -368,6 +398,13 @@ describe("buildSessions", () => {
     expect(fresh.compactions).toEqual(compactions);
     expect(fresh.dips).toEqual([4]);
     expect(r.sessions.find((s) => s.sessionId === "without").compactions).toEqual([]);
+  });
+
+  it("the output fields pass through; without a transcript the series are empty and the totals and the effort unknown", () => {
+    const r = K.buildSessions({ registry, transcripts: { ...transcripts, new: tail(143002, NOW, { outputSeries: [5, 7], thinkingSeries: [1, 2], outputTotal: 12, thinkingTotal: 3, effort: "high" }) },
+      now: NOW, workspaceFolders: [MINE], all: false });
+    expect(r.sessions.find((s) => s.sessionId === "new")).toMatchObject({ outputSeries: [5, 7], thinkingSeries: [1, 2], outputTotal: 12, thinkingTotal: 3, effort: "high" });
+    expect(r.sessions.find((s) => s.sessionId === "without")).toMatchObject({ outputSeries: [], thinkingSeries: [], outputTotal: null, thinkingTotal: null, effort: null });
   });
 
   it("the count per zone covers the listed sessions in all four zones, unknown is not counted, and with all projects everything shown is counted", () => {
