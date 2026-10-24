@@ -56,8 +56,20 @@
   }
   header h1 { margin: 0; font-size: 1em; font-weight: 600; display: flex; align-items: baseline; gap: 6px; min-width: 0; }
   header h1 .kx-n { font-family: var(--kx-mono); font-size: 1.35em; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
-  header label { display: inline-flex; align-items: center; gap: 6px; color: var(--kx-muted); cursor: pointer; white-space: nowrap; margin-left: auto; font-size: 0.92em; }
+  /* the scope, the "updated 12:04:31" note and the refresh button, pushed to the right end of the header */
+  .kx-tools { display: inline-flex; align-items: center; gap: 10px; margin-left: auto; }
+  header label { display: inline-flex; align-items: center; gap: 6px; color: var(--kx-muted); cursor: pointer; white-space: nowrap; font-size: 0.92em; }
   header input { accent-color: var(--kx-accent); margin: 0; width: 14px; height: 14px; }
+  .kx-refreshed { font-size: 0.82em; color: var(--kx-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .kx-refresh {
+    display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; margin: 0;
+    border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--kx-muted); cursor: pointer;
+  }
+  .kx-refresh:hover { background: var(--kx-row-hover); color: var(--kx-fg); }
+  .kx-refresh:focus-visible { outline: 1px solid var(--kx-accent); outline-offset: 1px; }
+  .kx-refresh svg { width: 14px; height: 14px; }
+  .kx-refresh[aria-busy="true"] svg { animation: kx-spin 0.8s linear infinite; } /* spins until the next list arrives */
+  @keyframes kx-spin { to { transform: rotate(360deg); } }
   /* one segment per zone, width = that zone's share of the sessions with a known zone; the legend repeats the numbers */
   .kx-meter { flex: 1 1 160px; min-width: 140px; display: flex; flex-direction: column; gap: 4px; }
   .kx-meter-bar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: var(--kx-track); }
@@ -92,6 +104,15 @@
   .kx-group .kx-gn { font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--kx-muted); }
   .kx-group::after { content: ""; flex: 1; height: 1px; background: var(--kx-border); }
   .kx-group.kx-project { margin-top: 16px; }
+  /* the whole heading is the fold button; the chevron points right when folded, down when open */
+  .kx-group .kx-fold {
+    display: inline-flex; align-items: center; gap: 6px; padding: 1px 4px 1px 0; margin: 0 0 0 -2px; border: 0; border-radius: 4px;
+    background: transparent; font: inherit; text-transform: inherit; letter-spacing: inherit; color: inherit; cursor: pointer;
+  }
+  .kx-group .kx-fold:hover { color: var(--kx-fg); }
+  .kx-group .kx-fold:focus-visible { outline: 1px solid var(--kx-accent); outline-offset: 1px; }
+  .kx-group .kx-chev { transition: transform 0.15s ease; }
+  .kx-group .kx-fold[aria-expanded="true"] .kx-chev { transform: rotate(90deg); }
   .kx-ico { width: 13px; height: 13px; flex: none; vertical-align: -2px; }
 
   /* ── Row: stacked under 620 px (title row, bar, curve, meta), four columns from 620 px ── */
@@ -202,8 +223,8 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .kx-dot.kx-pulse::after, .kx-fill.kx-busy::after { animation: none; }
-    .kx-fill { transition: none; }
+    .kx-dot.kx-pulse::after, .kx-fill.kx-busy::after, .kx-refresh[aria-busy="true"] svg { animation: none; }
+    .kx-fill, .kx-group .kx-chev { transition: none; }
   }
   [hidden] { display: none !important; }
 </style>
@@ -217,7 +238,11 @@
   </div>
   <span class="kx-start-median" data-testid="start-median" hidden><b></b> start</span>
   <span class="kx-cache-counts" data-testid="cache-counts" title="Prompt cache: how many of the listed sessions have a warm cache now, and how many went cold"><span><b data-testid="cache-warm">0</b> warm</span><span><b data-testid="cache-cold">0</b> cold</span></span>
-  <label><input type="checkbox" data-testid="all"> All projects</label>
+  <div class="kx-tools">
+    <label><input type="checkbox" data-testid="all"> All projects</label>
+    <span class="kx-refreshed" data-testid="refreshed" role="status" hidden></span>
+    <button type="button" class="kx-refresh" data-testid="refresh" aria-label="Refresh" title="Read the registry and every transcript again now"></button>
+  </div>
 </header>
 <div class="kx-error kx-contact" data-testid="contact" hidden>
   <span>Lost contact with the dev server.</span>
@@ -239,6 +264,23 @@
   const cacheWarmEl = document.querySelector('[data-testid="cache-warm"]');
   const cacheColdEl = document.querySelector('[data-testid="cache-cold"]');
   const startMedianEl = document.querySelector('[data-testid="start-median"]');
+  const refreshEl = document.querySelector('[data-testid="refresh"]');
+  const refreshedEl = document.querySelector('[data-testid="refreshed"]');
+  // the VS Code webview API when the panel runs in VS Code; null when a dev server hosts this file (the adapter at the end)
+  const vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : null;
+
+  // ── Remembered choices (the folded groups): the webview's state in VS Code, localStorage in a browser ──
+  const store = {
+    get(key) {
+      try { return vscode ? (vscode.getState() || {})[key] : JSON.parse(localStorage.getItem(`kx-${key}`)); } catch { return undefined; }
+    },
+    set(key, value) {
+      try { if (vscode) vscode.setState({ ...(vscode.getState() || {}), [key]: value }); else localStorage.setItem(`kx-${key}`, JSON.stringify(value)); } catch { /* no storage: the choice lasts this render */ }
+    },
+  };
+  // group keys: "busy" and "idle" fold that group in every project; "project:<name>" folds a whole project
+  const folded = new Set(Array.isArray(store.get("folded")) ? store.get("folded").filter((k) => typeof k === "string") : []);
+  let lastData = null; // the last list rendered, drawn again when a group is folded or unfolded
 
   // ── The zones and the scale, as data. The core decides a session's zone (core.cjs zone()); this list
   // orders the zones in the meter and the legend, names them, and picks the colour pair --kx-<zone> (text)
@@ -360,6 +402,8 @@
     moon: ["M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"],
     timer: ["M10 2h4", "m12 14 3-3", "M12 6a8 8 0 1 0 0 16 8 8 0 0 0 0-16z"],
     pen: ["M12 20h9", "M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838a.5.5 0 0 1-.62-.62l.838-2.872a2 2 0 0 1 .506-.854z"],
+    chevron: ["m9 18 6-6-6-6"],
+    refresh: ["M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8", "M3 3v5h5", "M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16", "M16 16h5v5"],
   };
   function icon(name) {
     const svg = svgEl("svg", { class: "kx-ico", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": 2, "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": "true" });
@@ -576,12 +620,42 @@
     return span;
   }
 
-  function groupHeading(text, n, iconName, className) {
+  /**
+   * A group heading whose whole text is a fold button: aria-expanded says whether the rows under it are
+   * drawn, the count stays visible when folded. `key` is the group's name in `folded`; the rows under it
+   * come from rowsFor(), which links them through aria-controls.
+   */
+  function groupHeading(text, n, iconName, className, key) {
     const h = el("h2", "kx-group" + (className ? ` ${className}` : ""));
-    h.appendChild(icon(iconName));
-    h.appendChild(document.createTextNode(text));
-    h.appendChild(el("span", "kx-gn", `· ${n}`));
+    const open = !folded.has(key);
+    const btn = el("button", "kx-fold");
+    btn.type = "button";
+    btn.dataset.testid = "fold";
+    btn.dataset.group = key;
+    btn.setAttribute("aria-expanded", String(open));
+    btn.title = `${open ? "Collapse" : "Expand"} ${text}`;
+    const chev = icon("chevron");
+    chev.classList.add("kx-chev");
+    btn.appendChild(chev);
+    btn.appendChild(icon(iconName));
+    btn.appendChild(document.createTextNode(text));
+    btn.appendChild(el("span", "kx-gn", `· ${n}`));
+    btn.addEventListener("click", () => {
+      if (folded.has(key)) folded.delete(key); else folded.add(key);
+      store.set("folded", [...folded]);
+      if (lastData) render(lastData);
+    });
+    h.appendChild(btn);
     return h;
+  }
+
+  /** The rows container of a group, linked from its heading's button; null when the group is folded (nothing is drawn). */
+  function rowsFor(heading, idKey) {
+    if (heading.firstChild.getAttribute("aria-expanded") !== "true") return null;
+    const rows = el("div", "kx-rows");
+    rows.id = `kx-rows-${idKey.replace(/[^\w-]+/g, "_")}`;
+    heading.firstChild.setAttribute("aria-controls", rows.id);
+    return rows;
   }
 
   /** The axis line above a group in the wide layout: the column names and the bar's marks at their positions. */
@@ -601,14 +675,19 @@
     return axis;
   }
 
-  /** The sessions as two groups, busy and idle, each with its heading and axis; the order within a group is the list's. */
-  function groupsFor(sessions) {
+  /**
+   * The sessions as two groups, busy and idle, each with its heading and axis; the order within a group is
+   * the list's. A folded group keeps its heading and count and draws no rows. `project` only makes the rows' ids unique.
+   */
+  function groupsFor(sessions, project) {
     const frag = document.createDocumentFragment();
-    const parts = [["Working now", "zap", sessions.filter((s) => s.busy)], ["Idle", "moon", sessions.filter((s) => !s.busy)]];
-    for (const [text, iconName, list] of parts) {
+    const parts = [["Working now", "zap", "busy", sessions.filter((s) => s.busy)], ["Idle", "moon", "idle", sessions.filter((s) => !s.busy)]];
+    for (const [text, iconName, key, list] of parts) {
       if (!list.length) continue;
-      frag.appendChild(groupHeading(text, list.length, iconName));
-      const rows = el("div", "kx-rows");
+      const heading = groupHeading(text, list.length, iconName, "", key);
+      frag.appendChild(heading);
+      const rows = rowsFor(heading, project ? `${project}/${key}` : key);
+      if (!rows) continue;
       rows.appendChild(axisLine());
       for (const s of list) rows.appendChild(rowFor(s));
       frag.appendChild(rows);
@@ -636,7 +715,24 @@
     }
   }
 
+  // ── Refresh: the button asks the host for a full read; the icon spins until the next list arrives,
+  // then "updated 12:04:31" shows for a few seconds (the only feedback under prefers-reduced-motion) ──
+  const REFRESHED_MS = 4000;
+  let refreshPending = false, refreshedTimer = null;
+  function refreshDone(data) {
+    if (!refreshPending) return;
+    refreshPending = false;
+    refreshEl.removeAttribute("aria-busy");
+    const at = new Date(data && data.generatedAt ? data.generatedAt : Date.now());
+    refreshedEl.textContent = `updated ${Number.isFinite(at.getTime()) ? at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "now"}`;
+    refreshedEl.hidden = false;
+    clearTimeout(refreshedTimer);
+    refreshedTimer = setTimeout(() => { refreshedEl.hidden = true; }, REFRESHED_MS);
+  }
+
   function render(data) {
+    lastData = data;
+    refreshDone(data);
     countEl.textContent = String(data.count || 0);
     renderMeter(data.zoneCounts || {});
     const cacheCounts = data.cacheCounts || {};
@@ -663,8 +759,13 @@
     if (!data.count) { listEl.appendChild(el("p", "kx-message", "No live Claude sessions")); return; }
     if (data.groups) {
       for (const g of data.groups) {
-        listEl.appendChild(groupHeading(g.project || "unknown", g.sessions.length, "folder", "kx-project"));
-        listEl.appendChild(groupsFor(g.sessions));
+        const project = g.project || "unknown";
+        const heading = groupHeading(project, g.sessions.length, "folder", "kx-project", `project:${project}`);
+        listEl.appendChild(heading);
+        const rows = rowsFor(heading, `project:${project}`);
+        if (!rows) continue;
+        rows.appendChild(groupsFor(g.sessions, project));
+        listEl.appendChild(rows);
       }
     } else {
       listEl.appendChild(groupsFor(data.sessions));
@@ -684,10 +785,17 @@
   }
 
   // ── Adapter: VS Code messages when the webview API exists, else a dev server hosting this file ──
-  const vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : null;
+  refreshEl.appendChild(icon("refresh"));
+  function requestRefresh(ask) {
+    if (refreshPending) return;
+    refreshPending = true;
+    refreshEl.setAttribute("aria-busy", "true");
+    ask();
+  }
   if (vscode) {
     window.addEventListener("message", (e) => { if (e.data && e.data.type === "sessions") render(e.data); });
     allEl.addEventListener("change", () => vscode.postMessage({ type: "scope", all: allEl.checked }));
+    refreshEl.addEventListener("click", () => requestRefresh(() => vscode.postMessage({ type: "refresh" })));
     vscode.postMessage({ type: "ready" });
   } else {
     // A dev server serves its own repo only: no project toggle. The list is fetched once from
@@ -704,8 +812,9 @@
       contactEl.hidden = false;
     }
 
-    async function fetchList() {
-      const response = await fetch("/claude-context/api/sessions", { cache: "no-store" });
+    /** The list once; with `full`, the server forgets its parsed state and reads every transcript again (the refresh button). */
+    async function fetchList({ full = false } = {}) {
+      const response = await fetch(`/claude-context/api/sessions${full ? "?full=1" : ""}`, { cache: "no-store" });
       // the dev server's own errors are JSON with error; anything else (a generic 404 page) is just the status
       const data = /json/.test(response.headers.get("content-type") || "") ? await response.json() : null;
       if (!response.ok) throw new Error((data && data.error) || `the dev server answered ${response.status}`);
@@ -733,6 +842,7 @@
     }
 
     contactEl.querySelector("button").addEventListener("click", start);
+    refreshEl.addEventListener("click", () => requestRefresh(() => fetchList({ full: true }).catch((e) => render({ count: 0, sessions: [], errors: [String(e && e.message || e)] }))));
     start();
   }
 })();

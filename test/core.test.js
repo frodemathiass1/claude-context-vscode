@@ -622,6 +622,23 @@ describe("SessionReader", () => {
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
+  it("read({ full: true }) forgets the parsed state and the remembered folders, and reads every transcript from its first byte", () => {
+    const { dir, file } = rig();
+    try {
+      const reader = new K.SessionReader(dir, { alive: (pid) => pid === 1303 });
+      reader.read({ workspaceFolders: [MINE], all: false });
+      // a stale parsed state (as after a core change or a bug): with no new bytes the incremental read keeps it
+      reader.cache.get(file).state.tokens = 1;
+      reader.found.set("stale", "/nowhere");
+      const incremental = reader.read({ workspaceFolders: [MINE], all: false });
+      expect(incremental.sessions[0].tokens).toBe(1);
+      const full = reader.read({ workspaceFolders: [MINE], all: false, full: true });
+      expect(full.sessions[0]).toMatchObject({ sessionId: "aaaa-1", turns: 1, tokens: 40004 });
+      expect(reader.cache.get(file).end).toBe(Buffer.byteLength(all.slice(0, 5).join("\n") + "\n"));
+      expect(reader.found.has("stale")).toBe(false);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
   it("a missing project folder is listed in errors, and the session is shown as unknown", () => {
     const { dir, folder } = rig({ withProjectFolder: false });
     try {

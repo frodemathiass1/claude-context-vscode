@@ -47,6 +47,7 @@ class ClaudeContextViewProvider {
     view.webview.onDidReceiveMessage((msg) => {
       if (!msg || typeof msg !== "object") return;
       if (msg.type === "ready") this.refresh();
+      if (msg.type === "refresh") this.refresh({ full: true }); // the panel's button: forget the parsed state, read everything again
       if (msg.type === "scope") this.context.globalState.update(SCOPE_KEY, !!msg.all).then(() => this.refresh());
     });
     view.onDidDispose(() => { this.view = null; this.stopWatching(); });
@@ -62,11 +63,11 @@ class ClaudeContextViewProvider {
       .replace(/\{\{nonce\}\}/g, nonce);
   }
 
-  refresh() {
+  refresh({ full = false } = {}) {
     if (!this.view) return;
     const all = !!this.context.globalState.get(SCOPE_KEY, false);
     const workspaceFolders = (vscode.workspace.workspaceFolders || []).map((f) => f.uri.fsPath);
-    const payload = this.reader.read({ workspaceFolders, all });
+    const payload = this.reader.read({ workspaceFolders, all, full });
     this.watchProjectFolders(payload.projectFolders);
     this.view.webview.postMessage({ type: "sessions", ...payload });
   }
