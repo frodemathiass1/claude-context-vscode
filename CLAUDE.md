@@ -22,8 +22,9 @@ server as it is.
   from another `Origin`; send no CORS headers. A new route keeps all four, with a test. Its page host,
   `browserHost`, runs in the browser but is tested in Node with stand-ins for what the browser gives it.
 - `panel.html`: the webview, one file with its CSS and script. It cannot read files. The CSP allows only
-  nonce'd inline style and script (and, in the browser, `connect-src 'self'`), so no external resources. It has
-  no automated tests, so keep logic that can be tested out of it. Its words fit both hosts.
+  nonce'd inline style and script (and, in the browser, `connect-src 'self'`), so no external resources. It is
+  tested in jsdom (`test/panel.test.js`) as a host loads it, fed lists from the real `buildSessions`; logic
+  that can be computed still belongs in `core.cjs`. Its words fit both hosts.
 
 ## Commands
 
