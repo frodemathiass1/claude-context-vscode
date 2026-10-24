@@ -30,7 +30,15 @@ A control row under the header sorts the rows inside each group (last turn, cont
 started, title; rows without a value go last) and filters the idle group: hide the dimmed sessions, show
 only the orange and red zones, switch a model off with its chip. A busy session is never hidden; the header
 keeps counting everything and says "showing 4 of 10" while a filter is on, a group heading says "4 of 9",
-and "reset" puts the view back. The view is remembered like the folds.
+and "reset" puts the view back. The view is remembered like the folds. Click a row (or press Enter on it) to open the
+session's detail view in its place: the title, project, model and effort, turns, start and last turn over a
+large curve of tokens per turn with the four zone bands, every compaction labelled with its trigger and
+counts, and the segment's start; hovering a turn, or moving the "Turn" slider from the keyboard, shows its
+count and the change from the turn before, with the output per turn as bars under it. When the panel only
+has the last 200 turns, the curve says so ("last 200 of 233 turns"). Two tables follow: the prompt cache and
+output, and the session (working folder, process id and session id with a copy button). The view follows the
+live list, says so if the session leaves the registry, and goes back to the list on Escape or the back
+button; the panel remembers the open session, and a browser host keeps it in the address (`#<sessionId>`).
 
 No dependencies, no build step: `extension.js` (the host), `core.cjs` (pure functions) and `panel.html`
 (the webview).
