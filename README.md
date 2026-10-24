@@ -1,7 +1,94 @@
+<div align="center">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="media/icon-dark.svg">
+  <img src="media/icon-light.svg" width="64" height="64" alt="">
+</picture>
+
 # Claude Context
 
 A VS Code panel that shows the context window of every live Claude Code session on the machine, updated
 in real time.
+
+[![test](https://github.com/frodemathiass1/claude-context-vscode/actions/workflows/test.yml/badge.svg)](https://github.com/frodemathiass1/claude-context-vscode/actions/workflows/test.yml)
+![VS Code 1.131 or newer](https://img.shields.io/badge/VS%20Code-1.131%2B-007ACC)
+![no dependencies](https://img.shields.io/badge/dependencies-none-2ea043)
+[![MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
+</div>
+
+<img src="media/wide.png" alt="The panel at full width over all projects: ten sessions grouped by project, each with its context bar, sparkline and count in its zone colour">
+
+<sub>Every screenshot here is made from invented sessions (`scripts/demo.cjs`), not from real conversations, in VS Code's
+Dark Modern theme; the panel follows whatever theme the editor has.</sub>
+
+## Why
+
+A long session gets worse well before it hits the window limit: past a certain size the model starts to lose track
+of what is in its context. Matt Pocock calls this the dumb zone, which "commonly begins around 125K-150K tokens".
+The panel shows every live session's token count against those marks, where the context went since the session
+started, and when its prompt cache goes cold, so you can see when it is time to break a session and which one.
+
+> [!NOTE]
+> The panel reads Claude Code's own files on this machine. It never calls an API and sends nothing anywhere.
+
+## Install
+
+You need VS Code 1.131 or newer and Claude Code running on the same machine (any backend: Anthropic, Amazon
+Bedrock, Vertex AI). The extension is not on the Marketplace; VS Code loads it straight from a cloned folder.
+All commands below are run from the Command Palette: Ctrl+Shift+P (Cmd+Shift+P on macOS), type the command name
+and press Enter.
+
+1. Clone the repo to a folder that stays put (VS Code loads the extension from it on every start):
+
+   ```
+   git clone https://github.com/frodemathiass1/claude-context-vscode
+   ```
+
+   For example `C:\Develop\claude-context-vscode` on Windows or `~/Dev/claude-context-vscode` on macOS.
+2. Command Palette → **Developer: Install Extension from Location…** → pick the cloned folder (the one
+   with `package.json` in it).
+3. Command Palette → **Developer: Reload Window**.
+
+To update, run `git pull` in the clone, then **Developer: Reload Window**. To uninstall, go to **Extensions: Show
+Installed Extensions** → Claude Context → **Uninstall**, then delete the clone.
+
+## Open the panel
+
+- Click the **Claude Context** icon (a clock) in the activity bar, the vertical icon bar on the far left.
+  With many icons it may sit behind **…** at the end of the bar; right-click the bar to choose which icons
+  it shows.
+- Or: Command Palette → **Claude Context: Focus on Claude sessions View** (type `Claude sessions`). **View: Open View…**
+  followed by `Claude sessions` does the same.
+
+If neither the icon nor the command shows up, the window was not reloaded after the install: run
+**Developer: Reload Window**. **Extensions: Show Installed Extensions** should list "Claude Context".
+
+To keep the panel visible next to the file explorer or the Claude Code chat, drag the icon to the other
+side of the window, or right-click it → **Move To** → **Secondary Side Bar**.
+
+## A tour
+
+<p align="center">
+  <img src="media/list.png" width="380" alt="The panel in the sidebar: a header with the zone meter, the scope switch, and the sessions under Working now, Waiting for you and Idle">
+  &nbsp;
+  <img src="media/compact.png" width="380" alt="The same list as compact rows: each session as its title, count and context bar">
+</p>
+
+In the sidebar the panel is a list of the sessions in this window's workspace, grouped by what they are doing:
+working now, waiting for you, idle, and idle over an hour (folded). Each row has the count in its zone colour, a
+context bar with marks at 100K, 125K and 150K, an estimate of where the context went, a sparkline of tokens per
+turn, and the state of the prompt cache. **All projects** shows the whole machine instead, grouped by project,
+and from 620 px wide the rows spread over four columns, as in the image at the top.
+
+The button beside refresh (three stacked bars) switches to compact rows: each session is only its title line,
+with the busy or waiting pill and the count, and the context bar under it, so many more fit in the sidebar. The
+panel remembers the choice.
+
+<img src="media/detail.png" alt="The detail view of one session: the count and the advice for its zone, the curve of tokens per turn with a compaction, the output per turn, where the context went since the compaction, and the cache and session tables">
+
+Click a row (or press Enter on it) to open the session's detail view: what the zone means and what to do at the
+next phase boundary, the whole curve with every compaction, where the context went, and the prompt cache.
 
 ## What the panel shows
 
@@ -18,7 +105,8 @@ The count of live sessions and a zone meter (how many sessions are in each zone)
 caches; the median start of the sessions that began fresh, so a CLAUDE.md that grew shows at a glance; and
 "3 idle over an hour" when there are such sessions. While a filter hides sessions it says "showing 4 of 10".
 At the right end, the compact switch and the refresh button: refresh reads the registry and every transcript
-again from the first byte, and says "updated 12:04:31" when done.
+again from the first byte, and says "updated 12:04:31" when done. Click it when you doubt what the list shows,
+for example right after a process was ended.
 
 ### Groups
 
@@ -61,12 +149,6 @@ One row per session:
 
 The rows stack in the narrow sidebar and spread over four columns when the panel is 620 px or wider.
 
-### Compact rows
-
-The button beside refresh (three stacked bars) switches to compact rows: each session is only its title line,
-with the busy or waiting pill and the count, and the context bar under it, so many more fit in the sidebar.
-The detail view is a click away as before, and the panel remembers the choice.
-
 ### Controls
 
 The control row under the header starts with the scope switch, which says what the list, and every counter
@@ -80,7 +162,7 @@ a filter is on, and "reset" puts the view back. The view is remembered like the 
 
 ### Detail view
 
-Click a row (or press Enter on it) to open the session's detail view in its place:
+The detail view opens in the list's place:
 
 - The title, project, model and effort, turns, start and last turn.
 - A box edged in the zone colour that says what the number is ("Context 138K · orange zone"), that the zones
@@ -103,58 +185,6 @@ The list carries the last 200 turns of each session; the detail view asks the ho
 session leaves the registry, and goes back to the list on Escape or the back button; the panel remembers the
 open session.
 
-## The code
-
-No dependencies, no build step: `extension.js` (the host), `core.cjs` (the pure functions, and the reader
-and watcher of Claude Code's files) and `panel.html` (the webview). The panel runs in VS Code only.
-
-## Requirements
-
-- VS Code 1.131 or newer.
-- Claude Code running on the same machine (any backend: Anthropic, Amazon Bedrock, Vertex AI). The
-  panel reads Claude Code's own files; it never calls an API.
-
-## Install
-
-The extension is not on the Marketplace; VS Code loads it straight from a cloned folder. All commands
-below are run from the Command Palette: Ctrl+Shift+P (Cmd+Shift+P on macOS), type the command name and
-press Enter.
-
-1. Clone the repo to a folder that stays put (VS Code loads the extension from it on every start):
-
-   ```
-   git clone https://github.com/frodemathiass1/claude-context-vscode
-   ```
-
-   For example `C:\Develop\claude-context-vscode` on Windows or `~/Dev/claude-context-vscode` on macOS.
-2. Command Palette → **Developer: Install Extension from Location…** → pick the cloned folder (the one
-   with `package.json` in it).
-3. Command Palette → **Developer: Reload Window**.
-
-## Open the panel
-
-- Click the **Claude Context** icon (a clock) in the activity bar, the vertical icon bar on the far left.
-  With many icons it may sit behind **…** at the end of the bar; right-click the bar to choose which icons
-  it shows.
-- Or: Command Palette → **Claude Context: Focus on Claude sessions View** (type `Claude sessions`). **View: Open View…**
-  followed by `Claude sessions` does the same.
-
-If neither the icon nor the command shows up, the window was not reloaded after the install: run
-**Developer: Reload Window**. **Extensions: Show Installed Extensions** should list "Claude Context".
-
-To keep the panel visible next to the file explorer or the Claude Code chat, drag the icon to the other
-side of the window, or right-click it → **Move To** → **Secondary Side Bar**.
-
-The panel starts with the sessions of this window's workspace; **All projects** shows the whole machine
-("Controls" above). Click the refresh button (the circling arrows) when you doubt what the list shows, for
-example right after a process was ended: the list is read again from scratch.
-
-## Update and uninstall
-
-- Update: `git pull` in the clone, then **Developer: Reload Window**.
-- Uninstall: **Extensions: Show Installed Extensions** → Claude Context → **Uninstall**, then delete the
-  clone.
-
 ## Settings
 
 - `claudeContext.claudeDir`: the folder Claude Code stores its data in. Empty (the default) means
@@ -174,8 +204,11 @@ Anthropic API.
 The title of a session is its AI-generated title or, before there is one, the start of its first message,
 or the first local command when only that ran ("/context all"). A session without any of these, such as a tab
 opened and not written to, is "new session" with the name Claude Code gave it ("new session ·
-my-project-08"), muted, and says "no turns yet" with "—" for the count. The panel only shows titles locally,
-but they can contain whatever was typed, so keep that in mind when sharing your screen.
+my-project-08"), muted, and says "no turns yet" with "—" for the count.
+
+> [!WARNING]
+> The panel shows titles only on this machine, but they can contain whatever was typed. Keep that in mind when
+> you share your screen.
 
 ## How it works
 
@@ -184,20 +217,26 @@ every session in `~/.claude/projects/<project>/<sessionId>.jsonl` (`~/.claude` i
 on Windows; `CLAUDE_CONFIG_DIR` moves it). The extension joins the two, parses only the new bytes of a
 transcript on every change (`fs.watch` on the folders, debounced, plus a 30-second tick) and pushes the
 list to the webview. While a session is open, the webview asks for every turn of it after each list (the
-message `{ type: "detail", sessionId }`), and
-the host answers from the state it already parsed, without reading the transcript again.
+message `{ type: "detail", sessionId }`), and the host answers from the state it already parsed, without
+reading the transcript again.
 
 The transcript format is Claude Code's internal one and can change between versions. A field the panel
 cannot find shows as "unknown"; nothing throws.
 
 ## Development
 
+No dependencies, no build step: `extension.js` (the host), `core.cjs` (the pure functions, and the reader
+and watcher of Claude Code's files) and `panel.html` (the webview). The panel runs in VS Code only.
+
 ```
 npm install
-npm test        # Vitest; the same suite runs on Ubuntu and Windows in GitHub Actions
+npm test                        # Vitest; the same suite runs on Ubuntu and Windows in GitHub Actions
+node scripts/demo.cjs --shoot   # the screenshots above, from invented sessions, with a headless Chrome
 ```
 
-`NOTES.md` holds the facts measured about Claude Code's files; `CLAUDE.md` is how the repo is worked on.
+Without `--shoot` the script writes `demo/light.html` and `demo/dark.html`, the panel with invented sessions,
+to open in a browser. `NOTES.md` holds the facts measured about Claude Code's files; `CLAUDE.md` is how the
+repo is worked on.
 
 ## License
 
