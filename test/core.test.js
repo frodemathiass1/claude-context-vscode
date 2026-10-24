@@ -979,3 +979,43 @@ describe("SessionWatcher", () => {
     } finally { watcher.stop(); rmSync(dir, { recursive: true, force: true }); }
   });
 });
+
+describe("demo (scripts/demo.cjs)", () => {
+  const demo = require("../scripts/demo.cjs");
+  const os = require("node:os");
+  const data = demo.demoData();
+
+  it("the invented sessions, read by the real SessionReader, fill every group and every zone, with a compaction and both cache states", () => {
+    const s = data.workspace.sessions;
+    expect(s.some((x) => x.busy)).toBe(true);
+    expect(s.some((x) => x.waiting)).toBe(true);
+    expect(s.some((x) => !x.busy && !x.waiting && !x.abandoned)).toBe(true);
+    expect(s.some((x) => x.abandoned)).toBe(true);
+    expect(data.workspace.zoneCounts).toEqual({ green: expect.any(Number), yellow: expect.any(Number), orange: expect.any(Number), red: expect.any(Number) });
+    for (const n of Object.values(data.workspace.zoneCounts)) expect(n).toBeGreaterThan(0);
+    expect(s.some((x) => x.compactionCount > 0)).toBe(true);
+    expect(data.workspace.cacheCounts.warm).toBeGreaterThan(0);
+    expect(data.workspace.cacheCounts.cold).toBeGreaterThan(0);
+    expect(data.workspace.hiddenCount).toBeGreaterThan(0); // "more in other projects"
+    expect(data.all.groups.length).toBeGreaterThan(1);
+  });
+
+  it("every session has its detail, and nothing in the data is a real path or name or an error", () => {
+    for (const x of data.all.sessions) if (x.turns) expect(data.details[x.sessionId].turns).toBe(x.turns);
+    expect(data.workspace.errors).toEqual([]);
+    expect(data.all.errors).toEqual([]);
+    for (const x of data.all.sessions) expect(x.cwd.startsWith("/Users/me/")).toBe(true);
+    const text = JSON.stringify(data);
+    expect(text).not.toContain(os.tmpdir());
+    expect(text).not.toContain(os.homedir());
+    expect(text).not.toContain(os.userInfo().username);
+  });
+
+  it("the page plays the host: the CSP and nonces are filled in and the payload cannot close its script", () => {
+    const page = demo.demoPage("dark", data);
+    expect(page).not.toContain("{{nonce}}");
+    expect(page).not.toContain("<!-- csp -->");
+    expect(page).toContain("window.acquireVsCodeApi");
+    expect(page).toContain("--vscode-sideBar-background: #181818;");
+  });
+});

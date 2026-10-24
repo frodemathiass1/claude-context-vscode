@@ -21,6 +21,9 @@ No dependencies, no build step, and it stays that way: VS Code loads the folder 
 - `npm test`: Vitest over `test/core.test.js`. The same suite runs on Ubuntu and Windows in GitHub Actions.
 - Try a change in VS Code: **Developer: Install Extension from Location…** on the repo folder once, then
   **Developer: Reload Window** after every change. Claude cannot judge the panel; the owner does.
+- `node scripts/demo.cjs --shoot`: the README's screenshots in `media/`, from invented sessions read by the real
+  `SessionReader`, with a headless Chrome. Run it after any change the user can see, or the images go stale; the
+  owner judges them. Never take a README image from real sessions: their titles are the owner's conversations.
 - `/issue <n>` takes one issue through the workflow below. `/facts` checks Claude Code's live files against
   what `core.cjs` reads; run it after Claude Code updates.
 
