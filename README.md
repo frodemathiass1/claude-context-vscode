@@ -8,7 +8,7 @@
 # Claude Context
 
 A VS Code panel that shows the context window of every live Claude Code session on the machine, updated
-in real time.
+in real time. The same panel runs in a browser tab too, for Claude Code in a terminal, JetBrains or the desktop app.
 
 [![test](https://github.com/frodemathiass1/claude-context-vscode/actions/workflows/test.yml/badge.svg)](https://github.com/frodemathiass1/claude-context-vscode/actions/workflows/test.yml)
 ![VS Code 1.131 or newer](https://img.shields.io/badge/VS%20Code-1.131%2B-007ACC)
@@ -20,7 +20,7 @@ in real time.
 <img src="media/wide.png" alt="The panel at full width over all projects: ten sessions grouped by project, each with its context bar, sparkline and count in its zone colour">
 
 <sub>Every screenshot here is made from invented sessions (`scripts/demo.cjs`), not from real conversations, in VS Code's
-Dark Modern theme; the panel follows whatever theme the editor has.</sub>
+Dark Modern theme; the panel follows whatever theme the editor has, and in a browser the system's light or dark setting.</sub>
 
 ## Why
 
@@ -33,6 +33,11 @@ started, and when its prompt cache goes cold, so you can see when it is time to 
 > The panel reads Claude Code's own files on this machine. It never calls an API and sends nothing anywhere.
 
 ## Install
+
+There are two ways to run the panel: as a VS Code extension in the sidebar, or as a page in the browser served by
+a small local server. Both read the same files and show the same panel; use either or both.
+
+### In VS Code
 
 You need VS Code 1.131 or newer and Claude Code running on the same machine (any backend: Anthropic, Amazon
 Bedrock, Vertex AI). The extension is not on the Marketplace; VS Code loads it straight from a cloned folder.
@@ -53,7 +58,46 @@ and press Enter.
 To update, run `git pull` in the clone, then **Developer: Reload Window**. To uninstall, go to **Extensions: Show
 Installed Extensions** → Claude Context → **Uninstall**, then delete the clone.
 
+### In a browser
+
+You need Node.js 18 or newer and Claude Code running on the same machine. Without a clone:
+
+```
+npx github:frodemathiass1/claude-context-vscode
+```
+
+or from a clone, `node server.cjs`. It prints a URL and opens it in the default browser; Ctrl+C stops it.
+
+```
+node server.cjs [folder…] [--port <n>] [--claude-dir <dir>] [--no-open]
+```
+
+- **folder…**: the folders that make up "This workspace", as the open folders do in VS Code. With none, the
+  list is every live session on the machine.
+- **--port**: the port on `127.0.0.1`. It is 7419 unless that one is taken, so the page's choices last from one
+  start to the next (see below); `--port 0` takes any free one.
+- **--claude-dir**: the folder Claude Code stores its data in, as the `claudeContext.claudeDir` setting does in VS
+  Code. Without it, `CLAUDE_CONFIG_DIR`, else `~/.claude`.
+- **--no-open**: print the URL without opening it.
+
+What differs from VS Code:
+
+- The scope switch, the view, the folds and the open session are kept in the browser's `localStorage`, not in VS
+  Code. They belong to the address, port included, so a server on another port starts afresh. Each tab has its
+  own scope.
+- The theme follows the system's light or dark setting, in the colours of VS Code's Light Modern and Dark Modern
+  themes, and a browser tab is usually wide enough for the four columns.
+- When the server stops, the page keeps its last list and says that it has lost the connection.
+
+> [!NOTE]
+> The server listens on `127.0.0.1` only, so no other machine can reach it. The URL carries a random token made at
+> every start, as Jupyter's does, and the server refuses any request without it, so another page open in the
+> same browser cannot read your sessions either. It also refuses a request that names another host (DNS
+> rebinding) and a message from another origin, and sends no CORS headers. After a restart, open the new URL.
+
 ## Open the panel
+
+In a browser, the panel is the page `server.cjs` opens. In VS Code:
 
 - Click the **Claude Context** icon (a clock) in the activity bar, the vertical icon bar on the far left.
   With many icons it may sit behind **…** at the end of the bar; right-click the bar to choose which icons
@@ -152,9 +196,9 @@ The rows stack in the narrow sidebar and spread over four columns when the panel
 ### Controls
 
 The control row under the header starts with the scope switch, which says what the list, and every counter
-above it, is about: "This workspace" (the default, the sessions inside the window's workspace folders, named
-beside the switch, with "4 more in other projects" when other projects have live sessions; a click shows them)
-or "All projects" (the whole machine, grouped by project). Then the sort, which orders the rows inside each
+above it, is about: "This workspace" (the default, the sessions inside the window's workspace folders, or in the
+browser the folders given to `server.cjs`, named beside the switch, with "4 more in other projects" when other
+projects have live sessions; a click shows them) or "All projects" (the whole machine, grouped by project). Then the sort, which orders the rows inside each
 group (last turn, context size, time until cold, started, title; rows without a value go last), and the
 filters on the two idle groups: show only the orange and red zones, or switch a model off with its chip. A busy
 or waiting session is never hidden; the header keeps counting everything, a group heading says "4 of 9" while
@@ -190,7 +234,7 @@ open session.
 - `claudeContext.claudeDir`: the folder Claude Code stores its data in. Empty (the default) means
   `CLAUDE_CONFIG_DIR`, else `~/.claude`. Set it when the panel says "Registry folder not found", for example
   because `CLAUDE_CONFIG_DIR` is set in your shell profile but VS Code was started without it. Reload the
-  window after changing it.
+  window after changing it. In the browser, `--claude-dir` does the same.
 
 ## Windows and Amazon Bedrock
 
@@ -216,7 +260,8 @@ Claude Code keeps one small file per running process in `~/.claude/sessions/` an
 every session in `~/.claude/projects/<project>/<sessionId>.jsonl` (`~/.claude` is `%USERPROFILE%\.claude`
 on Windows; `CLAUDE_CONFIG_DIR` moves it). The extension joins the two, parses only the new bytes of a
 transcript on every change (`fs.watch` on the folders, debounced, plus a 30-second tick) and pushes the
-list to the webview. While a session is open, the webview asks for every turn of it after each list (the
+list to the webview. In the browser, `server.cjs` does the same and pushes the list to the page with
+Server-Sent Events; the page sends its messages back as `POST` requests. While a session is open, the webview asks for every turn of it after each list (the
 message `{ type: "detail", sessionId }`), and the host answers from the state it already parsed, without
 reading the transcript again.
 
@@ -225,8 +270,9 @@ cannot find shows as "unknown"; nothing throws.
 
 ## Development
 
-No dependencies, no build step: `extension.js` (the host), `core.cjs` (the pure functions, and the reader
-and watcher of Claude Code's files) and `panel.html` (the webview). The panel runs in VS Code only.
+No dependencies, no build step: `core.cjs` (the pure functions, and the reader and watcher of Claude Code's
+files), `panel.html` (the panel), and its two hosts, `extension.js` (VS Code) and `server.cjs` (the browser, with
+Node's own `http`; it also holds the browser stand-in for the webview that the demo uses).
 
 ```
 npm install

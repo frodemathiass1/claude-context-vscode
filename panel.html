@@ -398,7 +398,7 @@
     <div class="kx-meter-leg"></div>
   </div>
   <span class="kx-start-median" data-testid="start-median" hidden><b></b> start</span>
-  <span class="kx-abandoned" data-testid="abandoned-count" hidden title="A closed chat tab keeps its process running until Developer: Reload Window or VS Code quits, and the panel cannot tell a closed tab from an open one, so some of these are probably closed tabs"><b></b> idle over an hour</span>
+  <span class="kx-abandoned" data-testid="abandoned-count" hidden title="A closed VS Code chat tab keeps its process running until Developer: Reload Window or VS Code quits, and the panel cannot tell a closed tab from an open one, so some of these are probably closed tabs"><b></b> idle over an hour</span>
   <span class="kx-cache-counts" data-testid="cache-counts" title="Prompt cache: how many of the listed sessions have a warm cache now, and how many went cold"><span><b data-testid="cache-warm">0</b> warm</span><span><b data-testid="cache-cold">0</b> cold</span></span>
   <div class="kx-tools">
     <span class="kx-refreshed" data-testid="refreshed" role="status" hidden></span>
@@ -409,7 +409,7 @@
 <div class="kx-controls" data-testid="controls">
   <div class="kx-scope" data-testid="scope">
     <span class="kx-seg" role="group" aria-label="Sessions from" data-testid="scope-switch">
-      <button type="button" data-testid="scope-workspace" aria-pressed="true" title="The sessions started inside this window's workspace folders">This workspace</button>
+      <button type="button" data-testid="scope-workspace" aria-pressed="true" title="The sessions started inside the workspace folders">This workspace</button>
       <button type="button" data-testid="scope-all" aria-pressed="false" title="Every live Claude session on this machine, grouped by project">All projects</button>
     </span>
     <span class="kx-scope-name" data-testid="scope-name" hidden></span>
@@ -1562,7 +1562,7 @@
   resetEl.addEventListener("click", () => { view = { ...VIEW_DEFAULT, hiddenModels: [] }; saveView(); sortEl.focus(); }); // reset hides itself
 
   /**
-   * The scope line: which button is pressed; while scoped, the workspace folders' names ("no folder open" without
+   * The scope line: which button is pressed; while scoped, the workspace folders' names ("no folder" without
    * any: then every session is listed) and how many live sessions the scope leaves out ("4 more in other projects",
    * which switches to all projects). A payload without the core's workspaceNames names no folder.
    */
@@ -1574,9 +1574,9 @@
     scopeAllEl.setAttribute("aria-pressed", String(all));
     scopeNameEl.hidden = all || !names;
     if (names) {
-      scopeNameEl.textContent = names.length ? names.join(", ") : "no folder open";
+      scopeNameEl.textContent = names.length ? names.join(", ") : "no folder";
       scopeNameEl.title = names.length ? `The sessions started inside ${names.length === 1 ? "the workspace folder" : "the workspace folders"} ${names.join(", ")}`
-        : "No folder is open in this window, so every live session on the machine is listed";
+        : "No workspace folder, so every live session on the machine is listed";
     }
     scopeMoreEl.hidden = all || !hidden;
     scopeMoreEl.textContent = `${hidden} more in other projects`;
