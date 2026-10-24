@@ -255,8 +255,8 @@ open session.
 
 - `claudeContext.claudeDir`: the folder Claude Code stores its data in. Empty (the default) means
   `CLAUDE_CONFIG_DIR`, else `~/.claude`. Set it when the panel says "Registry folder not found", for example
-  because `CLAUDE_CONFIG_DIR` is set in your shell profile but VS Code was started without it. Reload the
-  window after changing it. In the browser, `--claude-dir` does the same.
+  because `CLAUDE_CONFIG_DIR` is set in your shell profile but VS Code was started without it. The panel
+  reads from the new folder as soon as the setting changes. In the browser, `--claude-dir` does the same.
 
 ## Windows and Amazon Bedrock
 
@@ -282,7 +282,8 @@ Claude Code keeps one small file per running process in `~/.claude/sessions/` an
 every session in `~/.claude/projects/<project>/<sessionId>.jsonl` (`~/.claude` is `%USERPROFILE%\.claude`
 on Windows; `CLAUDE_CONFIG_DIR` moves it). The extension joins the two, parses only the new bytes of a
 transcript on every change (`fs.watch` on the folders, debounced, plus a 30-second tick) and pushes the
-list to the webview. In the browser, `server.cjs` does the same and pushes the list to the page with
+list to the webview; it reads again at once when a workspace folder is added or removed, and reads nothing while
+the panel is hidden (shown again, one read catches up). In the browser, `server.cjs` does the same and pushes the list to the page with
 Server-Sent Events; the page sends its messages back as `POST` requests. While a session is open, the webview asks for every turn of it after each list (the
 message `{ type: "detail", sessionId }`), and the host answers from the state it already parsed, without
 reading the transcript again.
