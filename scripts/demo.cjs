@@ -1,7 +1,8 @@
 // scripts/demo.cjs — the panel with invented sessions, for the README's screenshots. Real screenshots would show
 // the titles of real sessions, which hold the owner's conversations, so this writes invented, deterministic
 // transcripts and registry entries to a temporary Claude folder, reads them with the real SessionReader (so the
-// payload cannot drift from what the host sends) and wraps panel.html in a page that plays the host.
+// payload cannot drift from what the host sends) and wraps panel.html in a page that plays the host, with the browser
+// stand-in server.cjs serves the panel with.
 //
 //   node scripts/demo.cjs          writes demo/light.html and demo/dark.html (open them in a browser)
 //   node scripts/demo.cjs --shoot  also takes the screenshots in media/ (dark theme) with a headless Chrome
@@ -15,6 +16,7 @@ const path = require("node:path");
 const { spawn } = require("node:child_process");
 const { pathToFileURL } = require("node:url");
 const core = require("../core.cjs");
+const { THEMES, browserPage } = require("../server.cjs");
 
 const ROOT = path.join(__dirname, "..");
 const MIN = 60 * 1000;
@@ -155,50 +157,30 @@ function demoData() {
   } finally { fs.rmSync(claudeDir, { recursive: true, force: true }); }
 }
 
-// The --vscode-* variables the panel reads, from VS Code's Light Modern and Dark Modern themes, and the macOS font.
-const FONT = { "font-family": "-apple-system, BlinkMacSystemFont, sans-serif", "font-size": "13px", "editor-font-family": "Menlo, Monaco, monospace" };
-const THEMES = {
-  light: { ...FONT, "sideBar-background": "#f8f8f8", foreground: "#3b3b3b", descriptionForeground: "#3b3b3b", "sideBarSectionHeader-border": "#e5e5e5",
-    "sideBarSectionHeader-foreground": "#3b3b3b", "widget-border": "#e5e5e5", "editorWidget-border": "#c8c8c8", "editorWidget-background": "#f8f8f8",
-    "list-hoverBackground": "#f2f2f2", "charts-green": "#388a34", "charts-yellow": "#bf8803", "charts-red": "#e51400", "charts-lines": "rgba(97, 97, 97, 0.5)",
-    "badge-background": "#cccccc", "badge-foreground": "#3b3b3b", focusBorder: "#005fb8" },
-  dark: { ...FONT, "sideBar-background": "#181818", foreground: "#cccccc", descriptionForeground: "#9d9d9d", "sideBarSectionHeader-border": "#2b2b2b",
-    "sideBarSectionHeader-foreground": "#cccccc", "widget-border": "#313131", "editorWidget-border": "#454545", "editorWidget-background": "#202020",
-    "list-hoverBackground": "#2a2d2e", "charts-green": "#89d185", "charts-yellow": "#cca700", "charts-red": "#f14c4c", "charts-lines": "rgba(204, 204, 204, 0.5)",
-    "badge-background": "#616161", "badge-foreground": "#f8f8f8", focusBorder: "#0078d4" },
-};
-
 /**
- * panel.html with the theme's variables and a stand-in for the host: it answers "ready", "scope", "refresh" and
+ * panel.html in the browser stand-in shared with server.cjs, with a host that answers "ready", "scope", "refresh" and
  * "detail" from `data` as extension.js would. The webview state starts from the URL's hash, a JSON object such as
  * {"compact":true} or {"open":"<sessionId>","all":true}, so a screenshot can start in any view.
  */
 function demoPage(theme, data) {
-  const nonce = "demo";
-  const vars = Object.entries(THEMES[theme]).map(([k, v]) => `--vscode-${k}: ${v};`).join(" ");
-  const host = `
-  (() => {
+  const host = `(deliver) => {
     const DATA = ${JSON.stringify(data).replace(/</g, "\\u003c")};
     let state = {};
     try { state = JSON.parse(decodeURIComponent(location.hash.slice(1)) || "{}"); } catch {}
     let all = !!state.all;
-    const send = (msg) => setTimeout(() => window.postMessage(msg, "*"));
-    const list = (full) => send({ type: "sessions", ...(all ? DATA.all : DATA.workspace), full });
-    window.acquireVsCodeApi = () => ({
+    const list = (full) => deliver({ type: "sessions", ...(all ? DATA.all : DATA.workspace), full });
+    return {
       getState: () => state,
       setState: (s) => { state = s; },
       postMessage: (msg) => {
         if (msg.type === "ready") list(false);
         if (msg.type === "refresh") list(true);
         if (msg.type === "scope") { all = !!msg.all; list(false); }
-        if (msg.type === "detail") send({ type: "detail", sessionId: msg.sessionId, detail: DATA.details[msg.sessionId] || null });
+        if (msg.type === "detail") deliver({ type: "detail", sessionId: msg.sessionId, detail: DATA.details[msg.sessionId] || null });
       },
-    });
-  })();`;
-  const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}';">`;
-  return fs.readFileSync(path.join(ROOT, "panel.html"), "utf8")
-    .replace("<!-- csp -->", `${csp}\n<style nonce="${nonce}">html { ${vars} background: var(--vscode-sideBar-background); }</style>\n<script nonce="${nonce}">${host}</script>`)
-    .replace(/\{\{nonce\}\}/g, nonce);
+    };
+  }`;
+  return browserPage({ theme, host, nonce: "demo" });
 }
 
 // The README's images: a name, the width (the sidebar is about 400 px, four columns start at 620) and the view.

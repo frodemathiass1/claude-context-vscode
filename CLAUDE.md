@@ -1,26 +1,34 @@
 # Claude Context
 
-A VS Code panel that shows the context window of every live Claude Code session on the machine. What the
-panel shows and why is in `README.md`; facts measured about Claude Code's files are in `NOTES.md`. Read
-those instead of guessing, and keep this file to what neither says.
+A VS Code panel, also served to a browser tab, that shows the context window of every live Claude Code session
+on the machine. What the panel shows and why is in `README.md`; facts measured about Claude Code's files are in
+`NOTES.md`. Read those instead of guessing, and keep this file to what neither says.
 
-## The three files
+## The four files
 
-No dependencies, no build step, and it stays that way: VS Code loads the folder as it is.
+No dependencies, no build step, and it stays that way: VS Code loads the folder as it is, and Node runs the
+server as it is.
 
 - `core.cjs`: pure functions and the two classes that touch the disk (`SessionReader`, `SessionWatcher`).
   No `vscode` import, so the tests can run all of it. Everything that can be computed belongs here.
-- `extension.js`: the host. Reads the setting, owns the reader and the watcher, and talks to the webview
+- `extension.js`: the VS Code host. Reads the setting, owns the reader and the watcher, and talks to the webview
   with `postMessage` only (`ready`, `refresh`, `scope`, `detail` in; `sessions`, `detail` out).
+- `server.cjs`: the browser host, with Node's `http` only. The same messages as `extension.js`, in as
+  `POST /message` and out as Server-Sent Events on `/events`, and the same payloads. It also holds the browser
+  stand-in for the webview (the `--vscode-*` theme variables and `acquireVsCodeApi`), which `scripts/demo.cjs`
+  uses too, so there is one copy. Its rules: listen on `127.0.0.1` only, never `0.0.0.0`; every request carries
+  the token made at start; refuse a `Host` that is not `127.0.0.1:<port>` or `localhost:<port>` and a `POST`
+  from another `Origin`; send no CORS headers. A new route keeps all four, with a test.
 - `panel.html`: the webview, one file with its CSS and script. It cannot read files. The CSP allows only
-  nonce'd inline style and script, so no external resources. It has no automated tests, so keep logic
-  that can be tested out of it.
+  nonce'd inline style and script (and, in the browser, `connect-src 'self'`), so no external resources. It has
+  no automated tests, so keep logic that can be tested out of it. Its words fit both hosts.
 
 ## Commands
 
-- `npm test`: Vitest over `test/core.test.js`. The same suite runs on Ubuntu and Windows in GitHub Actions.
+- `npm test`: Vitest over `test/`. The same suite runs on Ubuntu and Windows in GitHub Actions.
 - Try a change in VS Code: **Developer: Install Extension from Location…** on the repo folder once, then
   **Developer: Reload Window** after every change. Claude cannot judge the panel; the owner does.
+- Try it in a browser: `node server.cjs` (`--help` for the flags); stop it and start it again after a change.
 - `node scripts/demo.cjs --shoot`: the README's screenshots in `media/`, from invented sessions read by the real
   `SessionReader`, with a headless Chrome. Run it after any change the user can see, or the images go stale; the
   owner judges them. Never take a README image from real sessions: their titles are the owner's conversations.
