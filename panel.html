@@ -85,6 +85,30 @@
   .kx-start-median { font-size: 0.82em; font-variant-numeric: tabular-nums; color: var(--kx-muted); white-space: nowrap; }
   .kx-start-median b { font-weight: 600; color: var(--kx-fg); }
 
+  /* "showing 4 of 10" beside the count while a filter hides sessions */
+  .kx-showing { font-size: 0.82em; color: var(--kx-muted); white-space: nowrap; }
+
+  /* ── Controls: the sort and the filters, under the header; wraps to more lines in the narrow layout ── */
+  .kx-controls {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 6px 12px;
+    border-bottom: 1px solid var(--kx-border); font-size: 0.86em; color: var(--kx-muted);
+  }
+  .kx-controls label { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+  .kx-controls select {
+    font: inherit; color: var(--kx-fg); background: var(--kx-bg); border: 1px solid var(--kx-border-strong);
+    border-radius: 4px; padding: 1px 4px; max-width: 160px;
+  }
+  .kx-chip {
+    font: inherit; display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 10px;
+    border: 1px solid var(--kx-border-strong); background: transparent; color: var(--kx-muted); cursor: pointer; white-space: nowrap;
+  }
+  .kx-chip:hover { color: var(--kx-fg); }
+  .kx-chip[aria-pressed="true"] { background: var(--kx-badge-bg); color: var(--kx-badge-fg); border-color: transparent; }
+  .kx-chip:focus-visible, .kx-controls select:focus-visible, .kx-reset:focus-visible { outline: 1px solid var(--kx-accent); outline-offset: 1px; }
+  .kx-models { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+  .kx-reset { font: inherit; background: none; border: 0; padding: 0; color: var(--kx-accent); cursor: pointer; text-decoration: underline; }
+  .kx-hidden-all { padding: 6px 4px 10px; color: var(--kx-muted); font-style: italic; font-size: 0.9em; }
+
   main { padding: 8px 12px 14px; }
   .kx-message { padding: 18px 4px; color: var(--kx-muted); text-align: center; }
   .kx-error { padding: 8px 12px; color: var(--kx-red); border-bottom: 1px solid var(--kx-border); font-size: 0.92em; }
@@ -232,6 +256,7 @@
 <body>
 <header>
   <h1><span class="kx-n" data-testid="count" aria-live="polite">0</span> live Claude sessions</h1>
+  <span class="kx-showing" data-testid="showing" hidden></span>
   <div class="kx-meter" data-testid="zones">
     <div class="kx-meter-bar" role="img" aria-label="no sessions"></div>
     <div class="kx-meter-leg"></div>
@@ -244,6 +269,21 @@
     <button type="button" class="kx-refresh" data-testid="refresh" aria-label="Refresh" title="Read the registry and every transcript again now"></button>
   </div>
 </header>
+<div class="kx-controls" data-testid="controls">
+  <label>Sort
+    <select data-testid="sort" aria-label="Sort the sessions in each group">
+      <option value="last">last turn</option>
+      <option value="size">context size</option>
+      <option value="cold">time until cold</option>
+      <option value="started">started</option>
+      <option value="title">title</option>
+    </select>
+  </label>
+  <button type="button" class="kx-chip" data-testid="filter-dimmed" aria-pressed="false" title="Hide the sessions idle for more than an hour">hide dimmed</button>
+  <button type="button" class="kx-chip" data-testid="filter-hot" aria-pressed="false" title="Show only the sessions in the orange and red zones">orange and red only</button>
+  <span class="kx-models" data-testid="models" role="group" aria-label="Models shown"></span>
+  <button type="button" class="kx-reset" data-testid="reset" hidden>reset</button>
+</div>
 <div class="kx-error kx-contact" data-testid="contact" hidden>
   <span>Lost contact with the dev server.</span>
   <button type="button">Try again</button>
@@ -266,6 +306,12 @@
   const startMedianEl = document.querySelector('[data-testid="start-median"]');
   const refreshEl = document.querySelector('[data-testid="refresh"]');
   const refreshedEl = document.querySelector('[data-testid="refreshed"]');
+  const showingEl = document.querySelector('[data-testid="showing"]');
+  const sortEl = document.querySelector('[data-testid="sort"]');
+  const dimmedEl = document.querySelector('[data-testid="filter-dimmed"]');
+  const hotEl = document.querySelector('[data-testid="filter-hot"]');
+  const modelsEl = document.querySelector('[data-testid="models"]');
+  const resetEl = document.querySelector('[data-testid="reset"]');
   // the VS Code webview API when the panel runs in VS Code; null when a dev server hosts this file (the adapter at the end)
   const vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : null;
 
@@ -280,7 +326,50 @@
   };
   // group keys: "busy" and "idle" fold that group in every project; "project:<name>" folds a whole project
   const folded = new Set(Array.isArray(store.get("folded")) ? store.get("folded").filter((k) => typeof k === "string") : []);
-  let lastData = null; // the last list rendered, drawn again when a group is folded or unfolded
+  let lastData = null; // the last list rendered, drawn again when a group is folded or unfolded, or the view changes
+
+  // ── The view: the sort and the filters, remembered like the folds. The sort orders the rows inside each
+  // group (busy stays first); the filters apply to the idle group only, a busy session is never hidden.
+  // hiddenModels holds short model names the user switched off; a model that leaves the list takes its choice with it. ──
+  const SORTS = ["last", "size", "cold", "started", "title"];
+  const VIEW_DEFAULT = { sort: "last", hideDimmed: false, hotOnly: false, hiddenModels: [] };
+  function loadView() {
+    const v = store.get("view");
+    const o = v && typeof v === "object" ? v : {};
+    return {
+      sort: SORTS.includes(o.sort) ? o.sort : VIEW_DEFAULT.sort, hideDimmed: !!o.hideDimmed, hotOnly: !!o.hotOnly,
+      hiddenModels: Array.isArray(o.hiddenModels) ? o.hiddenModels.filter((m) => typeof m === "string") : [],
+    };
+  }
+  let view = loadView();
+  function saveView() { store.set("view", view); if (lastData) render(lastData); }
+  const viewIsDefault = () => view.sort === VIEW_DEFAULT.sort && !view.hideDimmed && !view.hotOnly && !view.hiddenModels.length;
+  const modelName = (s) => s.modelShort || "unknown";
+  const HOT_ZONES = ["orange", "red"];
+  function passes(s) {
+    if (s.busy) return true;
+    if (view.hideDimmed && s.dimmed) return false;
+    if (view.hotOnly && !HOT_ZONES.includes(s.zone)) return false;
+    return !view.hiddenModels.includes(modelName(s));
+  }
+  // the sort key per row: null sorts last, ties keep the list's order (busy first, then last turn newest first)
+  const NO_DEADLINE = Number.MAX_SAFE_INTEGER; // a cold cache has no time until cold: after every warm one, before unknown
+  const SORT_KEY = {
+    last: () => 0,
+    size: (s) => (Number.isFinite(s.tokens) ? -s.tokens : null),
+    cold: (s) => (!Number.isFinite(s.coldInMs) ? null : s.coldInMs > 0 ? s.coldInMs : NO_DEADLINE),
+    started: (s) => { const t = Date.parse(s.startedAt); return Number.isFinite(t) ? -t : null; },
+    title: (s) => (s.title ? String(s.title).toLocaleLowerCase() : null),
+  };
+  function sorted(list) {
+    const key = SORT_KEY[view.sort] || SORT_KEY.last;
+    return list.map((s, i) => ({ s, i, k: key(s) }))
+      .sort((a, b) => {
+        if (a.k === null || b.k === null) return (a.k === null) - (b.k === null) || a.i - b.i;
+        return (typeof a.k === "string" ? a.k.localeCompare(b.k) : a.k - b.k) || a.i - b.i;
+      })
+      .map((x) => x.s);
+  }
 
   // ── The zones and the scale, as data. The core decides a session's zone (core.cjs zone()); this list
   // orders the zones in the meter and the legend, names them, and picks the colour pair --kx-<zone> (text)
@@ -682,18 +771,68 @@
   function groupsFor(sessions, project) {
     const frag = document.createDocumentFragment();
     const parts = [["Working now", "zap", "busy", sessions.filter((s) => s.busy)], ["Idle", "moon", "idle", sessions.filter((s) => !s.busy)]];
-    for (const [text, iconName, key, list] of parts) {
-      if (!list.length) continue;
-      const heading = groupHeading(text, list.length, iconName, "", key);
+    for (const [text, iconName, key, all] of parts) {
+      if (!all.length) continue;
+      const list = sorted(all.filter(passes));
+      // the heading counts what is shown; "4 of 9" while the filters hide some, so the hidden ones are not forgotten
+      const heading = groupHeading(text, list.length === all.length ? list.length : `${list.length} of ${all.length}`, iconName, "", key);
       frag.appendChild(heading);
       const rows = rowsFor(heading, project ? `${project}/${key}` : key);
       if (!rows) continue;
-      rows.appendChild(axisLine());
-      for (const s of list) rows.appendChild(rowFor(s));
+      if (!list.length) {
+        rows.appendChild(el("p", "kx-hidden-all", `all ${all.length} hidden by the filters`));
+      } else {
+        rows.appendChild(axisLine());
+        for (const s of list) rows.appendChild(rowFor(s));
+      }
       frag.appendChild(rows);
     }
     return frag;
   }
+
+  /** Every session of the payload, grouped or not. */
+  const allSessions = (data) => (data.groups ? data.groups.flatMap((g) => g.sessions) : data.sessions) || [];
+
+  /**
+   * The controls follow the view and the list: the select shows the sort, the two chips their state, one chip
+   * per model in the list (pressed = shown; kept in place between renders so focus survives a click), "reset"
+   * only when something is off default. A model no longer in the list is dropped from hiddenModels.
+   */
+  function renderControls(sessions) {
+    sortEl.value = view.sort;
+    dimmedEl.setAttribute("aria-pressed", String(view.hideDimmed));
+    hotEl.setAttribute("aria-pressed", String(view.hotOnly));
+    const present = [...new Set(sessions.map(modelName))].sort((a, b) => a.localeCompare(b));
+    const pruned = view.hiddenModels.filter((m) => present.includes(m));
+    if (pruned.length !== view.hiddenModels.length) { view.hiddenModels = pruned; store.set("view", view); }
+    const chips = new Map([...modelsEl.querySelectorAll(".kx-chip")].map((c) => [c.dataset.model, c]));
+    for (const [name, chip] of chips) if (!present.includes(name)) { chip.remove(); chips.delete(name); }
+    let before = modelsEl.firstChild;
+    for (const name of present) {
+      let chip = chips.get(name);
+      if (!chip) {
+        chip = el("button", "kx-chip", name);
+        chip.type = "button";
+        chip.dataset.testid = "filter-model";
+        chip.dataset.model = name;
+        chip.addEventListener("click", () => {
+          view.hiddenModels = view.hiddenModels.includes(name) ? view.hiddenModels.filter((m) => m !== name) : [...view.hiddenModels, name];
+          saveView();
+        });
+      }
+      chip.setAttribute("aria-pressed", String(!view.hiddenModels.includes(name)));
+      chip.title = `${view.hiddenModels.includes(name) ? "Show" : "Hide"} the ${name} sessions`;
+      // keep the chips in the sorted order without rebuilding them: `before` walks the existing chips
+      if (chip === before) before = before.nextSibling; else modelsEl.insertBefore(chip, before);
+    }
+    modelsEl.hidden = present.length < 2;
+    resetEl.hidden = viewIsDefault();
+  }
+
+  sortEl.addEventListener("change", () => { view.sort = SORTS.includes(sortEl.value) ? sortEl.value : "last"; saveView(); });
+  dimmedEl.addEventListener("click", () => { view.hideDimmed = !view.hideDimmed; saveView(); });
+  hotEl.addEventListener("click", () => { view.hotOnly = !view.hotOnly; saveView(); });
+  resetEl.addEventListener("click", () => { view = { ...VIEW_DEFAULT, hiddenModels: [] }; saveView(); });
 
   function renderMeter(zoneCounts) {
     const counts = ZONES.map((z) => [z, Number.isFinite(zoneCounts[z]) ? zoneCounts[z] : 0]);
@@ -720,7 +859,9 @@
   const REFRESHED_MS = 4000;
   let refreshPending = false, refreshedTimer = null;
   function refreshDone(data) {
-    if (!refreshPending) return;
+    // only the list of the full read counts: a dev server has the stream too, and a tick landing before
+    // the full response must not take the receipt (both hosts echo `full` in the payload)
+    if (!refreshPending || !(data && data.full === true)) return;
     refreshPending = false;
     refreshEl.removeAttribute("aria-busy");
     const at = new Date(data && data.generatedAt ? data.generatedAt : Date.now());
@@ -728,6 +869,14 @@
     refreshedEl.hidden = false;
     clearTimeout(refreshedTimer);
     refreshedTimer = setTimeout(() => { refreshedEl.hidden = true; }, REFRESHED_MS);
+  }
+
+  /** A full read that failed: the list stays as it is, the error goes to the strip above it, the button rests. */
+  function refreshFailed(message) {
+    refreshPending = false;
+    refreshEl.removeAttribute("aria-busy");
+    errorsEl.appendChild(el("div", "kx-error", `Refresh failed: ${message}`));
+    errorsEl.hidden = false;
   }
 
   function render(data) {
@@ -748,6 +897,11 @@
     errorsEl.textContent = "";
     errorsEl.hidden = !(data.errors && data.errors.length);
     if (!errorsEl.hidden) for (const f of data.errors) errorsEl.appendChild(el("div", "kx-error", f));
+    const everyone = allSessions(data);
+    renderControls(everyone);
+    const shown = everyone.filter(passes).length;
+    showingEl.hidden = shown === everyone.length;
+    showingEl.textContent = `showing ${shown} of ${everyone.length}`;
     // the bar's width transition needs the fill to start where the previous render left it: the previous
     // widths are kept per session, the new rows start there, and after a forced layout they move
     const previous = new Map();
@@ -842,7 +996,7 @@
     }
 
     contactEl.querySelector("button").addEventListener("click", start);
-    refreshEl.addEventListener("click", () => requestRefresh(() => fetchList({ full: true }).catch((e) => render({ count: 0, sessions: [], errors: [String(e && e.message || e)] }))));
+    refreshEl.addEventListener("click", () => requestRefresh(() => fetchList({ full: true }).catch((e) => refreshFailed(String(e && e.message || e)))));
     start();
   }
 })();

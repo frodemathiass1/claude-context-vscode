@@ -310,6 +310,7 @@ function buildSessions({ registry = [], transcripts = {}, now, workspaceFolders 
       const coldInMs = Number.isFinite(coldMs) && Number.isFinite(nowMs) ? coldMs - nowMs : null;
       return {
         pid: r.pid, sessionId: r.sessionId, cwd: r.cwd, project: projectName(r.cwd),
+        startedAt: Number.isFinite(Number(r.startedAt)) && r.startedAt ? new Date(Number(r.startedAt)).toISOString() : null, // the registry's epoch ms, as ISO like lastTurn
         title: t.title || null, model: t.model || null, modelShort: modelShort(t.model),
         tokens, zone: zone(tokens), turns: t.turns || 0, series, compactions,
         dips: dips(series).filter((i) => !compactedAt.has(i)), // a compaction is marked as such, not again as a dip

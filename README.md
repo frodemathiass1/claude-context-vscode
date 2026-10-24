@@ -26,6 +26,11 @@ wider. "All projects" lists the whole machine grouped by project; the default is
 window's workspace folders. Every group heading ("Working now", "Idle", a project) folds and unfolds on a
 click, keeping its count; the panel remembers which are folded. The refresh button at the end of the header
 reads the registry and every transcript again from the first byte, and says "updated 12:04:31" when done.
+A control row under the header sorts the rows inside each group (last turn, context size, time until cold,
+started, title; rows without a value go last) and filters the idle group: hide the dimmed sessions, show
+only the orange and red zones, switch a model off with its chip. A busy session is never hidden; the header
+keeps counting everything and says "showing 4 of 10" while a filter is on, a group heading says "4 of 9",
+and "reset" puts the view back. The view is remembered like the folds.
 
 No dependencies, no build step: `extension.js` (the host), `core.cjs` (pure functions) and `panel.html`
 (the webview).

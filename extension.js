@@ -69,7 +69,7 @@ class ClaudeContextViewProvider {
     const workspaceFolders = (vscode.workspace.workspaceFolders || []).map((f) => f.uri.fsPath);
     const payload = this.reader.read({ workspaceFolders, all, full });
     this.watchProjectFolders(payload.projectFolders);
-    this.view.webview.postMessage({ type: "sessions", ...payload });
+    this.view.webview.postMessage({ type: "sessions", ...payload, full }); // full: the panel's refresh receipt keys on it
   }
 
   startWatching() { this.watcher.start(); }
