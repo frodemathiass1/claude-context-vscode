@@ -126,7 +126,7 @@
   .kx-message { padding: 18px 4px; color: var(--kx-muted); text-align: center; }
   .kx-error { padding: 8px 12px; color: var(--kx-red); border-bottom: 1px solid var(--kx-border); font-size: 0.92em; }
 
-  /* ── Groups: "Working now · n", "Idle · n" and, with all projects, the project above them ── */
+  /* ── Groups: "Working now · n", "Waiting for you · n", "Idle · n" and, with all projects, the project above them ── */
   .kx-group {
     margin: 10px 0 4px; font-size: 0.78em; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;
     color: var(--kx-heading); display: flex; align-items: center; gap: 6px;
@@ -169,6 +169,8 @@
     font-size: 0.78em; font-weight: 600; line-height: 1.6; background: var(--kx-badge-bg); color: var(--kx-badge-fg); flex: none;
   }
   .kx-badge svg { width: 10px; height: 10px; }
+  /* waiting for the user: the same pill as busy, outlined instead of filled, and nothing moves */
+  .kx-badge.kx-wait { background: transparent; color: var(--kx-fg); box-shadow: inset 0 0 0 1px var(--kx-badge-bg); }
   /* the count in the zone's text colour, the zone name under it */
   .kx-count { grid-area: num; display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
   .kx-num {
@@ -436,7 +438,7 @@
     get(key) { return (vscode.getState() || {})[key]; },
     set(key, value) { vscode.setState({ ...(vscode.getState() || {}), [key]: value }); },
   };
-  // group keys: "busy", "idle" and "abandoned" fold that group in every project; "project:<name>" folds a whole project.
+  // group keys: "busy", "waiting", "idle" and "abandoned" fold that group in every project; "project:<name>" folds a whole project.
   // A group in FOLDED_FIRST starts folded, so `unfolded` remembers the opposite choice for it.
   const FOLDED_FIRST = ["abandoned"];
   const keys = (name) => new Set(Array.isArray(store.get(name)) ? store.get(name).filter((k) => typeof k === "string") : []);
@@ -450,7 +452,7 @@
   let lastData = null; // the last list rendered, drawn again when a group is folded or unfolded, or the view changes
 
   // ── The view: the sort and the filters, remembered like the folds. The sort orders the rows inside each
-  // group (busy stays first); the filters apply to the idle groups only, a busy session is never hidden.
+  // group (busy stays first); the filters apply to the idle groups only, a busy or waiting session is never hidden.
   // hiddenModels holds short model names the user switched off; a model that leaves the list takes its choice with it. ──
   const SORTS = ["last", "size", "cold", "started", "title"];
   const VIEW_DEFAULT = { sort: "last", hotOnly: false, hiddenModels: [] };
@@ -468,11 +470,11 @@
   const modelName = (s) => s.modelShort || "unknown";
   const HOT_ZONES = ["orange", "red"];
   function passes(s) {
-    if (s.busy) return true;
+    if (s.busy || s.waiting) return true;
     if (view.hotOnly && !HOT_ZONES.includes(s.zone)) return false;
     return !view.hiddenModels.includes(modelName(s));
   }
-  // the sort key per row: null sorts last, ties keep the list's order (busy first, then last turn newest first)
+  // the sort key per row: null sorts last, ties keep the list's order (busy first, then waiting, then last turn newest first)
   const NO_DEADLINE = Number.MAX_SAFE_INTEGER; // a cold cache has no time until cold: after every warm one, before unknown
   const SORT_KEY = {
     last: () => 0,
@@ -641,6 +643,7 @@
     refresh: ["M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8", "M3 3v5h5", "M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16", "M16 16h5v5"],
     back: ["m12 19-7-7 7-7", "M19 12H5"],
     play: ["M5 3v18l15-9z"],
+    bell: ["M10.268 21a2 2 0 0 0 3.464 0", "M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"],
   };
   function icon(name) {
     const svg = svgEl("svg", { class: "kx-ico", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": 2, "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": "true" });
@@ -779,6 +782,15 @@
     return bar;
   }
 
+  /** "waiting": the session waits for the user (a permission prompt, a question, a dialog), in the list and the detail view. */
+  function waitingBadge() {
+    const badge = el("span", "kx-badge kx-wait");
+    badge.title = "Waiting for you: a permission prompt, a question or a dialog in this session";
+    badge.appendChild(icon("bell"));
+    badge.appendChild(document.createTextNode("waiting"));
+    return badge;
+  }
+
   function rowFor(session) {
     const row = zoned(el("article", "kx-session" + (session.dimmed ? " kx-dimmed" : "")), session.zone);
     row.dataset.session = session.sessionId || "";
@@ -800,7 +812,7 @@
       badge.appendChild(icon("zap"));
       badge.appendChild(document.createTextNode("busy"));
       titleRow.appendChild(badge);
-    }
+    } else if (session.waiting) titleRow.appendChild(waitingBadge());
     row.appendChild(titleRow);
     const count = el("div", "kx-count");
     const tokens = zoned(el("div", "kx-num", countText(session)), session.zone);
@@ -920,14 +932,15 @@
   }
 
   /**
-   * The sessions as three groups, busy, idle and idle over an hour (the core's `abandoned`, folded at first),
+   * The sessions as four groups, busy, waiting for the user, idle and idle over an hour (the core's `abandoned`, folded at first),
    * each with its heading and axis; the order within a group is the list's. A folded group keeps its heading and
    * count and draws no rows. `project` only makes the rows' ids unique.
    */
   function groupsFor(sessions, project) {
     const frag = document.createDocumentFragment();
     const parts = [["Working now", "zap", "busy", sessions.filter((s) => s.busy)],
-      ["Idle", "moon", "idle", sessions.filter((s) => !s.busy && !s.abandoned)],
+      ["Waiting for you", "bell", "waiting", sessions.filter((s) => s.waiting)],
+      ["Idle", "moon", "idle", sessions.filter((s) => !s.busy && !s.waiting && !s.abandoned)],
       ["Idle over an hour", "clock", "abandoned", sessions.filter((s) => s.abandoned)]];
     for (const [text, iconName, key, all] of parts) {
       if (!all.length) continue;
@@ -1299,6 +1312,10 @@
       badge.dataset.testid = "detail-busy";
       badge.appendChild(icon("zap"));
       badge.appendChild(document.createTextNode("busy"));
+      top.appendChild(badge);
+    } else if (session.waiting) {
+      const badge = waitingBadge();
+      badge.dataset.testid = "detail-waiting";
       top.appendChild(badge);
     }
     const esc = el("span", "kx-d-esc", "Esc");

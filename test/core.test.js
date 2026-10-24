@@ -590,6 +590,24 @@ describe("buildSessions", () => {
     expect(r.sessions.map((s) => [s.sessionId, s.abandoned, s.dimmed])).toEqual([["reopened", false, true], ["left", true, true]]);
   });
 
+  it("waiting: sorts after busy and before idle, and is never abandoned; an unknown status counts as idle", () => {
+    const at = (min) => Date.parse(NOW) - min * 60000;
+    const statuses = [
+      { ...reg(1, "idle", MINE, "idle"), startedAt: at(300) }, { ...reg(2, "waiting", MINE, "waiting"), startedAt: at(300) },
+      { ...reg(3, "busy", MINE, "busy"), startedAt: at(300) }, { ...reg(4, "odd", MINE, "requires_action"), startedAt: at(300) },
+      { ...reg(5, "none", MINE, undefined), startedAt: at(300) },
+    ];
+    const turn = (min) => tail(40000, new Date(at(min)).toISOString());
+    const r = K.buildSessions({ registry: statuses, now: NOW, workspaceFolders: [MINE],
+      transcripts: { idle: turn(5), waiting: turn(120), busy: turn(240), odd: turn(90), none: turn(100) } });
+    expect(r.sessions.map((s) => [s.sessionId, s.busy, s.waiting, s.abandoned])).toEqual([
+      ["busy", true, false, false], ["waiting", false, true, false], ["idle", false, false, false],
+      ["odd", false, false, true], ["none", false, false, true],
+    ]);
+    expect(r.sessions[1].dimmed).toBe(true); // dimmed like any session two hours after its last turn, only not folded away
+    expect(r.abandonedCount).toBe(2);
+  });
+
   it("name is the registry's, for the panel's title when the transcript has none; null when missing", () => {
     const named = [{ ...reg(1, "a", MINE, "idle"), name: "my-project-08" }, { ...reg(2, "b", MINE, "idle"), name: "" }];
     const r = K.buildSessions({ registry: named, transcripts: {}, now: NOW, workspaceFolders: [MINE] });
