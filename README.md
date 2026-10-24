@@ -20,8 +20,10 @@ cold (the last turn plus the TTL Claude Code chose, shown as a 1h or 5m pill; a 
 few minutes before that the text turns orange, and afterwards it says "cold". The tooltip has the deadline,
 how much of the last turn's context was read from cache and how much was written. The header counts the
 warm and cold sessions beside the zone meter, and the median start of the sessions that began fresh, so
-a CLAUDE.md that grew shows at a glance. Busy sessions pulse and sort first; sessions idle for more
-than an hour are dimmed. A session that is not busy and had neither a turn nor its process start for an hour
+a CLAUDE.md that grew shows at a glance. Busy sessions pulse and sort first. A session that waits for you (a
+permission prompt, a question or a dialog) comes next, under "Waiting for you" with an outlined "waiting" pill
+that does not move, and is never hidden or folded away, however long it has waited. Sessions idle for more
+than an hour are dimmed. A session that is neither busy nor waiting and had neither a turn nor its process start for an hour
 (an empty one by its start alone) goes into "Idle over an hour", folded until you open it, and the header counts
 them ("3 idle over an hour"): VS Code keeps a chat tab's process running after the tab is closed, until
 **Developer: Reload Window**, and nothing tells a closed tab from an open one (`NOTES.md`, "Closed chat tabs"),
@@ -29,12 +31,12 @@ so most of these are probably closed tabs. The rows stack in the narrow sidebar 
 wider. The scope switch at the top of the control row says what the list, and every counter above it, is
 about: "This workspace" (the default, the sessions inside the window's workspace folders, named beside the
 switch, with "4 more in other projects" when other projects have live sessions; a click shows them) or "All
-projects" (the whole machine, grouped by project). Every group heading ("Working now", "Idle", "Idle over an hour", a project) folds and unfolds on a
+projects" (the whole machine, grouped by project). Every group heading ("Working now", "Waiting for you", "Idle", "Idle over an hour", a project) folds and unfolds on a
 click, keeping its count; the panel remembers which are folded. The refresh button at the end of the header
 reads the registry and every transcript again from the first byte, and says "updated 12:04:31" when done.
 A control row under the header sorts the rows inside each group (last turn, context size, time until cold,
 started, title; rows without a value go last) and filters the two idle groups: show only the orange and
-red zones, switch a model off with its chip. A busy session is never hidden; the header
+red zones, switch a model off with its chip. A busy or waiting session is never hidden; the header
 keeps counting everything and says "showing 4 of 10" while a filter is on, a group heading says "4 of 9",
 and "reset" puts the view back. The view is remembered like the folds. Click a row (or press Enter on it) to open the
 session's detail view in its place: the title, project, model and effort, turns, start and last turn; one

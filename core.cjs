@@ -10,8 +10,8 @@ const path = require("node:path");
 // Quality warnings, not the window limit: absolute token counts calibrated on Matt Pocock's smart/dumb zone
 // (the dumb zone "commonly begins around 125K-150K tokens"); the orange band is that range.
 const YELLOW_FROM = 100000, ORANGE_FROM = 125000, RED_ABOVE = 150000;
-// A session without a turn for an hour is dimmed. One that is not busy and had neither a turn nor its process start
-// for an hour is abandoned, and the panel folds it away: a closed VS Code chat tab keeps its process (NOTES.md,
+// A session without a turn for an hour is dimmed. One that is neither busy nor waiting and had neither a turn nor its
+// process start for an hour is abandoned, and the panel folds it away: a closed VS Code chat tab keeps its process (NOTES.md,
 // "Closed chat tabs") and nothing tells it from an open tab, so a quiet hour is the only sign there is. The start
 // counts because a tab reopened on an old session spawns a new process. An hour is also the longer cache TTL.
 const DIM_AFTER_MS = 60 * 60 * 1000;
@@ -340,17 +340,18 @@ function userText(content) {
 /**
  * The list the panel shows: the registry joined with the parsed transcripts (`transcripts`, keyed by
  * sessionId). The default scope is the sessions inside the window's workspace folders; with `all`
- * the whole machine is included, grouped by project. Sorted busy first, then last turn newest first,
- * unknown last. `zoneCounts` counts the listed sessions per zone; sessions with an unknown count are not
- * counted. Per session the prompt cache: `hitShare` (cacheRead / tokens of the last turn), `coldAt` (the last
+ * the whole machine is included, grouped by project. Sorted busy first, then waiting, then last turn newest
+ * first, unknown last. `waiting` is a session that waits for the user: a permission prompt, a question or a
+ * dialog (the registry's status "waiting", NOTES.md "Session status"); any other status but "busy" counts as
+ * idle. `zoneCounts` counts the listed sessions per zone; sessions with an unknown count are not counted. Per session the prompt cache: `hitShare` (cacheRead / tokens of the last turn), `coldAt` (the last
  * turn plus the TTL), `coldInMs` (until then, negative when past) and `cacheState` ("warm" or "cold", null
  * without a TTL); `cacheCounts` counts the listed sessions per state. `baselineMedian` is the median baseline
  * of the listed sessions whose segment is a start (after a compaction the baseline holds the summary too), null
  * when there are none, so a CLAUDE.md that grew shows as a higher start for every new session. The per-turn
  * fields are kept to the last SERIES_MAX turns (seriesFor; SessionReader.detail gives all of them);
  * `compactionCount` counts the whole session's. `growth` is growthBySource as rows (growthRows), and `summary`
- * the detail view's sentence (summaryText) with the list's baselineMedian. `abandoned` is a session that is not busy
- * and whose last turn and process start are both more than DIM_AFTER_MS ago (an empty session by its start alone);
+ * the detail view's sentence (summaryText) with the list's baselineMedian. `abandoned` is a session that is neither busy
+ * nor waiting and whose last turn and process start are both more than DIM_AFTER_MS ago (an empty session by its start alone);
  * `abandonedCount` counts them. `hiddenCount` is how many live sessions the scope leaves out (0 with `all` or without
  * workspace folders), counted from the registry alone, and `workspaceNames` the last folder name of each workspace
  * folder, so the panel can name the scope ("This workspace · my-project · 4 more in other projects").
@@ -370,7 +371,7 @@ function buildSessions({ registry = [], transcripts = {}, now, workspaceFolders 
       const coldMs = cacheTtlMs !== null && Number.isFinite(lastMs) ? lastMs + cacheTtlMs : NaN;
       const coldInMs = Number.isFinite(coldMs) && Number.isFinite(nowMs) ? coldMs - nowMs : null;
       const startedMs = Number(r.startedAt) || NaN;
-      const busy = r.status === "busy", dimmed = sinceMs !== null && sinceMs > DIM_AFTER_MS;
+      const busy = r.status === "busy", waiting = r.status === "waiting", dimmed = sinceMs !== null && sinceMs > DIM_AFTER_MS;
       const activeMs = Math.max(Number.isFinite(lastMs) ? lastMs : -Infinity, Number.isFinite(startedMs) ? startedMs : -Infinity);
       const quiet = Number.isFinite(activeMs) && Number.isFinite(nowMs) && nowMs - activeMs > DIM_AFTER_MS;
       return {
@@ -390,11 +391,11 @@ function buildSessions({ registry = [], transcripts = {}, now, workspaceFolders 
         hitShare: cacheRead !== null && tokens ? cacheRead / tokens : null,
         coldAt: Number.isFinite(coldMs) ? new Date(coldMs).toISOString() : null, coldInMs,
         cacheState: coldInMs === null ? null : coldInMs > 0 ? "warm" : "cold",
-        busy, dimmed, abandoned: !busy && quiet,
+        busy, waiting, dimmed, abandoned: !busy && !waiting && quiet,
         _lastMs: Number.isFinite(lastMs) ? lastMs : -Infinity,
       };
     })
-    .sort((a, b) => (b.busy - a.busy) || (b._lastMs - a._lastMs) || (a.pid - b.pid));
+    .sort((a, b) => (b.busy - a.busy) || (b.waiting - a.waiting) || (b._lastMs - a._lastMs) || (a.pid - b.pid));
   sessions.forEach((s) => { delete s._lastMs; });
   let groups = null;
   if (all) {

@@ -79,6 +79,31 @@ Fable 5.1):
   (`deferred_tools_record`, `prompt_snapshot`, `batching_reminder_sent` and others) are bookkeeping.
 - The context fell between two turns once in 13 149 gaps.
 
+## Session status (surveyed 2026-10-24, Claude Code 2.1.310, macOS)
+
+`/facts` over the six registry entries and 40 transcripts of the last seven days, and the 2.1.310 bundle
+(`~/.local/share/claude/versions/2.1.310`) read where it writes the registry:
+
+- `status` values seen: `idle` 4, `busy` 1, `waiting` 1. The code sets exactly these three: `waiting` when a
+  dialog, a question (elicitation), a worker request or a sandbox request waits for the user, in interactive
+  mode; with `--output-format stream-json`, as the VS Code extension runs it, `running` becomes `busy`,
+  `requires_action` `waiting` and `idle` `idle`. Claude Code's own agent list calls `waiting` "blocked". The 2.1.273
+  bundle already has `waiting`; it is first seen here, not new.
+- `waitingFor` is on the `waiting` entry only, a short label from a fixed set in the code: `permission prompt`,
+  `input needed` (a question, or a dialog in stream-json), `dialog open`, `worker request`, `sandbox request` and
+  `goal proposal`. The same literals are in 2.1.273 and 2.1.308.
+- Registry fields on all six entries: those of the Windows section (`procStart`, `peerProtocol`, `peerFeatures`,
+  `pidDomain`, `messagingSocketPath`, `nameSince`) are on macOS too, plus `bridgeSessionId` (a string).
+- `message.usage` keys on all 3 667 assistant entries, beside the counters the core reads: `server_tool_use`,
+  `service_tier`, `inference_geo`, `iterations`, `speed`, `output_tokens_details` (`thinking_tokens`), and
+  `fallback_credit` on 3 436.
+- `compactMetadata` (one auto compaction): `trigger`, `preTokens`, `postTokens`, `durationMs`,
+  `cumulativeDroppedTokens`, `preCompactDiscoveredTools`, `preCompactArtifactReadVersions`, `preservedSegment`,
+  `preservedMessages`.
+
+So the core treats `waiting` as its own state (it was idle until 0.15.0, and folded into "Idle over an hour" after
+a quiet hour) and any other value but `busy` as idle.
+
 ## Closed chat tabs (looked for a signal 2026-10-24, Claude Code 2.1.310, macOS)
 
 The VS Code extension spawns one `claude` process per chat tab (`--output-format stream-json --input-format
