@@ -37,16 +37,21 @@ started, title; rows without a value go last) and filters the two idle groups: s
 red zones, switch a model off with its chip. A busy session is never hidden; the header
 keeps counting everything and says "showing 4 of 10" while a filter is on, a group heading says "4 of 9",
 and "reset" puts the view back. The view is remembered like the folds. Click a row (or press Enter on it) to open the
-session's detail view in its place: the title, project, model and effort, turns, start and last turn; one
-sentence of facts ("Red zone after 1 compaction; this segment started at 169K, a fresh session here typically
-starts at ~29K", the last part from the header's start median, no advice); a large curve of tokens per turn over
-the whole session with the four zone bands, every compaction labelled with its trigger and counts, and the
-segment's start; hovering a turn, or moving the "Turn" slider from the keyboard, shows its count and the change
-from the turn before, with the output per turn as bars under it. Beside the curve (under it when narrow), where
-the context went since the segment's start: one bar per source, largest first, with the estimate's caveat once
-under them. The list carries the last 200 turns of each session; the detail view asks the host for all of them,
-and says "last 200 of 233 turns" only if the host cannot answer. Two tables follow: the prompt cache and
-output, and the session (working folder, process id and session id with a copy button). The view follows the
+session's detail view in its place: the title, project, model and effort, turns, start and last turn; then a box
+edged in the zone colour that says what the number is ("Context 138K · orange zone"), that the zones warn about
+quality at 100K, 125K and 150K and not about the window limit, and, in yellow, orange and red, what to do at the
+next phase boundary ("Break at the first phase boundary; continue only if the next phase fits under 150K."). Under
+it the named facts: "Session started at 29K" (or "This segment started at 169K" after a compaction) and
+"Compactions 1" when there was one. A large curve of tokens per turn over the whole session follows, with the four
+zone bands, every compaction labelled with its trigger and counts, and the segment's start; under it, in a field
+half its height on the same turns, the output per turn with its thinking part, on its own scale with the largest
+value in the corner. Hovering a turn in either field, or moving the "Turn" slider under them from the keyboard,
+shows its count, the change from the turn before, and its output and thinking. Beside the curve (under it when
+narrow), where the context went since the segment's start: one bar per source, largest first, with one short line
+on how it is estimated (the whole of it in the tooltip). The list carries the last 200 turns of each session; the
+detail view asks the host for all of them, and says "last 200 of 233 turns" only if the host cannot answer. Two
+tables follow: the prompt cache and output, and the session (what a fresh session here typically starts at, from
+the header's start median; working folder, process id and session id with a copy button). The view follows the
 live list, says so if the session leaves the registry, and goes back to the list on Escape or the back
 button; the panel remembers the open session.
 

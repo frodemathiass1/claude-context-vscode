@@ -265,7 +265,7 @@ function seriesFor(t, max = Infinity) {
     dips: dips(series).filter((i) => !compactedAt.has(i)), baselineAt };
 }
 
-/** The panel's number format ("850", "43K", "1.2M", "unknown"), for the sentence below; panel.html has the same rule, since the webview cannot require this file. */
+/** The panel's number format ("850", "43K", "1.2M", "unknown"), for the facts below; panel.html has the same rule, since the webview cannot require this file. */
 function tokensText(tokens) {
   if (!Number.isFinite(tokens)) return "unknown";
   if (tokens < 1000) return String(tokens);
@@ -273,19 +273,26 @@ function tokensText(tokens) {
   return `${(tokens / 1000000).toFixed(1)}M`;
 }
 
+// What to do at the next phase boundary, per zone (Pocock's PHASE-BOUNDARIES.md): the detail view shows it under the
+// count, the list's bar in its tooltip. Green has none: a session there is in the smart zone.
+const ZONE_ADVICE = {
+  yellow: "Plan to break at the next phase boundary.",
+  orange: `Break at the first phase boundary; continue only if the next phase fits under ${tokensText(RED_ABOVE)}.`,
+  red: "Do not start a new phase: /clear, /handoff, a subagent, or /compact.",
+};
+
 /**
- * One sentence of facts for the detail view, no advice: the zone, the compactions in the whole session, where
- * the current segment started, and what a fresh session in the list typically starts at (`median`, the list's
- * baselineMedian; the clause is left out when it is null). "Red zone after 1 compaction; this segment started
- * at 169K, a fresh session here typically starts at ~29K."
+ * What the detail view says under its header, which carries the count and the zone: `advice`, the zone's advice
+ * (null for green or an unknown zone); `facts`, named [label, value] pairs: where the current segment started
+ * ("This segment started at" after a compaction, "Session started at" from the start) and "Compactions" when the
+ * session had any; and `typicalStart`, what a fresh session in the list typically starts at ("~29K" from
+ * `median`, the list's baselineMedian; null without one). Facts only: no line on what a break would give back.
  */
-function summaryText({ zone: z, compactionCount, baseline, baselineCause, turns }, median) {
-  if (!z) return turns ? "No token count yet, so no zone." : "No turns yet, so no count and no zone.";
-  let text = `${z[0].toUpperCase()}${z.slice(1)} zone`;
-  if (compactionCount > 0) text += ` after ${compactionCount} ${compactionCount === 1 ? "compaction" : "compactions"}`;
-  if (Number.isFinite(baseline)) text += `; ${baselineCause === "compaction" ? "this segment" : "the session"} started at ${tokensText(baseline)}`;
-  if (Number.isFinite(median)) text += `, a fresh session here typically starts at ~${tokensText(median)}`;
-  return `${text}.`;
+function contextFacts({ zone: z, compactionCount, baseline, baselineCause }, median) {
+  const facts = [];
+  if (Number.isFinite(baseline)) facts.push([baselineCause === "compaction" ? "This segment started at" : "Session started at", tokensText(baseline)]);
+  if (compactionCount > 0) facts.push(["Compactions", String(compactionCount)]);
+  return { advice: ZONE_ADVICE[z] || null, facts, typicalStart: Number.isFinite(median) ? `~${tokensText(median)}` : null };
 }
 
 /**
@@ -348,9 +355,10 @@ function userText(content) {
  * of the listed sessions whose segment is a start (after a compaction the baseline holds the summary too), null
  * when there are none, so a CLAUDE.md that grew shows as a higher start for every new session. The per-turn
  * fields are kept to the last SERIES_MAX turns (seriesFor; SessionReader.detail gives all of them);
- * `compactionCount` counts the whole session's. `growth` is growthBySource as rows (growthRows), and `summary`
- * the detail view's sentence (summaryText) with the list's baselineMedian. `abandoned` is a session that is not busy
- * and whose last turn and process start are both more than DIM_AFTER_MS ago (an empty session by its start alone);
+ * `compactionCount` counts the whole session's. `growth` is growthBySource as rows (growthRows); `advice`, `facts`
+ * and `typicalStart` are what the detail view says under its header (contextFacts, with the list's baselineMedian).
+ * `abandoned` is a session that is not busy and whose last turn and process start are both more than DIM_AFTER_MS
+ * ago (an empty session by its start alone);
  * `abandonedCount` counts them. `hiddenCount` is how many live sessions the scope leaves out (0 with `all` or without
  * workspace folders), counted from the registry alone, and `workspaceNames` the last folder name of each workspace
  * folder, so the panel can name the scope ("This workspace · my-project · 4 more in other projects").
@@ -409,7 +417,7 @@ function buildSessions({ registry = [], transcripts = {}, now, workspaceFolders 
   const starts = sessions.filter((s) => s.baselineCause === "start" && s.baseline !== null).map((s) => s.baseline).sort((a, b) => a - b);
   const mid = starts.length >> 1;
   const baselineMedian = !starts.length ? null : starts.length % 2 ? starts[mid] : (starts[mid - 1] + starts[mid]) / 2;
-  for (const s of sessions) s.summary = summaryText(s, baselineMedian);
+  for (const s of sessions) Object.assign(s, contextFacts(s, baselineMedian));
   return { sessions, groups, count: sessions.length, zoneCounts, cacheCounts, baselineMedian, baselineSessions: starts.length,
     abandonedCount: sessions.filter((s) => s.abandoned).length, hiddenCount: registry.length - sessions.length,
     workspaceNames: workspaceFolders.map(projectName).filter(Boolean) };
@@ -585,4 +593,4 @@ class SessionWatcher {
   }
 }
 
-module.exports = { projectSlug, zone, dips, readRegistry, readTail, parseTranscript, seriesFor, summaryText, growthRows, buildSessions, inFolder, projectName, SessionReader, SessionWatcher, isAlive };
+module.exports = { projectSlug, zone, dips, readRegistry, readTail, parseTranscript, seriesFor, contextFacts, growthRows, buildSessions, inFolder, projectName, SessionReader, SessionWatcher, isAlive };

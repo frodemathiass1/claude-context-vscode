@@ -247,9 +247,6 @@
   .kx-d-head { display: flex; align-items: center; gap: 8px; min-width: 0; margin: 4px 0 2px; }
   .kx-d-head h1 { margin: 0; font-size: 1.15em; font-weight: 600; line-height: 1.3; min-width: 0; overflow-wrap: anywhere; }
   .kx-d-head .kx-dot { width: 12px; height: 12px; }
-  .kx-d-count { margin-left: auto; }
-  .kx-d-head .kx-num { font-size: 1.6em; }
-  .kx-d-zone { font-size: 0.78em; color: var(--kx-muted); text-align: right; }
   .kx-d-meta { display: flex; flex-wrap: wrap; gap: 3px 12px; color: var(--kx-muted); font-size: 0.86em; margin: 0 0 8px; }
   .kx-d-meta span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; min-width: 0; }
   .kx-d-meta svg { width: 12px; height: 12px; opacity: 0.8; }
@@ -284,12 +281,38 @@
   .kx-d-turn-row { display: flex; align-items: center; gap: 8px; margin: 6px 0 0; font-size: 0.82em; color: var(--kx-muted); }
   .kx-d-turn { flex: 1 1 auto; min-width: 0; accent-color: var(--kx-accent); margin: 0; height: 18px; }
   .kx-d-turn-val { font-family: var(--kx-mono); font-variant-numeric: tabular-nums; white-space: nowrap; min-width: 9ch; text-align: right; }
-  .kx-d-out { display: block; width: 100%; height: 28px; margin-top: 4px; color: var(--kx-muted); }
-  /* one sentence of facts over the curve, edged and tinted in the zone colour */
-  .kx-d-sum {
-    margin: 0 0 10px; padding: 8px 10px; border-left: 3px solid var(--kx-zone-fill, var(--kx-muted)); border-radius: 0 4px 4px 0;
-    background: color-mix(in srgb, var(--kx-zone-fill, var(--kx-muted)) 8%, transparent); font-size: 0.95em; font-weight: 600;
+  /* output per turn in its own field under the curve, half its height and on the same x-axis; the turn's column is
+     marked while the curve shows the turn. The tones are the list's (.kx-out-all, .kx-out-think), and so are the swatches */
+  .kx-d-ofield { position: relative; height: 75px; margin-top: 4px; border: 1px solid var(--kx-border); border-radius: 6px; background: var(--kx-surface); overflow: hidden; color: var(--kx-muted); }
+  .kx-d-obars { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .kx-d-ofield .kx-d-axis { top: 9px; }
+  .kx-d-ocol {
+    position: absolute; top: 0; bottom: 0; pointer-events: none; display: none;
+    background: color-mix(in srgb, var(--kx-fg) 14%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--kx-fg) 45%, transparent);
   }
+  .kx-d-ofield.kx-d-hover .kx-d-ocol { display: block; }
+  .kx-d-sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: -1px; background: var(--kx-muted); }
+  .kx-d-sw-out { opacity: 0.35; }
+  .kx-d-sw-think { opacity: 0.8; }
+  .kx-d-tip .kx-d-tip-o { color: var(--kx-muted); }
+  /* the header: "Context 138K · orange zone", what the zones measure and the advice, edged and tinted in the zone colour */
+  .kx-d-ctx {
+    margin: 0 0 10px; padding: 8px 10px; border-left: 3px solid var(--kx-zone-fill, var(--kx-muted)); border-radius: 0 4px 4px 0;
+    background: color-mix(in srgb, var(--kx-zone-fill, var(--kx-muted)) 8%, transparent);
+  }
+  .kx-d-ctx h2 { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 6px; font-size: 1em; font-weight: 600; line-height: 1.25; }
+  .kx-d-ctx h2 .kx-num { font-size: 1.6em; }
+  .kx-d-ctx h2 .kx-d-zn { color: var(--kx-zone-text, var(--kx-muted)); }
+  .kx-d-why { margin: 3px 0 0; font-size: 0.8em; color: var(--kx-muted); }
+  .kx-d-advice {
+    margin: 6px 0 0; padding: 6px 0 0; border-top: 1px solid color-mix(in srgb, var(--kx-zone-fill, var(--kx-muted)) 30%, transparent);
+    font-size: 0.95em; font-weight: 600;
+  }
+  /* the named facts under it, key muted and value in mono */
+  .kx-d-named { display: flex; flex-wrap: wrap; gap: 2px 16px; margin: 0 0 10px; font-size: 0.9em; }
+  .kx-d-named div { display: flex; align-items: baseline; gap: 6px; }
+  .kx-d-named dt { color: var(--kx-muted); }
+  .kx-d-named dd { margin: 0; font-family: var(--kx-mono); font-variant-numeric: tabular-nums; font-weight: 600; }
   /* where the context went: name · bar · tokens · share per source, the bars scaled to the largest; the caveat once under them */
   .kx-d-bars { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 4px 10px; align-items: center; font-size: 0.9em; font-variant-numeric: tabular-nums; }
   .kx-d-bar { height: 10px; border-radius: 5px; background: var(--kx-track); overflow: hidden; }
@@ -334,11 +357,11 @@
     .kx-axis .kx-r { text-align: right; }
     .kx-detail { padding: 10px 16px 20px; }
     .kx-d-head h1 { font-size: 1.35em; }
-    .kx-d-head .kx-num { font-size: 2em; }
+    .kx-d-ctx h2 .kx-num { font-size: 2em; }
     .kx-d-field { height: 220px; }
     .kx-d-field[data-axis] .kx-d-axis { display: block; }
     .kx-d-field[data-axis-wide="2"] .kx-d-axis-mid, .kx-d-field[data-axis-wide="1"] .kx-d-axis-mid, .kx-d-field[data-axis-wide="1"] .kx-d-axis-low { display: none; }
-    .kx-d-out { height: 40px; }
+    .kx-d-ofield { height: 110px; }
     .kx-d-pair { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 0 20px; align-items: start; } /* the curve and where the context went */
     .kx-d-facts { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
     .kx-d-facts tr { display: table-row; padding: 0; border: 0; }
@@ -588,12 +611,6 @@
   /** The count, or "—" before the first turn: an empty session is not an unknown count. */
   const countText = (session) => (session.turns || Number.isFinite(session.tokens) ? tokensText(session.tokens) : "—");
   const countLabel = (session) => (session.turns || Number.isFinite(session.tokens) ? `${tokensText(session.tokens)} tokens, zone ${ZONE_NAME[session.zone] || "unknown"}` : "no turns yet");
-  // what to do at the next phase boundary, per zone (Pocock's PHASE-BOUNDARIES.md); shown in the bar's tooltip
-  const ZONE_ADVICE = {
-    yellow: "plan to break at the next phase boundary",
-    orange: `break at the first phase boundary; continue only if the next phase fits under ${tokensText(LIMITS[LIMITS.length - 1])}`,
-    red: "do not start a new phase: /clear, /handoff, a subagent, or /compact",
-  };
   const SCALE_TEXT = `0–${tokensText(SCALE)}`;
   const share = (tokens) => (Number.isFinite(tokens) ? Math.min(1, tokens / SCALE) : 0);
   const pct = (n) => String(Math.round(n * 10000) / 100);
@@ -685,11 +702,11 @@
   /**
    * Output per turn as bars under the curve, one per turn of the series (the output series is aligned to its
    * right end, so an older state with a shorter one still lines up), scaled to the session's own largest turn.
-   * The thinking part of each bar is drawn over it, from the bottom. Nothing when no turn wrote anything.
-   * `className` sizes it: the row's strip, or the detail view's taller one.
+   * The thinking part of each bar is drawn over it, from the bottom. Nothing when no turn wrote anything. The
+   * row's strip; the detail view draws its own field (detailCurve).
    */
   const OUT_H = 8;
-  function outputFor(session, className = "kx-out") {
+  function outputFor(session) {
     const series = Array.isArray(session.series) ? session.series : [];
     const output = Array.isArray(session.outputSeries) ? session.outputSeries.slice(-series.length) : [];
     const thinking = Array.isArray(session.thinkingSeries) ? session.thinkingSeries.slice(-series.length) : [];
@@ -697,7 +714,7 @@
     if (series.length < 2 || !top) return null;
     const offset = series.length - output.length, w = CURVE_W / series.length, gap = series.length <= 60 ? w * 0.2 : 0;
     const bar = (i, v) => (v > 0 ? `M${num((i + offset) * w)},${OUT_H} h${num(w - gap)} v${num(-(v / top) * OUT_H)} h${num(gap - w)} Z` : "");
-    const svg = svgEl("svg", { class: className, viewBox: `0 0 ${CURVE_W} ${OUT_H}`, preserveAspectRatio: "none", role: "img", "data-testid": "output", "data-bars": output.length, "aria-label": `Output tokens per turn, largest ${tokensText(top)}` });
+    const svg = svgEl("svg", { class: "kx-out", viewBox: `0 0 ${CURVE_W} ${OUT_H}`, preserveAspectRatio: "none", role: "img", "data-testid": "output", "data-bars": output.length, "aria-label": `Output tokens per turn, largest ${tokensText(top)}` });
     const title = svgEl("title", {});
     title.textContent = `Output tokens per turn (faint) and the thinking part of them (strong), scaled to the largest turn: ${tokensText(top)}`;
     svg.appendChild(title);
@@ -756,7 +773,7 @@
     bar.setAttribute("role", "img");
     bar.dataset.testid = "bar";
     const known = Number.isFinite(session.tokens);
-    const advice = ZONE_ADVICE[session.zone] ? ` · ${ZONE_ADVICE[session.zone]}` : "";
+    const advice = session.advice ? ` · ${session.advice}` : ""; // the zone's advice, from the core (core.cjs contextFacts)
     const split = baselineText(session);
     bar.title = known ? `${tokensText(session.tokens)} tokens in the context${split ? `: ${split}` : ""} · scale ${SCALE_TEXT}, marks at ${MARKS_TEXT}${advice}` : "no count yet";
     bar.setAttribute("aria-label", !known ? "no count" : session.tokens > SCALE ? `over the ${tokensText(SCALE)} scale` : `${Math.round(share(session.tokens) * 100)} % of the ${tokensText(SCALE)} scale`);
@@ -992,6 +1009,7 @@
   // list the panel asks the host for all of them (core.cjs SessionReader.detail), and draws again with those. ──
   const D_W = 100, D_H = 100; // the large curve's viewBox, stretched to its field like the sparkline's
   const D_FIELD_H = { narrow: 150, wide: 220 }; // the field's height in the style (.kx-d-field), below and above 620 px
+  const D_OUT_H = 100, D_OUT_TOP = 94; // the output field's viewBox height, and the tallest bar's, so it does not touch the edge
   const AXIS_GAP_PX = 11; // an axis label is about 10 px tall; neighbours closer than this would overlap
   const COPIED_MS = 2000;
   let openId = null; // the sessionId shown, null while the list is shown
@@ -1014,8 +1032,9 @@
   /**
    * The large curve: zone bands, dashed limits, area and line in the zone colour, compactions as solid lines
    * with their label, dips dotted, the segment's start labelled at the bottom, the axis at the right edge.
-   * Hovering shows a hairline and "turn 2 · 60K · +9K from turn 1"; the range under it does the same from the
-   * keyboard. Until the host's detail has come the series is the list's last SERIES_MAX turns (core.cjs), so
+   * Hovering shows a hairline and "turn 2 · 60K · +9K from turn 1", with "output 1K · thinking 83" under it; the
+   * output per turn has its own field under the curve, and hovering it shows the same turn. The range under both
+   * does the same from the keyboard. Until the host's detail has come the series is the list's last SERIES_MAX turns (core.cjs), so
    * its first point is turn `first`; with the detail it is every turn and `first` is 1.
    */
   function detailCurve(session) {
@@ -1091,6 +1110,29 @@
     tip.dataset.testid = "detail-tip";
     field.appendChild(hair);
     field.appendChild(tip);
+    // output per turn in its own field under the curve, one slot per turn of the series so a bar sits under its point;
+    // the output series is aligned to the series' right end, as in the row's strip (outputFor)
+    const output = Array.isArray(session.outputSeries) ? session.outputSeries.slice(-series.length) : [];
+    const thinking = Array.isArray(session.thinkingSeries) ? session.thinkingSeries.slice(-series.length) : [];
+    const largest = Math.max(0, ...output), offset = series.length - output.length, slot = D_W / series.length;
+    const thinkingAt = (o) => Math.min(thinking[o] || 0, output[o] || 0);
+    let ofield = null, ocol = null;
+    if (largest) {
+      ofield = el("div", "kx-d-ofield");
+      ofield.dataset.testid = "detail-output";
+      const gap = series.length <= 60 ? slot * 0.2 : 0;
+      const bar = (o, v) => (v > 0 ? `M${num((o + offset) * slot)},${D_OUT_H} h${num(slot - gap)} v${num(-(v / largest) * D_OUT_TOP)} h${num(gap - slot)} Z` : "");
+      const bars = svgEl("svg", { class: "kx-d-obars", viewBox: `0 0 ${D_W} ${D_OUT_H}`, preserveAspectRatio: "none", role: "img", "data-bars": output.length,
+        "aria-label": `Output tokens per turn, of it thinking; largest ${tokensText(largest)}` });
+      bars.appendChild(svgEl("path", { class: "kx-out-all", d: output.map((v, o) => bar(o, v)).join(" ") || "M0,0" }));
+      bars.appendChild(svgEl("path", { class: "kx-out-think", d: output.map((_, o) => bar(o, thinkingAt(o))).join(" ") || "M0,0" }));
+      ofield.appendChild(bars);
+      const axis = el("span", "kx-d-axis", tokensText(largest));
+      axis.setAttribute("aria-hidden", "true");
+      ofield.appendChild(axis);
+      ocol = el("div", "kx-d-ocol");
+      ofield.appendChild(ocol);
+    }
     const row = el("div", "kx-d-turn-row");
     const lab = el("label", "", "Turn");
     lab.htmlFor = "kx-d-turn";
@@ -1106,47 +1148,72 @@
     row.appendChild(lab);
     row.appendChild(range);
     row.appendChild(val);
+    // one turn in both fields: the hairline and the tooltip in the curve, the column in the output field; the
+    // range's aria-valuetext says the same as the tooltip
     function show(i) {
       const v = series[i], prev = i > 0 ? series[i - 1] : null;
       const delta = prev === null ? "" : ` · ${v >= prev ? "+" : "−"}${tokensText(Math.abs(v - prev))} from turn ${first + i - 1}`;
       const comp = compactions.find((c) => c.at === i);
+      const spoken = [`turn ${first + i}`, tokensText(v) + delta];
       tip.textContent = "";
       tip.appendChild(document.createTextNode(`turn ${first + i} · `));
       tip.appendChild(el("b", "", tokensText(v)));
       tip.appendChild(document.createTextNode(delta));
-      if (comp) { tip.appendChild(el("br")); tip.appendChild(document.createTextNode(compactionText(comp))); }
+      const o = i - offset;
+      if (ofield && o >= 0) {
+        const line = el("span", "kx-d-tip-o");
+        line.appendChild(document.createTextNode("output "));
+        line.appendChild(el("b", "", tokensText(output[o] || 0)));
+        line.appendChild(document.createTextNode(" · thinking "));
+        line.appendChild(el("b", "", tokensText(thinkingAt(o))));
+        tip.appendChild(el("br"));
+        tip.appendChild(line);
+        spoken.push(`output ${tokensText(output[o] || 0)}, thinking ${tokensText(thinkingAt(o))}`);
+      }
+      if (comp) { tip.appendChild(el("br")); tip.appendChild(document.createTextNode(compactionText(comp))); spoken.push(compactionText(comp)); }
       const left = x(i) / D_W;
       hair.style.left = `${pct(left)}%`;
       tip.style.left = left < 0.6 ? `calc(${pct(left)}% + 8px)` : "auto";
       tip.style.right = left < 0.6 ? "auto" : `calc(${pct(1 - left)}% + 8px)`;
       field.classList.add("kx-d-hover");
+      if (ofield) {
+        ocol.style.left = `${pct((i * slot) / D_W)}%`;
+        ocol.style.width = `${pct(slot / D_W)}%`;
+        ofield.classList.add("kx-d-hover");
+      }
       turnShown = first + i;
       range.value = String(turnShown);
-      range.setAttribute("aria-valuetext", tip.textContent);
+      range.setAttribute("aria-valuetext", spoken.join(" · "));
       val.textContent = `${turnShown} / ${last}`;
     }
     function hide() {
       if (redrawing) return;
       field.classList.remove("kx-d-hover");
+      if (ofield) ofield.classList.remove("kx-d-hover");
       turnShown = null;
     }
     const at = (turn) => Math.max(0, Math.min(series.length - 1, turn - first));
-    field.addEventListener("mousemove", (e) => {
-      const r = field.getBoundingClientRect();
-      show(Math.max(0, Math.min(series.length - 1, Math.round(((e.clientX - r.left) / r.width) * (series.length - 1)))));
-    });
-    field.addEventListener("mouseleave", hide);
+    const pointer = (target, index) => {
+      target.addEventListener("mousemove", (e) => { const r = target.getBoundingClientRect(); show(at(first + index((e.clientX - r.left) / r.width))); });
+      target.addEventListener("mouseleave", hide);
+    };
+    pointer(field, (share) => Math.round(share * (series.length - 1))); // the curve's points sit at the ends of the field
     range.addEventListener("input", () => show(at(Number(range.value))));
     range.addEventListener("focus", () => show(at(Number(range.value))));
     range.addEventListener("blur", hide);
-    if (turnShown !== null && turnShown >= first && turnShown <= last) show(turnShown - first); else turnShown = null;
-    wrap.appendChild(row);
-    const out = outputFor(session, "kx-d-out");
-    if (out) {
-      wrap.appendChild(out);
-      const largest = Math.max(0, ...(Array.isArray(session.outputSeries) ? session.outputSeries.slice(-series.length) : []));
-      wrap.appendChild(el("div", "kx-d-lbl", `Output per turn (faint) and the thinking part (strong) · largest ${tokensText(largest)}`));
+    if (ofield) {
+      pointer(ofield, (share) => Math.floor(share * series.length)); // a bar fills its slot
+      wrap.appendChild(ofield);
+      const legend = el("div", "kx-d-lbl");
+      legend.title = `Output tokens per turn and the thinking part of them, scaled to the largest turn (${tokensText(largest)}), not to the curve: what the model writes is read back as input on the next turn`;
+      const swatch = (cls, text) => { const s = el("span", "kx-d-leg"); const i = el("span", `kx-d-sw ${cls}`); i.setAttribute("aria-hidden", "true"); s.appendChild(i); s.appendChild(document.createTextNode(text)); legend.appendChild(s); };
+      swatch("kx-d-sw-out", "Output");
+      swatch("kx-d-sw-think", "Thinking");
+      legend.appendChild(el("span", "", "per turn · own scale"));
+      wrap.appendChild(legend);
     }
+    wrap.appendChild(row);
+    if (turnShown !== null && turnShown >= first && turnShown <= last) show(turnShown - first); else turnShown = null;
     return wrap;
   }
 
@@ -1195,7 +1262,10 @@
     return span;
   }
 
-  /** The facts: "Prompt cache and output" and "Session", side by side from 620 px, key over value below that. */
+  /**
+   * The facts: "Prompt cache and output" and "Session", side by side from 620 px, key over value below that. The
+   * typical fresh start (the list's median, core.cjs contextFacts) follows the turns; it is left out without one.
+   */
   function detailFacts(session) {
     const wrap = el("div", "kx-d-sec kx-d-facts");
     wrap.dataset.testid = "detail-facts";
@@ -1239,6 +1309,7 @@
     ]));
     wrap.appendChild(table("Session", [
       ["Turns", String(session.turns || 0)],
+      ...(session.typicalStart ? [["A fresh session here typically starts at", session.typicalStart]] : []),
       ["Started", session.startedAt ? dayText(session.startedAt) : "unknown"],
       ["Last turn", session.lastTurn ? `${dayText(session.lastTurn)} (${sinceText(session.sinceMs)})` : "no turn"],
       ["Model · effort", `${session.modelShort || "unknown"}${session.effort ? ` · ${session.effort}` : ""}`],
@@ -1249,7 +1320,7 @@
     return wrap;
   }
 
-  /** Where the context went since the segment's start: one bar per source, largest first (core.cjs growth), the estimate's caveat once under them. */
+  /** Where the context went since the segment's start: one bar per source, largest first (core.cjs growth), the estimate's caveat once under them, in full in its tooltip. */
   function detailGrowth(session) {
     const wrap = el("div", "kx-d-sec");
     wrap.dataset.testid = "detail-growth";
@@ -1274,7 +1345,9 @@
       bars.appendChild(el("span", "kx-d-bar-s", `${Math.round(g.share * 100)} %`));
     }
     wrap.appendChild(bars);
-    wrap.appendChild(el("p", "kx-d-note", `Estimate: ${GROWTH_HOW}.`));
+    const note = el("p", "kx-d-note", "Estimate per turn: output first, the rest split by length.");
+    note.title = `Estimate: ${GROWTH_HOW}.`;
+    wrap.appendChild(note);
     return wrap;
   }
 
@@ -1288,7 +1361,50 @@
     return b;
   }
 
-  /** The view of one session, top to bottom: top bar, header, meta line, the sentence, curve and where the context went (side by side from 620 px), facts. */
+  /**
+   * The context box: "Context 138K · orange zone", what the zones measure (for a known zone) and the zone's advice
+   * (yellow, orange and red), then the named facts under it; the core gives the advice and the facts (contextFacts).
+   */
+  function contextBlock(session) {
+    const frag = document.createDocumentFragment();
+    const box = el("section", "kx-d-ctx");
+    box.dataset.testid = "detail-context";
+    box.setAttribute("aria-label", "Context");
+    const h = el("h2");
+    h.appendChild(document.createTextNode("Context"));
+    if (Number.isFinite(session.tokens)) { // without a count the words say why: "Context · no turns yet"
+      const n = zoned(el("span", "kx-num", countText(session)), session.zone);
+      n.dataset.testid = "detail-tokens";
+      n.setAttribute("aria-label", countLabel(session));
+      h.appendChild(n);
+    }
+    const known = Boolean(ZONE_NAME[session.zone]);
+    h.appendChild(el("span", "kx-d-zn", known ? `· ${ZONE_NAME[session.zone]} zone` : session.turns ? "· no count yet" : "· no turns yet"));
+    box.appendChild(h);
+    // the zones are quality warnings, not the window limit (core.cjs, the comment at YELLOW_FROM)
+    if (known) box.appendChild(el("p", "kx-d-why", `Zones warn about quality at ${MARKS_TEXT}, not about the window limit.`));
+    if (session.advice) {
+      const advice = el("p", "kx-d-advice", session.advice);
+      advice.dataset.testid = "detail-advice";
+      box.appendChild(advice);
+    }
+    frag.appendChild(box);
+    const facts = Array.isArray(session.facts) ? session.facts.filter((f) => Array.isArray(f) && f.length === 2) : [];
+    if (facts.length) {
+      const dl = el("dl", "kx-d-named");
+      dl.dataset.testid = "detail-named";
+      for (const [k, v] of facts) {
+        const d = el("div");
+        d.appendChild(el("dt", "", k));
+        d.appendChild(el("dd", "", String(v)));
+        dl.appendChild(d);
+      }
+      frag.appendChild(dl);
+    }
+    return frag;
+  }
+
+  /** The view of one session, top to bottom: top bar, title, meta line, the context box and named facts, curve and where the context went (side by side from 620 px), facts. */
   function detailFor(session) {
     const root = zoned(el("article"), session.zone);
     root.dataset.session = session.sessionId;
@@ -1313,30 +1429,19 @@
     const h = titled(el("h1"), session);
     h.dataset.testid = "detail-title";
     head.appendChild(h);
-    const count = el("div", "kx-d-count");
-    const n = zoned(el("div", "kx-num", countText(session)), session.zone);
-    n.dataset.testid = "detail-tokens";
-    n.setAttribute("aria-label", countLabel(session));
-    count.appendChild(n);
-    if (session.turns || ZONE_NAME[session.zone]) count.appendChild(el("div", "kx-d-zone", ZONE_NAME[session.zone] || "unknown"));
-    head.appendChild(count);
     root.appendChild(head);
     const meta = el("div", "kx-d-meta");
     meta.dataset.testid = "detail-meta";
     const add = (name, text) => { const s = el("span"); s.appendChild(icon(name)); s.appendChild(document.createTextNode(text)); meta.appendChild(s); return s; };
     add("folder", session.project || "unknown").title = session.cwd || "";
-    if (session.turns) { // before the first turn the sentence and the curve say "no turns yet"
+    if (session.turns) { // before the first turn the context box and the curve say "no turns yet"
       add("cpu", (session.modelShort || "unknown") + (session.effort ? ` · ${session.effort}` : ""));
       add("repeat", plural(session.turns, "turn", "turns"));
     }
     add("play", startText(session));
     if (session.turns) add("clock", sinceText(session.sinceMs));
     root.appendChild(meta);
-    if (session.summary) {
-      const sum = el("p", "kx-d-sum", session.summary); // composed by the core (core.cjs summaryText): facts, no advice
-      sum.dataset.testid = "detail-summary";
-      root.appendChild(sum);
-    }
+    root.appendChild(contextBlock(session));
     const pair = el("div", "kx-d-pair");
     pair.appendChild(detailCurve(session));
     pair.appendChild(detailGrowth(session));
