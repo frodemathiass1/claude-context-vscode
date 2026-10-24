@@ -556,7 +556,7 @@
 
   /**
    * The transcript's title, else "new session" (no turns yet: a tab opened and not written to) or "untitled
-   * session", with the registry's name ("new session · my-project-08"); `fallback` marks the second kind.
+   * session", with the registry's name ("new session · my-project-08"); `fallback` is true for both of these.
    */
   function titleOf(session) {
     if (session.title) return { text: session.title, fallback: false };
