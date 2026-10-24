@@ -352,7 +352,9 @@ function userText(content) {
  * `compactionCount` counts the whole session's. `growth` is growthBySource as rows (growthRows), and `summary`
  * the detail view's sentence (summaryText) with the list's baselineMedian. `abandoned` is a session that is not busy
  * and whose last turn and process start are both more than DIM_AFTER_MS ago (an empty session by its start alone);
- * `abandonedCount` counts them.
+ * `abandonedCount` counts them. `hiddenCount` is how many live sessions the scope leaves out (0 with `all` or without
+ * workspace folders), counted from the registry alone, and `workspaceNames` the last folder name of each workspace
+ * folder, so the panel can name the scope ("This workspace · my-project · 4 more in other projects").
  */
 function buildSessions({ registry = [], transcripts = {}, now, workspaceFolders = [], all = false }) {
   const nowMs = typeof now === "number" ? now : Date.parse(now);
@@ -410,7 +412,8 @@ function buildSessions({ registry = [], transcripts = {}, now, workspaceFolders 
   const baselineMedian = !starts.length ? null : starts.length % 2 ? starts[mid] : (starts[mid - 1] + starts[mid]) / 2;
   for (const s of sessions) s.summary = summaryText(s, baselineMedian);
   return { sessions, groups, count: sessions.length, zoneCounts, cacheCounts, baselineMedian, baselineSessions: starts.length,
-    abandonedCount: sessions.filter((s) => s.abandoned).length };
+    abandonedCount: sessions.filter((s) => s.abandoned).length, hiddenCount: registry.length - sessions.length,
+    workspaceNames: workspaceFolders.map(projectName).filter(Boolean) };
 }
 
 /**

@@ -2,7 +2,7 @@
   "name": "claude-context",
   "displayName": "Claude Context",
   "description": "Shows the context window of every live Claude Code session in a VS Code panel, updated in real time.",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "publisher": "frodemathiassen",
   "license": "MIT",
   "private": true,

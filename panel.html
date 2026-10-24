@@ -50,17 +50,15 @@
     container-type: inline-size; /* the layout below follows the panel's width, not the window's */
   }
 
-  /* ── Header: the count, the zone meter and the scope ── */
+  /* ── Header: the count, the zone meter and the counters ── */
   header {
     display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;
     padding: 10px 12px; border-bottom: 1px solid var(--kx-border);
   }
   header h1 { margin: 0; font-size: 1em; font-weight: 600; display: flex; align-items: baseline; gap: 6px; min-width: 0; }
   header h1 .kx-n { font-family: var(--kx-mono); font-size: 1.35em; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
-  /* the scope, the "updated 12:04:31" note and the refresh button, pushed to the right end of the header */
+  /* the "updated 12:04:31" note and the refresh button, pushed to the right end of the header */
   .kx-tools { display: inline-flex; align-items: center; gap: 10px; margin-left: auto; }
-  header label { display: inline-flex; align-items: center; gap: 6px; color: var(--kx-muted); cursor: pointer; white-space: nowrap; font-size: 0.92em; }
-  header input { accent-color: var(--kx-accent); margin: 0; width: 14px; height: 14px; }
   .kx-refreshed { font-size: 0.82em; color: var(--kx-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
   .kx-refresh {
     display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; margin: 0;
@@ -111,6 +109,23 @@
   .kx-chip:focus-visible, .kx-controls select:focus-visible, .kx-reset:focus-visible { outline: 1px solid var(--kx-accent); outline-offset: 1px; }
   .kx-models { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
   .kx-reset { font: inherit; background: none; border: 0; padding: 0; color: var(--kx-accent); cursor: pointer; text-decoration: underline; }
+  /* the scope: which sessions the list, and every counter above it, is about; a line of its own at the top of the row.
+     "This workspace" / "All projects" in VS Code, the same words as text on a dev server, which serves its own repo only */
+  .kx-scope { flex: 1 0 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; min-width: 0; }
+  .kx-seg { display: inline-flex; border: 1px solid var(--kx-border-strong); border-radius: 4px; overflow: hidden; }
+  .kx-seg button {
+    font: inherit; margin: 0; padding: 1px 9px; border: 0; background: transparent; color: var(--kx-muted); cursor: pointer; white-space: nowrap;
+  }
+  .kx-seg button + button { border-left: 1px solid var(--kx-border-strong); }
+  .kx-seg button:hover { color: var(--kx-fg); }
+  .kx-seg button[aria-pressed="true"] { background: var(--kx-badge-bg); color: var(--kx-badge-fg); }
+  .kx-seg button:focus-visible { outline: 1px solid var(--kx-accent); outline-offset: -2px; } /* inside: the group clips what is outside */
+  .kx-scope-text { color: var(--kx-muted); white-space: nowrap; }
+  .kx-scope-text + .kx-scope-name { margin-left: -8px; } /* "This workspace: LevitatorAdminSystem" reads as one phrase */
+  .kx-scope-name { color: var(--kx-fg); font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .kx-scope-more { font: inherit; background: none; border: 0; padding: 0; color: var(--kx-accent); cursor: pointer; text-decoration: underline; white-space: nowrap; }
+  span.kx-scope-more { color: var(--kx-muted); cursor: default; text-decoration: none; } /* a dev server: a fact, not a way to switch */
+  .kx-scope-more:focus-visible { outline: 1px solid var(--kx-accent); outline-offset: 1px; }
   .kx-hidden-all { padding: 6px 4px 10px; color: var(--kx-muted); font-style: italic; font-size: 0.9em; }
 
   main { padding: 8px 12px 14px; }
@@ -365,15 +380,23 @@
     <div class="kx-meter-leg"></div>
   </div>
   <span class="kx-start-median" data-testid="start-median" hidden><b></b> start</span>
-  <span class="kx-abandoned" data-testid="abandoned-count" hidden title="Sessions without a turn for more than an hour. A closed chat tab keeps its process running until Developer: Reload Window or VS Code quits, and the panel cannot tell a closed tab from an open one, so some of these are probably closed tabs"><b></b> idle over an hour</span>
+  <span class="kx-abandoned" data-testid="abandoned-count" hidden title="A closed chat tab keeps its process running until Developer: Reload Window or VS Code quits, and the panel cannot tell a closed tab from an open one, so some of these are probably closed tabs"><b></b> idle over an hour</span>
   <span class="kx-cache-counts" data-testid="cache-counts" title="Prompt cache: how many of the listed sessions have a warm cache now, and how many went cold"><span><b data-testid="cache-warm">0</b> warm</span><span><b data-testid="cache-cold">0</b> cold</span></span>
   <div class="kx-tools">
-    <label><input type="checkbox" data-testid="all"> All projects</label>
     <span class="kx-refreshed" data-testid="refreshed" role="status" hidden></span>
     <button type="button" class="kx-refresh" data-testid="refresh" aria-label="Refresh" title="Read the registry and every transcript again now"></button>
   </div>
 </header>
 <div class="kx-controls" data-testid="controls">
+  <div class="kx-scope" data-testid="scope">
+    <span class="kx-seg" role="group" aria-label="Sessions from" data-testid="scope-switch">
+      <button type="button" data-testid="scope-workspace" aria-pressed="true" title="The sessions started inside this window's workspace folders">This workspace</button>
+      <button type="button" data-testid="scope-all" aria-pressed="false" title="Every live Claude session on this machine, grouped by project">All projects</button>
+    </span>
+    <span class="kx-scope-text" data-testid="scope-text" hidden></span>
+    <span class="kx-scope-name" data-testid="scope-name" hidden></span>
+    <button type="button" class="kx-scope-more" data-testid="scope-more" hidden></button>
+  </div>
   <label>Sort
     <select data-testid="sort" aria-label="Sort the sessions in each group">
       <option value="last">last turn</option>
@@ -399,7 +422,12 @@
 (function () {
   "use strict";
   const countEl = document.querySelector('[data-testid="count"]');
-  const allEl = document.querySelector('[data-testid="all"]');
+  const scopeSwitchEl = document.querySelector('[data-testid="scope-switch"]');
+  const scopeWorkspaceEl = document.querySelector('[data-testid="scope-workspace"]');
+  const scopeAllEl = document.querySelector('[data-testid="scope-all"]');
+  const scopeTextEl = document.querySelector('[data-testid="scope-text"]');
+  const scopeNameEl = document.querySelector('[data-testid="scope-name"]');
+  let scopeMoreEl = document.querySelector('[data-testid="scope-more"]'); // a plain span on a dev server (the adapter)
   const errorsEl = document.querySelector('[data-testid="errors"]');
   const contactEl = document.querySelector('[data-testid="contact"]');
   const listEl = document.querySelector('[data-testid="list"]');
@@ -409,6 +437,8 @@
   const cacheColdEl = document.querySelector('[data-testid="cache-cold"]');
   const startMedianEl = document.querySelector('[data-testid="start-median"]');
   const abandonedEl = document.querySelector('[data-testid="abandoned-count"]');
+  const ABANDONED_WHY = abandonedEl.title;
+  const cacheCountsEl = document.querySelector('[data-testid="cache-counts"]');
   const refreshEl = document.querySelector('[data-testid="refresh"]');
   const refreshedEl = document.querySelector('[data-testid="refreshed"]');
   const showingEl = document.querySelector('[data-testid="showing"]');
@@ -1419,7 +1449,37 @@
   hotEl.addEventListener("click", () => { view.hotOnly = !view.hotOnly; saveView(); });
   resetEl.addEventListener("click", () => { view = { ...VIEW_DEFAULT, hiddenModels: [] }; saveView(); });
 
-  function renderMeter(zoneCounts) {
+  /**
+   * The scope line: which button is pressed (VS Code) or the scope as text (a dev server); while scoped, the workspace
+   * folders' names ("no folder open" without any: then every session is listed) and how many live sessions the scope
+   * leaves out ("4 more in other projects", which switches to all projects in VS Code). A payload without the core's
+   * workspaceNames (a dev server's error) names no folder.
+   */
+  function renderScope(data) {
+    const all = !!data.all;
+    const names = Array.isArray(data.workspaceNames) ? data.workspaceNames.filter((n) => typeof n === "string" && n) : null;
+    const hidden = Number.isFinite(data.hiddenCount) ? data.hiddenCount : 0;
+    scopeWorkspaceEl.setAttribute("aria-pressed", String(!all));
+    scopeAllEl.setAttribute("aria-pressed", String(all));
+    scopeTextEl.textContent = all ? "All projects" : names ? "This workspace:" : "This workspace";
+    scopeNameEl.hidden = all || !names;
+    if (names) {
+      scopeNameEl.textContent = names.length ? names.join(", ") : "no folder open";
+      scopeNameEl.title = names.length ? `The sessions started inside ${names.length === 1 ? "the workspace folder" : "the workspace folders"} ${names.join(", ")}`
+        : "No folder is open in this window, so every live session on the machine is listed";
+    }
+    scopeMoreEl.hidden = all || !hidden;
+    scopeMoreEl.textContent = `${hidden} more in other projects`;
+    scopeMoreEl.title = vscode ? "Show every project" : "The dev server lists the sessions of its own repo only";
+  }
+
+  /** Where the listed sessions are, for the counters' tooltips: "the 6 sessions in this workspace". */
+  function sessionsWhere(n, data) {
+    const where = data.all ? "in all projects" : Array.isArray(data.workspaceNames) && !data.workspaceNames.length ? "on this machine" : "in this workspace";
+    return `${n === 1 ? "the 1 session" : `the ${n} sessions`} ${where}`;
+  }
+
+  function renderMeter(zoneCounts, data) {
     const counts = ZONES.map((z) => [z, Number.isFinite(zoneCounts[z]) ? zoneCounts[z] : 0]);
     const known = counts.reduce((sum, [, n]) => sum + n, 0);
     meterBarEl.textContent = "";
@@ -1434,7 +1494,7 @@
       b.dataset.testid = `zone-${z}`;
       item.appendChild(b);
       item.appendChild(document.createTextNode(` ${ZONE_NAME[z]}`));
-      item.title = `${n} in the ${ZONE_NAME[z]} zone`;
+      item.title = `${n} of ${sessionsWhere(data.count || 0, data)} ${n === 1 ? "is" : "are"} in the ${ZONE_NAME[z]} zone`;
       meterLegEl.appendChild(item);
     }
   }
@@ -1470,7 +1530,9 @@
     drawDetail();
     requestDetail(); // the new list's turns, all of them, for the open session
     countEl.textContent = String(data.count || 0);
-    renderMeter(data.zoneCounts || {});
+    renderMeter(data.zoneCounts || {}, data);
+    renderScope(data);
+    cacheCountsEl.title = `Prompt cache: how many of ${sessionsWhere(data.count || 0, data)} have a warm cache now, and how many went cold`;
     const cacheCounts = data.cacheCounts || {};
     cacheWarmEl.textContent = String(Number.isFinite(cacheCounts.warm) ? cacheCounts.warm : 0);
     cacheColdEl.textContent = String(Number.isFinite(cacheCounts.cold) ? cacheCounts.cold : 0);
@@ -1478,12 +1540,12 @@
     if (!startMedianEl.hidden) {
       startMedianEl.firstChild.textContent = tokensText(data.baselineMedian);
       const n = data.baselineSessions;
-      startMedianEl.title = `Start cost: the median first turn of the ${n === 1 ? "session" : `${n} sessions`} listed here that began fresh (not after a compaction). It is the fixed load (CLAUDE.md, memory, skill and tool listings) plus the first message, so a long first prompt raises it`;
+      startMedianEl.title = `Start cost: the median first turn of ${sessionsWhere(n, data)} that began fresh (not after a compaction). It is the fixed load (CLAUDE.md, memory, skill and tool listings) plus the first message, so a long first prompt raises it`;
     }
     const abandoned = Number.isFinite(data.abandonedCount) ? data.abandonedCount : 0;
     abandonedEl.hidden = !abandoned;
     abandonedEl.firstChild.textContent = String(abandoned);
-    allEl.checked = !!data.all;
+    abandonedEl.title = `${abandoned} of ${sessionsWhere(data.count || 0, data)} had no turn for more than an hour. ${ABANDONED_WHY}`;
     errorsEl.textContent = "";
     errorsEl.hidden = !(data.errors && data.errors.length);
     if (!errorsEl.hidden) for (const f of data.errors) errorsEl.appendChild(el("div", "kx-error", f));
@@ -1546,16 +1608,32 @@
       if (e.data && e.data.type === "detail") onDetail(e.data);
     });
     askDetail = (id) => vscode.postMessage({ type: "detail", sessionId: id });
-    allEl.addEventListener("change", () => vscode.postMessage({ type: "scope", all: allEl.checked }));
+    // the pressed button follows the click at once; the host stores the choice and sends the list of the new scope
+    function setScope(all, focus) {
+      if (focus) focus.focus();
+      if (scopeAllEl.getAttribute("aria-pressed") === String(all)) return;
+      scopeWorkspaceEl.setAttribute("aria-pressed", String(!all));
+      scopeAllEl.setAttribute("aria-pressed", String(all));
+      vscode.postMessage({ type: "scope", all });
+    }
+    scopeWorkspaceEl.addEventListener("click", () => setScope(false));
+    scopeAllEl.addEventListener("click", () => setScope(true));
+    scopeMoreEl.addEventListener("click", () => setScope(true, scopeAllEl)); // it disappears with the next list; focus stays on the switch
     refreshEl.addEventListener("click", () => requestRefresh(() => vscode.postMessage({ type: "refresh" })));
     vscode.postMessage({ type: "ready" });
   } else {
-    // A dev server serves its own repo only: no project toggle. The list is fetched once from
+    // A dev server serves its own repo only: the scope as text, no switch. The list is fetched once from
     // /claude-context/api/sessions, then the server-sent events stream /claude-context/api/stream pushes
     // every change as a "sessions" event. When the stream drops (the server restarted or stopped) the
     // stream is closed and the page says so with "Try again"; no silent reconnects, so what the page
     // shows is always either live or marked as lost.
-    allEl.parentElement.hidden = true;
+    scopeSwitchEl.hidden = true;
+    scopeTextEl.hidden = false;
+    const more = el("span", "kx-scope-more");
+    more.dataset.testid = "scope-more";
+    more.hidden = true;
+    scopeMoreEl.replaceWith(more);
+    scopeMoreEl = more;
     window.addEventListener("hashchange", () => setOpen(hashId(), { fromHash: true }));
     let stream = null;
     // every turn of the open session from /claude-context/api/detail; only the latest request's answer is drawn

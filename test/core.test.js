@@ -547,6 +547,13 @@ describe("buildSessions", () => {
     expect(r.count).toBe(4);
   });
 
+  it("hiddenCount counts the live sessions outside the scope, workspaceNames names the workspace folders", () => {
+    expect(K.buildSessions({ registry, transcripts, now: NOW, workspaceFolders: [MINE], all: false })).toMatchObject({ hiddenCount: 1, workspaceNames: ["my-project"] });
+    expect(K.buildSessions({ registry, transcripts, now: NOW, workspaceFolders: [MINE], all: true })).toMatchObject({ hiddenCount: 0, workspaceNames: ["my-project"] });
+    expect(K.buildSessions({ registry, transcripts, now: NOW, workspaceFolders: [MINE, `${OTHER}/`], all: false })).toMatchObject({ hiddenCount: 0, workspaceNames: ["my-project", "other-project"] });
+    expect(K.buildSessions({ registry, transcripts, now: NOW, workspaceFolders: ["c:\\Develop\\elsewhere"], all: false })).toMatchObject({ count: 0, hiddenCount: 5, workspaceNames: ["elsewhere"] });
+  });
+
   it("per session: zone, short model name, time since the last turn, dimming after one hour and busy", () => {
     const r = K.buildSessions({ registry, transcripts, now: NOW, workspaceFolders: [MINE], all: false });
     const [busy, fresh, old, without] = r.sessions;
@@ -746,6 +753,7 @@ describe("buildSessions", () => {
       transcripts: { a: tail(950, NOW), b: tail(1234567, NOW) }, now: NOW, workspaceFolders: [], all: false });
     expect(r.sessions.map((s) => s.sessionId)).toEqual(["a", "b"]);
     expect(r.sessions[0].sinceMs).toBe(0);
+    expect(r).toMatchObject({ hiddenCount: 0, workspaceNames: [] });
   });
 });
 
@@ -811,6 +819,18 @@ describe("SessionReader", () => {
       const result = new K.SessionReader(dir, { alive: () => true }).read({ workspaceFolders: [MINE], all: false });
       expect(result.errors).toEqual([`Project folder not found: ${folder}`]);
       expect(result.sessions.map((s) => [s.sessionId, s.tokens])).toEqual([["aaaa-1", null], ["dead", null]]);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it("a live session outside the scope is counted in hiddenCount, without reading it or reporting its missing folder", () => {
+    const { dir } = rig();
+    try {
+      writeFileSync(path.join(dir, "sessions", "77.json"), JSON.stringify({ pid: 77, sessionId: "elsewhere", cwd: "/Users/frode/Dev/other-project", status: "idle" }));
+      const reader = new K.SessionReader(dir, { alive: (pid) => pid !== 9 });
+      const scoped = reader.read({ workspaceFolders: [MINE], all: false });
+      expect(scoped).toMatchObject({ count: 1, hiddenCount: 1, workspaceNames: ["my-project"], errors: [] });
+      expect(reader.files.has("elsewhere")).toBe(false);
+      expect(reader.read({ workspaceFolders: [MINE], all: true })).toMatchObject({ count: 2, hiddenCount: 0 });
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 

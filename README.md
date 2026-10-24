@@ -26,8 +26,10 @@ than an hour are dimmed. A session that is not busy and had neither a turn nor i
 them ("3 idle over an hour"): VS Code keeps a chat tab's process running after the tab is closed, until
 **Developer: Reload Window**, and nothing tells a closed tab from an open one (`NOTES.md`, "Closed chat tabs"),
 so most of these are probably closed tabs. The rows stack in the narrow sidebar and spread over four columns when the panel is 620 px or
-wider. "All projects" lists the whole machine grouped by project; the default is the sessions inside the
-window's workspace folders. Every group heading ("Working now", "Idle", "Idle over an hour", a project) folds and unfolds on a
+wider. The scope switch at the top of the control row says what the list, and every counter above it, is
+about: "This workspace" (the default, the sessions inside the window's workspace folders, named beside the
+switch, with "4 more in other projects" when other projects have live sessions; a click shows them) or "All
+projects" (the whole machine, grouped by project). Every group heading ("Working now", "Idle", "Idle over an hour", a project) folds and unfolds on a
 click, keeping its count; the panel remembers which are folded. The refresh button at the end of the header
 reads the registry and every transcript again from the first byte, and says "updated 12:04:31" when done.
 A control row under the header sorts the rows inside each group (last turn, context size, time until cold,
@@ -88,8 +90,9 @@ If neither the icon nor the command shows up, the window was not reloaded after 
 To keep the panel visible next to the file explorer or the Claude Code chat, drag the icon to the other
 side of the window, or right-click it → **Move To** → **Secondary Side Bar**.
 
-The panel lists the sessions started inside the window's workspace folders. Tick **All projects** to
-see every live session on the machine, grouped by project. Click a group heading to fold it; click the
+The panel lists the sessions started inside the window's workspace folders: **This workspace** in the
+switch under the header, with the folder's name beside it. Click **All projects** (or "4 more in other
+projects") to see every live session on the machine, grouped by project. Click a group heading to fold it; click the
 refresh button (the circling arrows) when you doubt what the list shows, for example right after a
 process was ended: the list is read again from scratch.
 
