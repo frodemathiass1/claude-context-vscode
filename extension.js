@@ -13,7 +13,8 @@ const core = require("./core.cjs");
 
 const VIEW_ID = "claudeContext.panel";
 const SCOPE_KEY = "claudeContext.allProjects";
-/** The folder Claude Code stores its data in: the setting, else CLAUDE_CONFIG_DIR, else ~/.claude. Read at activation. */
+const DIR_SETTING = "claudeContext.claudeDir";
+/** The folder Claude Code stores its data in: the setting, else CLAUDE_CONFIG_DIR, else ~/.claude. */
 function claudeDir() {
   return core.claudeDir(vscode.workspace.getConfiguration("claudeContext").get("claudeDir"));
 }
@@ -32,28 +33,53 @@ class ClaudeContextViewProvider {
   constructor(context) {
     this.context = context;
     this.view = null;
-    const dir = claudeDir();
+    this.listeners = []; // the view's and the workspace's, disposed with the view
+    this.use(claudeDir());
+  }
+
+  /** A reader and a watcher on `dir`, in place of the ones before; the watcher runs only while the view is shown. */
+  use(dir) {
+    if (this.watcher) this.watcher.stop();
     this.reader = new core.SessionReader(dir);
     this.watcher = new core.SessionWatcher(dir, () => this.refresh());
+    if (this.view && this.view.visible) this.watcher.start();
   }
 
   resolveWebviewView(view) {
+    this.disposeView(); // a view resolved again: the listeners of the one before go
     this.view = view;
     view.webview.options = { enableScripts: true, localResourceRoots: [] };
     view.webview.html = this.renderHtml();
-    view.webview.onDidReceiveMessage((msg) => {
-      if (!msg || typeof msg !== "object") return;
-      if (msg.type === "ready") this.refresh();
-      if (msg.type === "refresh") this.refresh({ full: true }); // the panel's button: forget the parsed state, read everything again
-      if (msg.type === "scope") this.context.globalState.update(SCOPE_KEY, !!msg.all).then(() => this.refresh());
-      // the detail view asks for every turn of the open session after each list; the answer is the last read's
-      if (msg.type === "detail" && typeof msg.sessionId === "string") {
-        this.view.webview.postMessage({ type: "detail", sessionId: msg.sessionId, detail: this.reader.detail(msg.sessionId) });
-      }
-    });
-    view.onDidDispose(() => { this.view = null; this.watcher.stop(); });
-    this.watcher.start();
+    this.listeners.push(
+      view.webview.onDidReceiveMessage((msg) => this.onMessage(msg)),
+      // hidden, the webview keeps its context (retainContextWhenHidden) but nothing is read for it; shown again,
+      // one read catches up, since the reader keeps its parsed state
+      view.onDidChangeVisibility(() => {
+        if (!view.visible) { this.watcher.stop(); return; }
+        this.watcher.start();
+        this.refresh();
+      }),
+      view.onDidDispose(() => this.disposeView()),
+      vscode.workspace.onDidChangeWorkspaceFolders(() => this.refresh()), // the folders are the scope "This workspace"
+      vscode.workspace.onDidChangeConfiguration((e) => {
+        if (!e.affectsConfiguration(DIR_SETTING)) return;
+        this.use(claudeDir());
+        this.refresh();
+      }),
+    );
+    if (view.visible) this.watcher.start();
     this.refresh();
+  }
+
+  onMessage(msg) {
+    if (!msg || typeof msg !== "object") return;
+    if (msg.type === "ready") this.refresh();
+    if (msg.type === "refresh") this.refresh({ full: true }); // the panel's button: forget the parsed state, read everything again
+    if (msg.type === "scope") this.context.globalState.update(SCOPE_KEY, !!msg.all).then(() => this.refresh());
+    // the detail view asks for every turn of the open session after each list; the answer is the last read's
+    if (msg.type === "detail" && typeof msg.sessionId === "string" && this.view) {
+      this.view.webview.postMessage({ type: "detail", sessionId: msg.sessionId, detail: this.reader.detail(msg.sessionId) });
+    }
   }
 
   renderHtml() {
@@ -65,7 +91,7 @@ class ClaudeContextViewProvider {
   }
 
   refresh({ full = false } = {}) {
-    if (!this.view) return;
+    if (!this.view || !this.view.visible) return; // hidden: the next show reads
     const all = !!this.context.globalState.get(SCOPE_KEY, false);
     const workspaceFolders = (vscode.workspace.workspaceFolders || []).map((f) => f.uri.fsPath);
     // called from the watcher's timers too: an exception there would land in the extension host, so the
@@ -77,7 +103,13 @@ class ClaudeContextViewProvider {
     this.view.webview.postMessage({ type: "sessions", ...payload, full }); // full: the panel's refresh receipt keys on it
   }
 
-  dispose() { this.watcher.stop(); }
+  disposeView() {
+    for (const listener of this.listeners.splice(0)) listener.dispose();
+    this.view = null;
+    this.watcher.stop();
+  }
+
+  dispose() { this.disposeView(); }
 }
 
 module.exports = { activate, deactivate };
