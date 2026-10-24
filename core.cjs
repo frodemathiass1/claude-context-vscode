@@ -374,9 +374,10 @@ function modelShort(model) {
 
 /**
  * Reads the registry and the transcripts incrementally: each transcript keeps its parsed state and byte
- * offset, so a refresh reads only the new bytes. Shared by the extension host and other hosts of the
- * panel, which is why it lives here and not in extension.js (that file requires "vscode"). `alive` is injectable
- * for tests; the default asks the OS whether the pid exists.
+ * offset, so a refresh reads only the new bytes; `read({ full: true })` forgets that state first and reads
+ * every transcript from its first byte (the panel's refresh button). Shared by the extension host and other
+ * hosts of the panel, which is why it lives here and not in extension.js (that file requires "vscode").
+ * `alive` is injectable for tests; the default asks the OS whether the pid exists.
  */
 class SessionReader {
   constructor(claudeDir, { alive } = {}) {
@@ -387,7 +388,8 @@ class SessionReader {
     this.found = new Map(); // sessionId → project folder found by searching, when the slug folder is missing
   }
 
-  read({ workspaceFolders, all }) {
+  read({ workspaceFolders, all, full = false }) {
+    if (full) { this.cache.clear(); this.found.clear(); }
     const errors = [];
     const registry = readRegistry(this.sessionsDir, this.alive);
     if (registry.error) errors.push(registry.error);

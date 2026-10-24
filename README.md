@@ -23,7 +23,9 @@ warm and cold sessions beside the zone meter, and the median start of the sessio
 a CLAUDE.md that grew shows at a glance. Busy sessions pulse and sort first; sessions idle for more
 than an hour are dimmed. The rows stack in the narrow sidebar and spread over four columns when the panel is 620 px or
 wider. "All projects" lists the whole machine grouped by project; the default is the sessions inside the
-window's workspace folders.
+window's workspace folders. Every group heading ("Working now", "Idle", a project) folds and unfolds on a
+click, keeping its count; the panel remembers which are folded. The refresh button at the end of the header
+reads the registry and every transcript again from the first byte, and says "updated 12:04:31" when done.
 
 No dependencies, no build step: `extension.js` (the host), `core.cjs` (pure functions) and `panel.html`
 (the webview).
@@ -66,7 +68,9 @@ To keep the panel visible next to the file explorer or the Claude Code chat, dra
 side of the window, or right-click it → **Move To** → **Secondary Side Bar**.
 
 The panel lists the sessions started inside the window's workspace folders. Tick **All projects** to
-see every live session on the machine, grouped by project.
+see every live session on the machine, grouped by project. Click a group heading to fold it; click the
+refresh button (the circling arrows) when you doubt what the list shows, for example right after a
+process was ended: the list is read again from scratch.
 
 ## Update and uninstall
 
