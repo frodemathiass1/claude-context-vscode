@@ -58,13 +58,14 @@
   /* the "updated 12:04:31" note and the refresh button, pushed to the right end of the header */
   .kx-tools { display: inline-flex; align-items: center; gap: 10px; margin-left: auto; }
   .kx-refreshed { font-size: 0.82em; color: var(--kx-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
-  .kx-refresh {
+  .kx-refresh, .kx-toggle {
     display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; margin: 0;
     border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--kx-muted); cursor: pointer;
   }
-  .kx-refresh:hover { background: var(--kx-row-hover); color: var(--kx-fg); }
-  .kx-refresh:focus-visible { outline: 1px solid var(--kx-accent); outline-offset: 1px; }
-  .kx-refresh svg { width: 14px; height: 14px; }
+  .kx-refresh:hover, .kx-toggle:hover { background: var(--kx-row-hover); color: var(--kx-fg); }
+  .kx-refresh:focus-visible, .kx-toggle:focus-visible { outline: 1px solid var(--kx-accent); outline-offset: 1px; }
+  .kx-refresh svg, .kx-toggle svg { width: 14px; height: 14px; }
+  .kx-toggle[aria-pressed="true"] { color: var(--kx-fg); background: var(--kx-row-hover); border-color: var(--kx-border-strong); }
   .kx-refresh[aria-busy="true"] svg { animation: kx-spin 0.8s linear infinite; } /* spins until the next list arrives */
   @keyframes kx-spin { to { transform: rotate(360deg); } }
   /* one segment per zone, width = that zone's share of the sessions with a known zone; the legend repeats the numbers */
@@ -233,6 +234,10 @@
   /* the whole row opens the session's detail view */
   .kx-session[tabindex] { cursor: pointer; }
   .kx-session[tabindex]:focus-visible { outline: 1px solid var(--kx-accent); outline-offset: -1px; }
+  /* compact rows: the title line and the bar at every width. The parts are hidden, not left out, so a
+     render keeps one row builder; the selector outweighs the four-column layout in the container query below */
+  main[data-compact] .kx-session { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "title num" "bar bar"; gap: 4px 10px; padding: 6px 4px; }
+  main[data-compact] :is(.kx-zone-txt, .kx-growth, .kx-curve-wrap, .kx-meta, .kx-axis) { display: none; }
 
   /* ── Detail view of one session: replaces the header, the controls and the list. Top bar, header, meta
      line, the large curve with output bars under it, the facts tables; stacked under 620 px ── */
@@ -397,6 +402,7 @@
   <span class="kx-cache-counts" data-testid="cache-counts" title="Prompt cache: how many of the listed sessions have a warm cache now, and how many went cold"><span><b data-testid="cache-warm">0</b> warm</span><span><b data-testid="cache-cold">0</b> cold</span></span>
   <div class="kx-tools">
     <span class="kx-refreshed" data-testid="refreshed" role="status" hidden></span>
+    <button type="button" class="kx-toggle" data-testid="compact" aria-pressed="false" aria-label="Compact rows"></button>
     <button type="button" class="kx-refresh" data-testid="refresh" aria-label="Refresh" title="Read the registry and every transcript again now"></button>
   </div>
 </header>
@@ -445,6 +451,7 @@
   const ABANDONED_WHY = abandonedEl.title;
   const cacheCountsEl = document.querySelector('[data-testid="cache-counts"]');
   const refreshEl = document.querySelector('[data-testid="refresh"]');
+  const compactEl = document.querySelector('[data-testid="compact"]');
   const refreshedEl = document.querySelector('[data-testid="refreshed"]');
   const showingEl = document.querySelector('[data-testid="showing"]');
   const sortEl = document.querySelector('[data-testid="sort"]');
@@ -660,6 +667,7 @@
     refresh: ["M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8", "M3 3v5h5", "M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16", "M16 16h5v5"],
     back: ["m12 19-7-7 7-7", "M19 12H5"],
     play: ["M5 3v18l15-9z"],
+    rows: ["M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z", "M21 9H3", "M21 15H3"],
     bell: ["M10.268 21a2 2 0 0 0 3.464 0", "M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"],
   };
   function icon(name) {
@@ -1675,6 +1683,19 @@
 
   // ── The host: the list and the detail come as messages; the panel sends ready, refresh, scope and detail ──
   refreshEl.appendChild(icon("refresh"));
+  compactEl.appendChild(icon("rows"));
+  // compact rows: the list's attribute switches the CSS, so no render is needed; remembered, but not part of the view "reset" clears
+  function showCompact(on) {
+    listEl.toggleAttribute("data-compact", on);
+    compactEl.setAttribute("aria-pressed", String(on));
+    compactEl.title = on ? "Full rows: bar, curve, model, turns and cache" : "Compact rows: title, count and bar only";
+  }
+  showCompact(store.get("compact") === true);
+  compactEl.addEventListener("click", () => {
+    const on = compactEl.getAttribute("aria-pressed") !== "true";
+    store.set("compact", on);
+    showCompact(on);
+  });
   // the session open when the panel was last shown
   const remembered = store.get("open");
   if (typeof remembered === "string" && remembered) { openId = remembered; focusBack = true; showMode(); }

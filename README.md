@@ -34,6 +34,9 @@ switch, with "4 more in other projects" when other projects have live sessions; 
 projects" (the whole machine, grouped by project). Every group heading ("Working now", "Waiting for you", "Idle", "Idle over an hour", a project) folds and unfolds on a
 click, keeping its count; the panel remembers which are folded. The refresh button at the end of the header
 reads the registry and every transcript again from the first byte, and says "updated 12:04:31" when done.
+The button beside it (three stacked bars) switches to compact rows: each session is only its title line, with
+the busy or waiting pill and the count, and the context bar under it, so many more fit in the sidebar; the
+detail view is a click away as before, and the panel remembers the choice.
 A control row under the header sorts the rows inside each group (last turn, context size, time until cold,
 started, title; rows without a value go last) and filters the two idle groups: show only the orange and
 red zones, switch a model off with its chip. A busy or waiting session is never hidden; the header
