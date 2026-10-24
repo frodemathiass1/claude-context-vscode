@@ -271,7 +271,7 @@ function seriesFor(t, max = Infinity) {
     dips: dips(series).filter((i) => !compactedAt.has(i)), baselineAt };
 }
 
-/** The panel's number format ("850", "43K", "1.2M", "unknown"), for the facts below; panel.html has the same rule, since the webview cannot require this file. */
+/** The panel's number format ("850", "43K", "1.2M", "unknown"), for the facts below; panel.html has the same rule, since the webview cannot require this file, and test/panel.test.js keeps the two equal. */
 function tokensText(tokens) {
   if (!Number.isFinite(tokens)) return "unknown";
   if (tokens < 1000) return String(tokens);
@@ -626,4 +626,4 @@ class SessionWatcher {
   }
 }
 
-module.exports = { projectSlug, zone, dips, readRegistry, readTail, parseTranscript, seriesFor, contextFacts, growthRows, buildSessions, inFolder, projectName, modelShort, claudeDir, pageCsp, randomNonce, SessionReader, SessionWatcher };
+module.exports = { projectSlug, zone, tokensText, dips, readRegistry, readTail, parseTranscript, seriesFor, contextFacts, growthRows, buildSessions, inFolder, projectName, modelShort, claudeDir, pageCsp, randomNonce, SessionReader, SessionWatcher };
