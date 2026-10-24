@@ -160,10 +160,8 @@ Check: the README steps work verbatim on a fresh clone.
 
 ## Later, outside this repo
 
-The project this extension was extracted from still has its own copy and serves `panel.html` in a
-browser through a dev server. That project switches to this repo (npm dependency from GitHub or
-`git subtree`), adopts the renamed identifiers and routes listed in `NOTES.md`, and drops its copy. Not
-part of this plan.
+The project this extension was extracted from dropped its own copy of the panel on 2026-10-24; since
+0.14.0 (#33) the panel runs in VS Code only. Not part of this plan.
 
 ## Order and roles
 

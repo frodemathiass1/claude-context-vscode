@@ -48,10 +48,10 @@ under them. The list carries the last 200 turns of each session; the detail view
 and says "last 200 of 233 turns" only if the host cannot answer. Two tables follow: the prompt cache and
 output, and the session (working folder, process id and session id with a copy button). The view follows the
 live list, says so if the session leaves the registry, and goes back to the list on Escape or the back
-button; the panel remembers the open session, and a browser host keeps it in the address (`#<sessionId>`).
+button; the panel remembers the open session.
 
 No dependencies, no build step: `extension.js` (the host), `core.cjs` (pure functions) and `panel.html`
-(the webview).
+(the webview). The panel runs in VS Code only.
 
 ## Requirements
 
@@ -131,7 +131,7 @@ every session in `~/.claude/projects/<project>/<sessionId>.jsonl` (`~/.claude` i
 on Windows; `CLAUDE_CONFIG_DIR` moves it). The extension joins the two, parses only the new bytes of a
 transcript on every change (`fs.watch` on the folders, debounced, plus a 30-second tick) and pushes the
 list to the webview. While a session is open, the webview asks for every turn of it after each list (the
-message `{ type: "detail", sessionId }`; a browser host serves `/claude-context/api/detail?session=<id>`), and
+message `{ type: "detail", sessionId }`), and
 the host answers from the state it already parsed, without reading the transcript again.
 
 The transcript format is Claude Code's internal one and can change between versions. A field the panel

@@ -1,6 +1,5 @@
 // core.cjs — pure functions behind the "Claude Context" panel. No VS Code dependency: the extension
-// host (extension.js), the tests (test/core.test.js) and any other host that embeds panel.html (for
-// example a dev server serving it in a browser) all require this file. The transcript format is
+// host (extension.js) and the tests (test/core.test.js) both require this file. The transcript format is
 // Claude Code's internal one and may change between versions, so a missing field yields null
 // ("unknown"), never an error.
 "use strict";
@@ -445,8 +444,8 @@ function modelShort(model) {
 /**
  * Reads the registry and the transcripts incrementally: each transcript keeps its parsed state and byte
  * offset, so a refresh reads only the new bytes; `read({ full: true })` forgets that state first and reads
- * every transcript from its first byte (the panel's refresh button). Shared by the extension host and other
- * hosts of the panel, which is why it lives here and not in extension.js (that file requires "vscode").
+ * every transcript from its first byte (the panel's refresh button). It lives here and not in extension.js
+ * (that file requires "vscode") so the tests can run it.
  * `alive` is injectable for tests; the default asks the OS whether the pid exists.
  */
 class SessionReader {
@@ -539,7 +538,7 @@ function isAlive(pid) {
  * Watches Claude Code's folders and calls `onChange` after each change, debounced, and on a tick (which
  * refreshes "x min ago" and catches processes that died without removing their registry file). start()
  * watches sessions/ and projects/ (a new project folder appears there); the project folders a read
- * returns are added with watchAll(). Shared by the extension host and other hosts of the panel.
+ * returns are added with watchAll(). Here and not in extension.js so the tests can run it.
  */
 class SessionWatcher {
   constructor(claudeDir, onChange, { debounceMs = 250, tickMs = 30000 } = {}) {

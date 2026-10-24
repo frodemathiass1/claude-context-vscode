@@ -6,10 +6,8 @@
 <!-- csp -->
 <title>Claude Context</title>
 <style nonce="{{nonce}}">
-  /* Own variables; in VS Code they are set from --vscode-* (light/dark follows the editor). A host that
-     serves this file in a browser can set them from its own tokens in a style appended to head. No
-     external CSS here, no theme button. Classes carry the kx- prefix so they never collide with a host
-     page's own classes. */
+  /* Own variables, set from --vscode-* (light/dark follows the editor), each with a plain fallback. No
+     external CSS here, no theme button. Classes carry the kx- prefix. */
   :root {
     --kx-bg: var(--vscode-sideBar-background, #ffffff);
     --kx-fg: var(--vscode-foreground, #1f2328);
@@ -24,7 +22,7 @@
        a third-opaque orange that reads brown over a dark side bar. Halfway between the theme's yellow and red instead. */
     --kx-orange: color-mix(in srgb, var(--kx-yellow) 50%, var(--kx-red));
     --kx-red: var(--vscode-charts-red, #cf222e);
-    /* … and for fills (dot, context bar, curve, meter segments), so a host can pick a palette per use.
+    /* … and for fills (dot, context bar, curve, meter segments), so text and fill can differ per use.
        Every zone in ZONES below has a pair --kx-<zone> / --kx-<zone>-fill; adding a zone adds a pair here. */
     --kx-green-fill: var(--vscode-charts-green, var(--kx-green));
     --kx-yellow-fill: var(--vscode-charts-yellow, var(--kx-yellow));
@@ -109,8 +107,7 @@
   .kx-chip:focus-visible, .kx-controls select:focus-visible, .kx-reset:focus-visible { outline: 1px solid var(--kx-accent); outline-offset: 1px; }
   .kx-models { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
   .kx-reset { font: inherit; background: none; border: 0; padding: 0; color: var(--kx-accent); cursor: pointer; text-decoration: underline; }
-  /* the scope: which sessions the list, and every counter above it, is about; a line of its own at the top of the row.
-     "This workspace" / "All projects" in VS Code, the same words as text on a dev server, which serves its own repo only */
+  /* the scope: which sessions the list, and every counter above it, is about; a line of its own at the top of the row */
   .kx-scope { flex: 1 0 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; min-width: 0; }
   .kx-seg { display: inline-flex; border: 1px solid var(--kx-border-strong); border-radius: 4px; overflow: hidden; }
   .kx-seg button {
@@ -120,23 +117,14 @@
   .kx-seg button:hover { color: var(--kx-fg); }
   .kx-seg button[aria-pressed="true"] { background: var(--kx-badge-bg); color: var(--kx-badge-fg); }
   .kx-seg button:focus-visible { outline: 1px solid var(--kx-accent); outline-offset: -2px; } /* inside: the group clips what is outside */
-  .kx-scope-text { color: var(--kx-muted); white-space: nowrap; }
-  .kx-scope-text + .kx-scope-name { margin-left: -8px; } /* "This workspace: LevitatorAdminSystem" reads as one phrase */
   .kx-scope-name { color: var(--kx-fg); font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .kx-scope-more { font: inherit; background: none; border: 0; padding: 0; color: var(--kx-accent); cursor: pointer; text-decoration: underline; white-space: nowrap; }
-  span.kx-scope-more { color: var(--kx-muted); cursor: default; text-decoration: none; } /* a dev server: a fact, not a way to switch */
   .kx-scope-more:focus-visible { outline: 1px solid var(--kx-accent); outline-offset: 1px; }
   .kx-hidden-all { padding: 6px 4px 10px; color: var(--kx-muted); font-style: italic; font-size: 0.9em; }
 
   main { padding: 8px 12px 14px; }
   .kx-message { padding: 18px 4px; color: var(--kx-muted); text-align: center; }
   .kx-error { padding: 8px 12px; color: var(--kx-red); border-bottom: 1px solid var(--kx-border); font-size: 0.92em; }
-  .kx-contact { display: flex; align-items: center; gap: 10px; }
-  .kx-contact button {
-    font: inherit; font-size: 0.92em; color: var(--kx-fg); background: transparent;
-    border: 1px solid var(--kx-border); border-radius: 4px; padding: 2px 8px; cursor: pointer;
-  }
-  .kx-contact button:hover { background: var(--kx-row-hover); }
 
   /* ── Groups: "Working now · n", "Idle · n" and, with all projects, the project above them ── */
   .kx-group {
@@ -393,9 +381,8 @@
       <button type="button" data-testid="scope-workspace" aria-pressed="true" title="The sessions started inside this window's workspace folders">This workspace</button>
       <button type="button" data-testid="scope-all" aria-pressed="false" title="Every live Claude session on this machine, grouped by project">All projects</button>
     </span>
-    <span class="kx-scope-text" data-testid="scope-text" hidden></span>
     <span class="kx-scope-name" data-testid="scope-name" hidden></span>
-    <button type="button" class="kx-scope-more" data-testid="scope-more" hidden></button>
+    <button type="button" class="kx-scope-more" data-testid="scope-more" title="Show every project" hidden></button>
   </div>
   <label>Sort
     <select data-testid="sort" aria-label="Sort the sessions in each group">
@@ -410,10 +397,6 @@
   <span class="kx-models" data-testid="models" role="group" aria-label="Models shown"></span>
   <button type="button" class="kx-reset" data-testid="reset" hidden>reset</button>
 </div>
-<div class="kx-error kx-contact" data-testid="contact" hidden>
-  <span>Lost contact with the dev server.</span>
-  <button type="button">Try again</button>
-</div>
 <div data-testid="errors" hidden></div>
 <main data-testid="list"></main>
 <section class="kx-detail" data-testid="detail" aria-label="Session details" hidden></section>
@@ -422,14 +405,11 @@
 (function () {
   "use strict";
   const countEl = document.querySelector('[data-testid="count"]');
-  const scopeSwitchEl = document.querySelector('[data-testid="scope-switch"]');
   const scopeWorkspaceEl = document.querySelector('[data-testid="scope-workspace"]');
   const scopeAllEl = document.querySelector('[data-testid="scope-all"]');
-  const scopeTextEl = document.querySelector('[data-testid="scope-text"]');
   const scopeNameEl = document.querySelector('[data-testid="scope-name"]');
-  let scopeMoreEl = document.querySelector('[data-testid="scope-more"]'); // a plain span on a dev server (the adapter)
+  const scopeMoreEl = document.querySelector('[data-testid="scope-more"]');
   const errorsEl = document.querySelector('[data-testid="errors"]');
-  const contactEl = document.querySelector('[data-testid="contact"]');
   const listEl = document.querySelector('[data-testid="list"]');
   const meterBarEl = document.querySelector(".kx-meter-bar");
   const meterLegEl = document.querySelector(".kx-meter-leg");
@@ -449,17 +429,12 @@
   const headerEl = document.querySelector("header");
   const controlsEl = document.querySelector('[data-testid="controls"]');
   const detailEl = document.querySelector('[data-testid="detail"]');
-  // the VS Code webview API when the panel runs in VS Code; null when a dev server hosts this file (the adapter at the end)
-  const vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : null;
+  const vscode = acquireVsCodeApi();
 
-  // ── Remembered choices (the folded groups): the webview's state in VS Code, localStorage in a browser ──
+  // ── Remembered choices (the folded groups, the view, the open session): the webview's state ──
   const store = {
-    get(key) {
-      try { return vscode ? (vscode.getState() || {})[key] : JSON.parse(localStorage.getItem(`kx-${key}`)); } catch { return undefined; }
-    },
-    set(key, value) {
-      try { if (vscode) vscode.setState({ ...(vscode.getState() || {}), [key]: value }); else localStorage.setItem(`kx-${key}`, JSON.stringify(value)); } catch { /* no storage: the choice lasts this render */ }
-    },
+    get(key) { return (vscode.getState() || {})[key]; },
+    set(key, value) { vscode.setState({ ...(vscode.getState() || {}), [key]: value }); },
   };
   // group keys: "busy", "idle" and "abandoned" fold that group in every project; "project:<name>" folds a whole project.
   // A group in FOLDED_FIRST starts folded, so `unfolded` remembers the opposite choice for it.
@@ -1012,9 +987,8 @@
   }
 
   // ── Detail view of one session: replaces the header, the controls and the list in the same webview. The
-  // open session is kept in the webview state in VS Code and in the hash (#<sessionId>) on a dev server.
-  // Every list draws it again, so the curve grows with the session; the turn in the tooltip, the focus and
-  // a copy receipt survive that redraw. The list has the last 200 turns of a session; on open and after every
+  // open session is kept in the webview state. Every list draws it again, so the curve grows with the session;
+  // the turn in the tooltip, the focus and a copy receipt survive that redraw. The list has the last 200 turns of a session; on open and after every
   // list the panel asks the host for all of them (core.cjs SessionReader.detail), and draws again with those. ──
   const D_W = 100, D_H = 100; // the large curve's viewBox, stretched to its field like the sparkline's
   const D_FIELD_H = { narrow: 150, wide: 220 }; // the field's height in the style (.kx-d-field), below and above 620 px
@@ -1027,9 +1001,8 @@
   let listScroll = 0; // the list's scroll position, restored on the way back
   const copied = {}; // copy button key → { until, text } while its receipt shows
   let detailAnswer = null; // the host's last answer for the open session, { sessionId, detail }: every turn of it
-  let askDetail = null; // the adapter's way to ask the host for that answer; set at the end
 
-  function requestDetail() { if (openId && askDetail) askDetail(openId); }
+  function requestDetail() { if (openId) vscode.postMessage({ type: "detail", sessionId: openId }); }
 
   /** The host's answer: drawn when it is for the session still open; without a detail the list's 200 turns stay. */
   function onDetail(answer) {
@@ -1408,8 +1381,8 @@
     if (!openId) detailEl.textContent = "";
   }
 
-  /** Opens a session (`id`) or returns to the list (null), and remembers it: webview state in VS Code, the hash elsewhere. */
-  function setOpen(id, { fromHash = false } = {}) {
+  /** Opens a session (`id`) or returns to the list (null), and remembers it in the webview state. */
+  function setOpen(id) {
     const next = id || null;
     if (next === openId) return;
     const closing = openId;
@@ -1417,8 +1390,7 @@
     openId = next;
     turnShown = null;
     detailAnswer = null; // the answer for another session, or none
-    if (vscode) store.set("open", openId);
-    else if (!fromHash) history.replaceState(null, "", openId ? `#${encodeURIComponent(openId)}` : location.pathname + location.search);
+    store.set("open", openId);
     showMode();
     if (openId) {
       focusBack = true;
@@ -1450,10 +1422,9 @@
   resetEl.addEventListener("click", () => { view = { ...VIEW_DEFAULT, hiddenModels: [] }; saveView(); });
 
   /**
-   * The scope line: which button is pressed (VS Code) or the scope as text (a dev server); while scoped, the workspace
-   * folders' names ("no folder open" without any: then every session is listed) and how many live sessions the scope
-   * leaves out ("4 more in other projects", which switches to all projects in VS Code). A payload without the core's
-   * workspaceNames (a dev server's error) names no folder.
+   * The scope line: which button is pressed; while scoped, the workspace folders' names ("no folder open" without
+   * any: then every session is listed) and how many live sessions the scope leaves out ("4 more in other projects",
+   * which switches to all projects). A payload without the core's workspaceNames names no folder.
    */
   function renderScope(data) {
     const all = !!data.all;
@@ -1461,7 +1432,6 @@
     const hidden = Number.isFinite(data.hiddenCount) ? data.hiddenCount : 0;
     scopeWorkspaceEl.setAttribute("aria-pressed", String(!all));
     scopeAllEl.setAttribute("aria-pressed", String(all));
-    scopeTextEl.textContent = all ? "All projects" : names ? "This workspace:" : "This workspace";
     scopeNameEl.hidden = all || !names;
     if (names) {
       scopeNameEl.textContent = names.length ? names.join(", ") : "no folder open";
@@ -1470,7 +1440,6 @@
     }
     scopeMoreEl.hidden = all || !hidden;
     scopeMoreEl.textContent = `${hidden} more in other projects`;
-    scopeMoreEl.title = vscode ? "Show every project" : "The dev server lists the sessions of its own repo only";
   }
 
   /** Where the listed sessions are, for the counters' tooltips: "the 6 sessions in this workspace". */
@@ -1504,8 +1473,8 @@
   const REFRESHED_MS = 4000;
   let refreshPending = false, refreshedTimer = null;
   function refreshDone(data) {
-    // only the list of the full read counts: a dev server has the stream too, and a tick landing before
-    // the full response must not take the receipt (both hosts echo `full` in the payload)
+    // only the list of the full read counts: a watcher's list already on its way when the button was
+    // pressed must not take the receipt (the host echoes `full` in the payload)
     if (!refreshPending || !(data && data.full === true)) return;
     refreshPending = false;
     refreshEl.removeAttribute("aria-busy");
@@ -1514,14 +1483,6 @@
     refreshedEl.hidden = false;
     clearTimeout(refreshedTimer);
     refreshedTimer = setTimeout(() => { refreshedEl.hidden = true; }, REFRESHED_MS);
-  }
-
-  /** A full read that failed: the list stays as it is, the error goes to the strip above it, the button rests. */
-  function refreshFailed(message) {
-    refreshPending = false;
-    refreshEl.removeAttribute("aria-busy");
-    errorsEl.appendChild(el("div", "kx-error", `Refresh failed: ${message}`));
-    errorsEl.hidden = false;
   }
 
   function render(data) {
@@ -1590,101 +1551,33 @@
     }
   }
 
-  // ── Adapter: VS Code messages when the webview API exists, else a dev server hosting this file ──
+  // ── The host: the list and the detail come as messages; the panel sends ready, refresh, scope and detail ──
   refreshEl.appendChild(icon("refresh"));
-  function requestRefresh(ask) {
+  // the session open when the panel was last shown
+  const remembered = store.get("open");
+  if (typeof remembered === "string" && remembered) { openId = remembered; focusBack = true; showMode(); }
+  window.addEventListener("message", (e) => {
+    if (e.data && e.data.type === "sessions") render(e.data);
+    if (e.data && e.data.type === "detail") onDetail(e.data);
+  });
+  // the pressed button follows the click at once; the host stores the choice and sends the list of the new scope
+  function setScope(all, focus) {
+    if (focus) focus.focus();
+    if (scopeAllEl.getAttribute("aria-pressed") === String(all)) return;
+    scopeWorkspaceEl.setAttribute("aria-pressed", String(!all));
+    scopeAllEl.setAttribute("aria-pressed", String(all));
+    vscode.postMessage({ type: "scope", all });
+  }
+  scopeWorkspaceEl.addEventListener("click", () => setScope(false));
+  scopeAllEl.addEventListener("click", () => setScope(true));
+  scopeMoreEl.addEventListener("click", () => setScope(true, scopeAllEl)); // it disappears with the next list; focus stays on the switch
+  refreshEl.addEventListener("click", () => {
     if (refreshPending) return;
     refreshPending = true;
     refreshEl.setAttribute("aria-busy", "true");
-    ask();
-  }
-  // the session open when the panel was last shown (VS Code) or named in the address (a dev server)
-  const hashId = () => { try { return decodeURIComponent(location.hash.slice(1)) || null; } catch { return null; } };
-  const remembered = vscode ? store.get("open") : hashId();
-  if (typeof remembered === "string" && remembered) { openId = remembered; focusBack = true; showMode(); }
-  if (vscode) {
-    window.addEventListener("message", (e) => {
-      if (e.data && e.data.type === "sessions") render(e.data);
-      if (e.data && e.data.type === "detail") onDetail(e.data);
-    });
-    askDetail = (id) => vscode.postMessage({ type: "detail", sessionId: id });
-    // the pressed button follows the click at once; the host stores the choice and sends the list of the new scope
-    function setScope(all, focus) {
-      if (focus) focus.focus();
-      if (scopeAllEl.getAttribute("aria-pressed") === String(all)) return;
-      scopeWorkspaceEl.setAttribute("aria-pressed", String(!all));
-      scopeAllEl.setAttribute("aria-pressed", String(all));
-      vscode.postMessage({ type: "scope", all });
-    }
-    scopeWorkspaceEl.addEventListener("click", () => setScope(false));
-    scopeAllEl.addEventListener("click", () => setScope(true));
-    scopeMoreEl.addEventListener("click", () => setScope(true, scopeAllEl)); // it disappears with the next list; focus stays on the switch
-    refreshEl.addEventListener("click", () => requestRefresh(() => vscode.postMessage({ type: "refresh" })));
-    vscode.postMessage({ type: "ready" });
-  } else {
-    // A dev server serves its own repo only: the scope as text, no switch. The list is fetched once from
-    // /claude-context/api/sessions, then the server-sent events stream /claude-context/api/stream pushes
-    // every change as a "sessions" event. When the stream drops (the server restarted or stopped) the
-    // stream is closed and the page says so with "Try again"; no silent reconnects, so what the page
-    // shows is always either live or marked as lost.
-    scopeSwitchEl.hidden = true;
-    scopeTextEl.hidden = false;
-    const more = el("span", "kx-scope-more");
-    more.dataset.testid = "scope-more";
-    more.hidden = true;
-    scopeMoreEl.replaceWith(more);
-    scopeMoreEl = more;
-    window.addEventListener("hashchange", () => setOpen(hashId(), { fromHash: true }));
-    let stream = null;
-    // every turn of the open session from /claude-context/api/detail; only the latest request's answer is drawn
-    let detailAsked = 0;
-    askDetail = (id) => {
-      const n = ++detailAsked;
-      fetch(`/claude-context/api/detail?session=${encodeURIComponent(id)}`, { cache: "no-store" })
-        .then((response) => (response.ok ? response.json() : null))
-        .then((answer) => { if (n === detailAsked) onDetail(answer); })
-        .catch(() => { /* a host without the endpoint: the list's last 200 turns stay */ });
-    };
-
-    function lost() {
-      if (stream) stream.close();
-      stream = null;
-      contactEl.hidden = false;
-    }
-
-    /** The list once; with `full`, the server forgets its parsed state and reads every transcript again (the refresh button). */
-    async function fetchList({ full = false } = {}) {
-      const response = await fetch(`/claude-context/api/sessions${full ? "?full=1" : ""}`, { cache: "no-store" });
-      // the dev server's own errors are JSON with error; anything else (a generic 404 page) is just the status
-      const data = /json/.test(response.headers.get("content-type") || "") ? await response.json() : null;
-      if (!response.ok) throw new Error((data && data.error) || `the dev server answered ${response.status}`);
-      render(data);
-    }
-
-    function connect() {
-      stream = new EventSource("/claude-context/api/stream");
-      stream.addEventListener("sessions", (e) => {
-        contactEl.hidden = true;
-        try { render(JSON.parse(e.data)); } catch { /* an incomplete event; the next one draws */ }
-      });
-      stream.onerror = lost;
-    }
-
-    async function start() {
-      lost();
-      contactEl.hidden = true;
-      try { await fetchList(); } catch (e) {
-        render({ count: 0, sessions: [], errors: [String(e && e.message || e)] });
-        lost();
-        return;
-      }
-      connect();
-    }
-
-    contactEl.querySelector("button").addEventListener("click", start);
-    refreshEl.addEventListener("click", () => requestRefresh(() => fetchList({ full: true }).catch((e) => refreshFailed(String(e && e.message || e)))));
-    start();
-  }
+    vscode.postMessage({ type: "refresh" });
+  });
+  vscode.postMessage({ type: "ready" });
 })();
 </script>
 </body>
