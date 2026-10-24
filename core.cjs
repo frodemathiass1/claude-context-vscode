@@ -585,4 +585,4 @@ class SessionWatcher {
   }
 }
 
-module.exports = { projectSlug, zone, dips, readRegistry, readTail, parseTranscript, seriesFor, summaryText, growthRows, buildSessions, inFolder, projectName, SessionReader, SessionWatcher, isAlive };
+module.exports = { projectSlug, zone, dips, readRegistry, readTail, parseTranscript, seriesFor, summaryText, growthRows, buildSessions, inFolder, projectName, SessionReader, SessionWatcher };

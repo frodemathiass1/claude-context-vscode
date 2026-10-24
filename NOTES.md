@@ -1,6 +1,7 @@
 # Notes
 
-Facts found along the way. `PLAN.md` says which step each section belongs to.
+Facts measured about Claude Code's files, each with the date and the Claude Code version it was seen on.
+`/fakta` surveys the live files against them.
 
 ## Sources (2026-10-22)
 
@@ -107,9 +108,3 @@ process start for an hour (`DIM_AFTER_MS`, the longer cache TTL) into "Idle over
 header; an empty session goes there by its start alone. Some of those are open tabs left alone, which is why the
 group is not called closed. Ending such a process from the panel is a separate question (destructive: it could
 end an open tab).
-
-## Hosting the panel outside VS Code
-
-Until 0.13.0 `panel.html` had a second adapter for a dev server that served it in a browser (LevitatorAdminSystem's
-`/kontekst`, removed there on 2026-10-24); since 0.14.0 (#33) the panel runs in VS Code only.
-
