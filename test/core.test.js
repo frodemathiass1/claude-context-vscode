@@ -27,11 +27,11 @@ describe("parseTranscript", () => {
   });
 
   it("without an ai-title the title is the first user message, collapsed to one line", () => {
-    expect(K.parseTranscript(lines("without-title")).title).toBe("can 171 be implemented now in parallel while I work on other things in other sessions?");
+    expect(K.parseTranscript(lines("without-title")).title).toBe("can the export be built now in parallel while I work on other things in other sessions?");
   });
 
   it("a slash command as the first message shows as the command with its arguments; meta entries and tool results are skipped", () => {
-    expect(K.parseTranscript(lines("command-first")).title).toBe("/implement 153");
+    expect(K.parseTranscript(lines("command-first")).title).toBe("/review 12");
   });
 
   it("a session where only a local command ran is titled by the command: no turns, no count, and its output is never the title", () => {
@@ -371,12 +371,12 @@ describe("zone", () => {
 
 describe("projectSlug", () => {
   it("replaces slashes and every other non-alphanumeric character with a dash, like Claude Code", () => {
-    expect(K.projectSlug("/Users/frode/Dev/my-project")).toBe("-Users-frode-Dev-my-project");
-    expect(K.projectSlug("/Users/frode/.claude/skills")).toBe("-Users-frode--claude-skills");
+    expect(K.projectSlug("/Users/me/Dev/my-project")).toBe("-Users-me-Dev-my-project");
+    expect(K.projectSlug("/Users/me/.claude/skills")).toBe("-Users-me--claude-skills");
   });
 
   it("a Windows path gives the folder name seen on Windows: the colon and every backslash become a dash, the drive letter keeps its case", () => {
-    expect(K.projectSlug("C:\\Users\\frode\\Dev\\Repo")).toBe("C--Users-frode-Dev-Repo");
+    expect(K.projectSlug("C:\\Users\\me\\Dev\\Repo")).toBe("C--Users-me-Dev-Repo");
     expect(K.projectSlug("c:\\Develop\\my-project\\.claude\\worktrees\\x")).toBe("c--Develop-my-project--claude-worktrees-x");
   });
 });
@@ -392,14 +392,14 @@ describe("inFolder", () => {
   it("on Windows the drive letter and the rest compare case-insensitively, elsewhere not", () => {
     expect(K.inFolder("C:\\Dev\\Repo\\sub", "c:\\Dev\\Repo", "win32")).toBe(true);
     expect(K.inFolder("c:\\dev\\repo", "C:\\Dev\\Repo", "win32")).toBe(true);
-    expect(K.inFolder("/Users/frode/Repo", "/users/frode/repo", "linux")).toBe(false);
-    expect(K.inFolder("/Users/frode/Repo/sub", "/Users/frode/Repo/", "linux")).toBe(true);
+    expect(K.inFolder("/Users/me/Repo", "/users/me/repo", "linux")).toBe(false);
+    expect(K.inFolder("/Users/me/Repo/sub", "/Users/me/Repo/", "linux")).toBe(true);
   });
 });
 
 describe("projectName", () => {
   it("is the last part of the path, with forward slashes or backslashes", () => {
-    expect(K.projectName("/Users/frode/Dev/my-project")).toBe("my-project");
+    expect(K.projectName("/Users/me/Dev/my-project")).toBe("my-project");
     expect(K.projectName("c:\\Develop\\my-project")).toBe("my-project");
     expect(K.projectName("C:\\Develop\\my-project\\")).toBe("my-project");
   });
@@ -410,7 +410,7 @@ describe("readRegistry", () => {
     const r = K.readRegistry(`${FIX}registry`, (pid) => pid === 1303 || pid === 5555);
     expect(r.error).toBeNull();
     expect(r.sessions.map((s) => s.pid)).toEqual([1303, 5555]);
-    expect(r.sessions[0]).toMatchObject({ sessionId: "aaaa-1", cwd: "/Users/frode/Dev/my-project", status: "busy", name: "my-project-08" });
+    expect(r.sessions[0]).toMatchObject({ sessionId: "aaaa-1", cwd: "/Users/me/Dev/my-project", status: "busy", name: "my-project-08" });
     expect(r.sessions[1].name).toBeNull();
   });
 
@@ -418,6 +418,27 @@ describe("readRegistry", () => {
     const r = K.readRegistry(`${FIX}does-not-exist`, () => true);
     expect(r.sessions).toEqual([]);
     expect(r.error).toBe(`Registry folder not found: ${FIX}does-not-exist`);
+  });
+
+  it("skips an entry that is not an object or has no positive integer pid, and nulls a sessionId that is not a plain id", () => {
+    const { mkdtempSync, writeFileSync, rmSync } = require("node:fs");
+    const os = require("node:os");
+    const path = require("node:path");
+    const dir = mkdtempSync(path.join(os.tmpdir(), "claude-context-registry-"));
+    const put = (name, value) => writeFileSync(path.join(dir, name), JSON.stringify(value));
+    try {
+      put("a.json", null);
+      put("b.json", [1303]);
+      put("c.json", { pid: 0, sessionId: "zero" }); // kill(0, 0) signals the process group: it would read as alive
+      put("d.json", { pid: "", sessionId: "empty" });
+      put("e.json", { pid: -1, sessionId: "negative" });
+      put("f.json", { pid: 1.5, sessionId: "fraction" });
+      put("g.json", { pid: 1303, sessionId: "../../etc/passwd" });
+      put("h.json", { pid: 5555, sessionId: "aaaa-5" });
+      const r = K.readRegistry(dir, () => true);
+      expect(r.error).toBeNull();
+      expect(r.sessions.map((s) => [s.pid, s.sessionId])).toEqual([[1303, null], [5555, "aaaa-5"]]);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });
 
@@ -520,13 +541,13 @@ describe("growthRows", () => {
   });
 
   it("a row carries the source, the tokens and the share only: the estimate's caveat is stated once under the chart, not per bar", () => {
-    for (const row of K.growthRows({ Read: 41200, output: 9600, mcp__royktest__browser_click: 700 })) expect(Object.keys(row)).toEqual(["source", "tokens", "share"]);
+    for (const row of K.growthRows({ Read: 41200, output: 9600, mcp__smoketest__browser_click: 700 })) expect(Object.keys(row)).toEqual(["source", "tokens", "share"]);
   });
 });
 
 describe("buildSessions", () => {
   const NOW = "2026-10-21T22:40:00.000Z";
-  const MINE = "/Users/frode/Dev/my-project", OTHER = "/Users/frode/Dev/other-project";
+  const MINE = "/Users/me/Dev/my-project", OTHER = "/Users/me/Dev/other-project";
   const reg = (pid, sessionId, cwd, status) => ({ pid, sessionId, cwd, status });
   const tail = (tokens, lastTurn, extra = {}) => ({ tokens, model: "claude-opus-5-5", lastTurn, title: "T", turns: 3, ...extra });
   const registry = [
@@ -602,9 +623,9 @@ describe("buildSessions", () => {
       { ...reg(3, "busy", MINE, "busy"), startedAt: at(300) }, { ...reg(4, "odd", MINE, "requires_action"), startedAt: at(300) },
       { ...reg(5, "none", MINE, undefined), startedAt: at(300) },
     ];
-    const turn = (min) => tail(40000, new Date(at(min)).toISOString());
+    const lastTurnAgo = (min) => tail(40000, new Date(at(min)).toISOString());
     const r = K.buildSessions({ registry: statuses, now: NOW, workspaceFolders: [MINE],
-      transcripts: { idle: turn(5), waiting: turn(120), busy: turn(240), odd: turn(90), none: turn(100) } });
+      transcripts: { idle: lastTurnAgo(5), waiting: lastTurnAgo(120), busy: lastTurnAgo(240), odd: lastTurnAgo(90), none: lastTurnAgo(100) } });
     expect(r.sessions.map((s) => [s.sessionId, s.busy, s.waiting, s.abandoned])).toEqual([
       ["busy", true, false, false], ["waiting", false, true, false], ["idle", false, false, false],
       ["odd", false, false, true], ["none", false, false, true],
@@ -674,13 +695,6 @@ describe("buildSessions", () => {
       now: NOW, workspaceFolders: [MINE], all: false });
     expect(odd).toMatchObject({ baselineMedian: 62000, baselineSessions: 3 });
     expect(K.buildSessions({ registry, transcripts, now: NOW, workspaceFolders: [MINE], all: false })).toMatchObject({ baselineMedian: null, baselineSessions: 0 });
-  });
-
-  it("the growth by source passes through, an empty object without a transcript", () => {
-    const r = K.buildSessions({ registry, transcripts: { ...transcripts, new: tail(143002, NOW, { growthBySource: { Read: 41200, output: 9600 } }) },
-      now: NOW, workspaceFolders: [MINE], all: false });
-    expect(r.sessions.find((s) => s.sessionId === "new").growthBySource).toEqual({ Read: 41200, output: 9600 });
-    expect(r.sessions.find((s) => s.sessionId === "without").growthBySource).toEqual({});
   });
 
   it("the growth as rows for the detail chart, largest first; none without a transcript", () => {
@@ -784,7 +798,7 @@ describe("SessionReader", () => {
   const { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, rmSync } = require("node:fs");
   const os = require("node:os");
   const path = require("node:path");
-  const MINE = "/Users/frode/Dev/my-project";
+  const MINE = "/Users/me/Dev/my-project";
   const all = lines("with-title").filter(Boolean);
 
   function rig({ withProjectFolder = true } = {}) {
@@ -819,6 +833,18 @@ describe("SessionReader", () => {
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
+  it("a transcript that cannot be read gives an error line, not an exception, and the session is listed without it", () => {
+    const { dir, file } = rig();
+    try {
+      const reader = new K.SessionReader(dir, { alive: (pid) => pid === 1303 });
+      // a read that fails after the open (EISDIR, EIO); thrown directly, since what fails where differs per platform
+      reader.readTranscript = () => { throw Object.assign(new Error("i/o error"), { code: "EIO" }); };
+      const r = reader.read({ workspaceFolders: [MINE], all: false });
+      expect(r.errors).toEqual([`Transcript not read: ${file} (EIO)`]);
+      expect(r.sessions[0]).toMatchObject({ sessionId: "aaaa-1", tokens: null });
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
   it("read({ full: true }) forgets the parsed state and the remembered folders, and reads every transcript from its first byte", () => {
     const { dir, file } = rig();
     try {
@@ -848,7 +874,7 @@ describe("SessionReader", () => {
   it("a live session outside the scope is counted in hiddenCount, without reading it or reporting its missing folder", () => {
     const { dir } = rig();
     try {
-      writeFileSync(path.join(dir, "sessions", "77.json"), JSON.stringify({ pid: 77, sessionId: "elsewhere", cwd: "/Users/frode/Dev/other-project", status: "idle" }));
+      writeFileSync(path.join(dir, "sessions", "77.json"), JSON.stringify({ pid: 77, sessionId: "elsewhere", cwd: "/Users/me/Dev/other-project", status: "idle" }));
       const reader = new K.SessionReader(dir, { alive: (pid) => pid !== 9 });
       const scoped = reader.read({ workspaceFolders: [MINE], all: false });
       expect(scoped).toMatchObject({ count: 1, hiddenCount: 1, workspaceNames: ["my-project"], errors: [] });
@@ -943,6 +969,10 @@ describe("SessionWatcher", () => {
       mkdirSync(path.join(dir, "projects", "p"), { recursive: true });
       watcher.watchAll([path.join(dir, "projects", "p"), path.join(dir, "does-not-exist")]);
       expect(watcher.watchers.size).toBe(2);
+      // a project folder the next read no longer lists has left the scope: closed; sessions/ stays
+      mkdirSync(path.join(dir, "projects", "q"));
+      watcher.watchAll([path.join(dir, "projects", "q")]);
+      expect([...watcher.watchers.keys()].sort()).toEqual([path.join(dir, "projects", "q"), path.join(dir, "sessions")]);
       watcher.stop();
       expect(watcher.watchers.size).toBe(0);
       expect(watcher.tick).toBeNull();

@@ -7,6 +7,7 @@
 "use strict";
 
 const vscode = require("vscode");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -14,8 +15,6 @@ const core = require("./core.cjs");
 
 const VIEW_ID = "claudeContext.panel";
 const SCOPE_KEY = "claudeContext.allProjects";
-const DEBOUNCE_MS = 250;
-const TICK_MS = 30000; // refreshes "x min ago" and catches processes that died without removing their file
 /** The folder Claude Code stores its data in: the setting, else CLAUDE_CONFIG_DIR, else ~/.claude. Read at activation. */
 function claudeDir() {
   const setting = String(vscode.workspace.getConfiguration("claudeContext").get("claudeDir") || "").trim();
@@ -38,7 +37,7 @@ class ClaudeContextViewProvider {
     this.view = null;
     const dir = claudeDir();
     this.reader = new core.SessionReader(dir);
-    this.watcher = new core.SessionWatcher(dir,() => this.refresh(), { debounceMs: DEBOUNCE_MS, tickMs: TICK_MS });
+    this.watcher = new core.SessionWatcher(dir, () => this.refresh());
   }
 
   resolveWebviewView(view) {
@@ -55,8 +54,8 @@ class ClaudeContextViewProvider {
         this.view.webview.postMessage({ type: "detail", sessionId: msg.sessionId, detail: this.reader.detail(msg.sessionId) });
       }
     });
-    view.onDidDispose(() => { this.view = null; this.stopWatching(); });
-    this.startWatching();
+    view.onDidDispose(() => { this.view = null; this.watcher.stop(); });
+    this.watcher.start();
     this.refresh();
   }
 
@@ -72,25 +71,21 @@ class ClaudeContextViewProvider {
     if (!this.view) return;
     const all = !!this.context.globalState.get(SCOPE_KEY, false);
     const workspaceFolders = (vscode.workspace.workspaceFolders || []).map((f) => f.uri.fsPath);
-    const payload = this.reader.read({ workspaceFolders, all, full });
-    this.watchProjectFolders(payload.projectFolders);
+    // called from the watcher's timers too: an exception there would land in the extension host, so the
+    // panel keeps its last list instead and the error goes to the extension host log
+    let payload;
+    try { payload = this.reader.read({ workspaceFolders, all, full }); }
+    catch (e) { console.error("Claude Context: reading the sessions failed", e); return; }
+    this.watcher.watchAll(payload.projectFolders);
     this.view.webview.postMessage({ type: "sessions", ...payload, full }); // full: the panel's refresh receipt keys on it
   }
 
-  startWatching() { this.watcher.start(); }
-
-  watchProjectFolders(folders) { this.watcher.watchAll(folders); }
-
-  stopWatching() { this.watcher.stop(); }
-
-  dispose() { this.stopWatching(); }
+  dispose() { this.watcher.stop(); }
 }
 
+/** A CSP nonce: unguessable, so only the panel's own inline style and script run. */
 function randomNonce() {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  let s = "";
-  for (let i = 0; i < 32; i++) s += chars[Math.floor(Math.random() * chars.length)];
-  return s;
+  return crypto.randomBytes(16).toString("base64");
 }
 
 module.exports = { activate, deactivate };

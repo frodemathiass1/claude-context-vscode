@@ -13,7 +13,7 @@
     --kx-fg: var(--vscode-foreground, #1f2328);
     --kx-muted: var(--vscode-descriptionForeground, #6e7781);
     --kx-border: var(--vscode-sideBarSectionHeader-border, var(--vscode-widget-border, rgba(128, 128, 128, 0.25)));
-    --kx-border-strong: var(--vscode-editorWidget-border, rgba(128, 128, 128, 0.45)); /* reserved for hover and busy accents */
+    --kx-border-strong: var(--vscode-editorWidget-border, rgba(128, 128, 128, 0.45)); /* the outlines of the controls: select, chips, switches, pills, copy */
     --kx-row-hover: var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.08));
     /* the zone colours for text (the count, the legend numbers) … */
     --kx-green: var(--vscode-charts-green, #1a7f37);
@@ -28,7 +28,6 @@
     --kx-yellow-fill: var(--vscode-charts-yellow, var(--kx-yellow));
     --kx-orange-fill: color-mix(in srgb, var(--kx-yellow-fill) 50%, var(--kx-red-fill));
     --kx-red-fill: var(--vscode-charts-red, var(--kx-red));
-    --kx-blue: var(--vscode-charts-blue, #0969da); /* reserved for busy accents */
     --kx-grid: var(--vscode-charts-lines, color-mix(in srgb, var(--kx-muted) 55%, transparent)); /* limit lines, marks */
     --kx-track: color-mix(in srgb, var(--kx-fg) 10%, transparent); /* the track behind the bar and the meter */
     --kx-badge-bg: var(--vscode-badge-background, var(--vscode-focusBorder, #0969da));
@@ -127,7 +126,7 @@
   .kx-message { padding: 18px 4px; color: var(--kx-muted); text-align: center; }
   .kx-error { padding: 8px 12px; color: var(--kx-red); border-bottom: 1px solid var(--kx-border); font-size: 0.92em; }
 
-  /* ── Groups: "Working now · n", "Waiting for you · n", "Idle · n" and, with all projects, the project above them ── */
+  /* ── Groups: "Working now · n", "Waiting for you · n", "Idle · n", "Idle over an hour · n" and, with all projects, the project above them ── */
   .kx-group {
     margin: 10px 0 4px; font-size: 0.78em; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;
     color: var(--kx-heading); display: flex; align-items: center; gap: 6px;
@@ -240,7 +239,8 @@
   main[data-compact] :is(.kx-zone-txt, .kx-growth, .kx-curve-wrap, .kx-meta, .kx-axis) { display: none; }
 
   /* ── Detail view of one session: replaces the header, the controls and the list. Top bar, header, meta
-     line, the large curve with output bars under it, the facts tables; stacked under 620 px ── */
+     line, the context box and named facts, the large curve with output bars under it, where the context
+     went, the facts tables; stacked under 620 px ── */
   .kx-detail { padding: 8px 12px 16px; }
   .kx-d-top { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; }
   .kx-d-back {
@@ -428,7 +428,7 @@
   <span class="kx-models" data-testid="models" role="group" aria-label="Models shown"></span>
   <button type="button" class="kx-reset" data-testid="reset" hidden>reset</button>
 </div>
-<div data-testid="errors" hidden></div>
+<div data-testid="errors" role="status" hidden></div>
 <main data-testid="list"></main>
 <section class="kx-detail" data-testid="detail" aria-label="Session details" hidden></section>
 
@@ -748,7 +748,7 @@
     return span;
   }
 
-  /** "browser_click" for "mcp__royktest__browser_click": an MCP tool by its own name, without the server. */
+  /** "browser_click" for "mcp__smoketest__browser_click": an MCP tool by its own name, without the server. */
   const sourceName = (source) => (/^mcp__/.test(source) ? source.split("__").pop() : source);
   const GROWTH_TOP = 3;
   const GROWTH_HOW = "per turn, what the model wrote (output) first, the rest split by length over the tool results (by tool), your messages (you) and attachments and reminders (other); a fall is not counted";
@@ -807,6 +807,17 @@
     return bar;
   }
 
+  /** "busy": the session is working, in the list and the detail view. */
+  function busyBadge() {
+    const badge = el("span", "kx-badge");
+    badge.appendChild(icon("zap"));
+    badge.appendChild(document.createTextNode("busy"));
+    return badge;
+  }
+
+  /** "Opus 5.5 · xhigh": the model and the effort of the last turn. */
+  const modelEffort = (session) => (session.modelShort || "unknown") + (session.effort ? ` · ${session.effort}` : "");
+
   /** "waiting": the session waits for the user (a permission prompt, a question, a dialog), in the list and the detail view. */
   function waitingBadge() {
     const badge = el("span", "kx-badge kx-wait");
@@ -832,12 +843,8 @@
     const title = titled(el("div", "kx-title"), session);
     title.title = title.textContent;
     titleRow.appendChild(title);
-    if (session.busy) {
-      const badge = el("span", "kx-badge");
-      badge.appendChild(icon("zap"));
-      badge.appendChild(document.createTextNode("busy"));
-      titleRow.appendChild(badge);
-    } else if (session.waiting) titleRow.appendChild(waitingBadge());
+    if (session.busy) titleRow.appendChild(busyBadge());
+    else if (session.waiting) titleRow.appendChild(waitingBadge());
     row.appendChild(titleRow);
     const count = el("div", "kx-count");
     const tokens = zoned(el("div", "kx-num", countText(session)), session.zone);
@@ -860,9 +867,9 @@
     const add = (name, text) => { const s = el("span"); s.appendChild(icon(name)); s.appendChild(document.createTextNode(text)); meta.appendChild(s); };
     if (!session.turns) add("play", startText(session)); // no model, turns or last turn to show yet; the curve says "no turns yet"
     else {
-      add("cpu", (session.modelShort || "unknown") + (session.effort ? ` · ${session.effort}` : ""));
+      add("cpu", modelEffort(session));
       if (session.effort) meta.lastChild.title = `Model and the effort level of the last turn`;
-      add("repeat", `${session.turns} ${session.turns === 1 ? "turn" : "turns"}`);
+      add("repeat", plural(session.turns, "turn", "turns"));
       const output = outputMeta(session);
       if (output) meta.appendChild(output);
       add("clock", sinceText(session.sinceMs));
@@ -924,7 +931,11 @@
     btn.appendChild(el("span", "kx-gn", `· ${n}`));
     btn.addEventListener("click", () => {
       toggleFold(key);
-      if (lastData) render(lastData);
+      if (!lastData) return;
+      render(lastData);
+      // the render replaced the button; keyboard focus would fall to the body
+      const again = listEl.querySelector(`[data-testid="fold"][data-group="${CSS.escape(key)}"]`);
+      if (again) again.focus();
     });
     h.appendChild(btn);
     return h;
@@ -1261,22 +1272,23 @@
     const b = el("button", "kx-d-copy");
     b.type = "button";
     b.dataset.testid = `copy-${key}`;
-    b.setAttribute("aria-label", `Copy ${text}`);
+    // the accessible name carries the receipt too, since it replaces the button's text for a screen reader
+    const label = (button, state) => { button.textContent = state; button.setAttribute("aria-label", state === "copy" ? `Copy ${text}` : `${state}: ${text}`); };
     const receipt = copied[key] && copied[key].until > Date.now() ? copied[key] : null;
-    b.textContent = receipt ? receipt.text : "copy";
+    label(b, receipt ? receipt.text : "copy");
     if (receipt && receipt.text === "copied") b.dataset.done = "";
     b.addEventListener("click", async () => {
       const ok = await copyText(text);
       copied[key] = { until: Date.now() + COPIED_MS, text: ok ? "copied" : "copy failed" };
       const now = detailEl.querySelector(`[data-testid="copy-${key}"]`) || b; // a redraw may have replaced the button
-      now.textContent = copied[key].text;
+      label(now, copied[key].text);
       if (ok) now.dataset.done = ""; else delete now.dataset.done;
       if (document.activeElement === document.body) now.focus({ preventScroll: true }); // the textarea way took the focus
       setTimeout(() => {
         if (copied[key] && copied[key].until > Date.now()) return; // a later click owns the receipt
         delete copied[key];
         const current = detailEl.querySelector(`[data-testid="copy-${key}"]`);
-        if (current) { current.textContent = "copy"; delete current.dataset.done; }
+        if (current) { label(current, "copy"); delete current.dataset.done; }
       }, COPIED_MS);
     });
     span.appendChild(b);
@@ -1333,7 +1345,7 @@
       ...(session.typicalStart ? [["A fresh session here typically starts at", session.typicalStart]] : []),
       ["Started", session.startedAt ? dayText(session.startedAt) : "unknown"],
       ["Last turn", session.lastTurn ? `${dayText(session.lastTurn)} (${sinceText(session.sinceMs)})` : "no turn"],
-      ["Model · effort", `${session.modelShort || "unknown"}${session.effort ? ` · ${session.effort}` : ""}`],
+      ["Model · effort", modelEffort(session)],
       ["Working folder", session.cwd || "unknown"],
       ["Process id", Number.isFinite(session.pid) ? copyable("pid", String(session.pid)) : "unknown"],
       ["Session id", session.sessionId ? copyable("session", session.sessionId) : "unknown"],
@@ -1432,10 +1444,8 @@
     const top = el("div", "kx-d-top");
     top.appendChild(backButton());
     if (session.busy) {
-      const badge = el("span", "kx-badge");
+      const badge = busyBadge();
       badge.dataset.testid = "detail-busy";
-      badge.appendChild(icon("zap"));
-      badge.appendChild(document.createTextNode("busy"));
       top.appendChild(badge);
     } else if (session.waiting) {
       const badge = waitingBadge();
@@ -1460,7 +1470,7 @@
     const add = (name, text) => { const s = el("span"); s.appendChild(icon(name)); s.appendChild(document.createTextNode(text)); meta.appendChild(s); return s; };
     add("folder", session.project || "unknown").title = session.cwd || "";
     if (session.turns) { // before the first turn the context box and the curve say "no turns yet"
-      add("cpu", (session.modelShort || "unknown") + (session.effort ? ` · ${session.effort}` : ""));
+      add("cpu", modelEffort(session));
       add("repeat", plural(session.turns, "turn", "turns"));
     }
     add("play", startText(session));
@@ -1549,7 +1559,7 @@
 
   sortEl.addEventListener("change", () => { view.sort = SORTS.includes(sortEl.value) ? sortEl.value : "last"; saveView(); });
   hotEl.addEventListener("click", () => { view.hotOnly = !view.hotOnly; saveView(); });
-  resetEl.addEventListener("click", () => { view = { ...VIEW_DEFAULT, hiddenModels: [] }; saveView(); });
+  resetEl.addEventListener("click", () => { view = { ...VIEW_DEFAULT, hiddenModels: [] }; saveView(); sortEl.focus(); }); // reset hides itself
 
   /**
    * The scope line: which button is pressed; while scoped, the workspace folders' names ("no folder open" without
@@ -1601,12 +1611,14 @@
   // ── Refresh: the button asks the host for a full read; the icon spins until the next list arrives,
   // then "updated 12:04:31" shows for a few seconds (the only feedback under prefers-reduced-motion) ──
   const REFRESHED_MS = 4000;
-  let refreshPending = false, refreshedTimer = null;
+  const REFRESH_GIVE_UP_MS = 15000; // a host that never answers (it threw, or the read hangs) must not leave the icon spinning
+  let refreshPending = false, refreshedTimer = null, refreshGiveUp = null;
   function refreshDone(data) {
     // only the list of the full read counts: a watcher's list already on its way when the button was
     // pressed must not take the receipt (the host echoes `full` in the payload)
     if (!refreshPending || !(data && data.full === true)) return;
     refreshPending = false;
+    clearTimeout(refreshGiveUp);
     refreshEl.removeAttribute("aria-busy");
     const at = new Date(data && data.generatedAt ? data.generatedAt : Date.now());
     refreshedEl.textContent = `updated ${Number.isFinite(at.getTime()) ? at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "now"}`;
@@ -1682,6 +1694,14 @@
   }
 
   // ── The host: the list and the detail come as messages; the panel sends ready, refresh, scope and detail ──
+  /** The list as render() iterates it: arrays where it loops, whatever the host sent. */
+  function listPayload(data) {
+    const arr = (v) => (Array.isArray(v) ? v : []);
+    return {
+      ...data, sessions: arr(data.sessions), errors: arr(data.errors).filter((f) => typeof f === "string"),
+      groups: Array.isArray(data.groups) ? data.groups.filter((g) => g && typeof g === "object").map((g) => ({ ...g, sessions: arr(g.sessions) })) : null,
+    };
+  }
   refreshEl.appendChild(icon("refresh"));
   compactEl.appendChild(icon("rows"));
   // compact rows: the list's attribute switches the CSS, so no render is needed; remembered, but not part of the view "reset" clears
@@ -1700,7 +1720,7 @@
   const remembered = store.get("open");
   if (typeof remembered === "string" && remembered) { openId = remembered; focusBack = true; showMode(); }
   window.addEventListener("message", (e) => {
-    if (e.data && e.data.type === "sessions") render(e.data);
+    if (e.data && e.data.type === "sessions") render(listPayload(e.data));
     if (e.data && e.data.type === "detail") onDetail(e.data);
   });
   // the pressed button follows the click at once; the host stores the choice and sends the list of the new scope
@@ -1718,6 +1738,7 @@
     if (refreshPending) return;
     refreshPending = true;
     refreshEl.setAttribute("aria-busy", "true");
+    refreshGiveUp = setTimeout(() => { refreshPending = false; refreshEl.removeAttribute("aria-busy"); }, REFRESH_GIVE_UP_MS);
     vscode.postMessage({ type: "refresh" });
   });
   vscode.postMessage({ type: "ready" });

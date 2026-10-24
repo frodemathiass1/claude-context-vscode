@@ -35,7 +35,7 @@ let names = [];
 try { names = fs.readdirSync(sessionsDir).filter((n) => n.endsWith(".json")); } catch { console.log("\nREGISTRY: folder not found"); }
 if (names.length) {
   const fields = new Map(), status = new Map(), versions = new Map();
-  const reads = { pid: 0, sessionId: 0, cwd: 0, status: 0, statusUpdatedAt: 0, startedAt: 0, name: 0 };
+  const reads = { pid: 0, sessionId: 0, cwd: 0, status: 0, startedAt: 0, name: 0 };
   let unreadable = 0, total = 0;
   for (const n of names) {
     let e;
@@ -107,7 +107,7 @@ if (files.length) {
     if (!t.turns) continue;
     parsed.withTurns++;
     for (const k of ["tokens", "model", "lastTurn", "title", "cacheTtlMs"]) if (t[k] === null) parsed[k]++;
-    if (t.model && !/^claude-([a-z]+)-(\d+)-(\d+)/.test(t.model)) count(rawModels, t.model);
+    if (t.model && core.modelShort(t.model) === t.model) count(rawModels, t.model); // no short name: shown raw
   }
   const projects = new Set(files.map((f) => f.project)).size;
   console.log(`\nTRANSCRIPTS: ${files.length} files from ${projects} projects, modified in the last ${DAYS} days${malformed ? `, ${malformed} malformed lines` : ""}`);

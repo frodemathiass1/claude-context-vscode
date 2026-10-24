@@ -40,9 +40,13 @@ function zone(tokens) {
   return tokens < YELLOW_FROM ? "green" : tokens < ORANGE_FROM ? "yellow" : tokens <= RED_ABOVE ? "orange" : "red";
 }
 
+const SESSION_ID = /^[\w-]+$/; // a UUID as Claude Code writes it; never a path
+
 /**
  * The registry of Claude sessions: one JSON file per process in Claude Code's sessions/ folder. Only
- * entries where alive(pid) is true are kept (a file can linger after a process died abruptly).
+ * entries where alive(pid) is true are kept (a file can linger after a process died abruptly). The pid
+ * must be a positive integer: kill(0, 0) signals the whole process group on POSIX, so it would read as
+ * alive. A sessionId that is not a plain id is null, since it becomes a file name under projects/.
  */
 function readRegistry(dir, alive) {
   let names;
@@ -52,11 +56,12 @@ function readRegistry(dir, alive) {
     if (!name.endsWith(".json")) continue;
     let entry;
     try { entry = JSON.parse(fs.readFileSync(path.join(dir, name), "utf8")); } catch { continue; }
-    const pid = Number(entry && entry.pid);
-    if (!Number.isFinite(pid) || !alive(pid)) continue;
+    if (!entry || typeof entry !== "object") continue;
+    const pid = Number(entry.pid);
+    if (!Number.isInteger(pid) || pid <= 0 || !alive(pid)) continue;
     sessions.push({
-      pid, sessionId: entry.sessionId || null, cwd: entry.cwd || null, status: entry.status || null,
-      statusUpdatedAt: entry.statusUpdatedAt || null, startedAt: entry.startedAt || null,
+      pid, sessionId: typeof entry.sessionId === "string" && SESSION_ID.test(entry.sessionId) ? entry.sessionId : null,
+      cwd: entry.cwd || null, status: entry.status || null, startedAt: entry.startedAt || null,
       name: typeof entry.name === "string" && entry.name ? entry.name : null, // "my-project-08", derived by Claude Code
     });
   }
@@ -236,8 +241,7 @@ function contentChars(content) {
 /** A compaction from compact_boundary's compactMetadata; a missing field is null. */
 function compaction(meta) {
   const m = meta && typeof meta === "object" ? meta : {};
-  const n = (v) => (Number.isFinite(v) ? v : null);
-  return { trigger: typeof m.trigger === "string" ? m.trigger : null, preTokens: n(m.preTokens), postTokens: n(m.postTokens), durationMs: n(m.durationMs) };
+  return { trigger: typeof m.trigger === "string" ? m.trigger : null, preTokens: numOrNull(m.preTokens), postTokens: numOrNull(m.postTokens), durationMs: numOrNull(m.durationMs) };
 }
 
 /** Indexes in `series` where the count fell below DIP_BELOW of the previous turn (a compaction or a /clear). */
@@ -273,7 +277,7 @@ function tokensText(tokens) {
   return `${(tokens / 1000000).toFixed(1)}M`;
 }
 
-// What to do at the next phase boundary, per zone (Pocock's PHASE-BOUNDARIES.md): the detail view shows it under the
+// What to do at the next phase boundary, per zone (Matt Pocock's PHASE-BOUNDARIES.md, not in this repo): the detail view shows it under the
 // count, the list's bar in its tooltip. Green has none: a session there is in the smart zone.
 const ZONE_ADVICE = {
   yellow: "Plan to break at the next phase boundary.",
@@ -313,6 +317,7 @@ function parseEntry(line) {
 }
 
 function num(v) { return Number.isFinite(v) ? v : 0; }
+function numOrNull(v) { return Number.isFinite(v) ? v : null; }
 
 /**
  * The TTL a turn wrote cache under, from usage.cache_creation: 5 minutes when ephemeral_5m_input_tokens is
@@ -370,12 +375,12 @@ function buildSessions({ registry = [], transcripts = {}, now, workspaceFolders 
     .filter((r) => all || workspaceFolders.length === 0 || workspaceFolders.some((f) => inFolder(r.cwd, f)))
     .map((r) => {
       const t = transcripts[r.sessionId] || {};
-      const tokens = Number.isFinite(t.tokens) ? t.tokens : null;
+      const tokens = numOrNull(t.tokens);
       const { series, outputSeries, thinkingSeries, compactions, dips: drops, baselineAt } = seriesFor(t, SERIES_MAX);
       const lastMs = t.lastTurn ? Date.parse(t.lastTurn) : NaN;
       const sinceMs = Number.isFinite(lastMs) && Number.isFinite(nowMs) ? Math.max(0, nowMs - lastMs) : null;
-      const cacheTtlMs = Number.isFinite(t.cacheTtlMs) ? t.cacheTtlMs : null;
-      const cacheRead = Number.isFinite(t.cacheRead) ? t.cacheRead : null;
+      const cacheTtlMs = numOrNull(t.cacheTtlMs);
+      const cacheRead = numOrNull(t.cacheRead);
       const coldMs = cacheTtlMs !== null && Number.isFinite(lastMs) ? lastMs + cacheTtlMs : NaN;
       const coldInMs = Number.isFinite(coldMs) && Number.isFinite(nowMs) ? coldMs - nowMs : null;
       const startedMs = Number(r.startedAt) || NaN;
@@ -389,13 +394,12 @@ function buildSessions({ registry = [], transcripts = {}, now, workspaceFolders 
         tokens, zone: zone(tokens), turns: t.turns || 0, series, compactions, dips: drops,
         compactionCount: Array.isArray(t.compactions) ? t.compactions.length : 0, // the whole session's, also those cut from the series
         lastTurn: t.lastTurn || null, sinceMs, outputSeries, thinkingSeries,
-        outputTotal: Number.isFinite(t.outputTotal) ? t.outputTotal : null, thinkingTotal: Number.isFinite(t.thinkingTotal) ? t.thinkingTotal : null,
+        outputTotal: numOrNull(t.outputTotal), thinkingTotal: numOrNull(t.thinkingTotal),
         effort: typeof t.effort === "string" ? t.effort : null,
-        baseline: Number.isFinite(t.baseline) ? t.baseline : null, baselineAt,
+        baseline: numOrNull(t.baseline), baselineAt,
         baselineCause: t.baselineCause === "start" || t.baselineCause === "compaction" ? t.baselineCause : null,
-        growthBySource: t.growthBySource && typeof t.growthBySource === "object" ? t.growthBySource : {},
         growth: growthRows(t.growthBySource),
-        cacheTtlMs, cacheRead, cacheCreated: Number.isFinite(t.cacheCreated) ? t.cacheCreated : null,
+        cacheTtlMs, cacheRead, cacheCreated: numOrNull(t.cacheCreated),
         hitShare: cacheRead !== null && tokens ? cacheRead / tokens : null,
         coldAt: Number.isFinite(coldMs) ? new Date(coldMs).toISOString() : null, coldInMs,
         cacheState: coldInMs === null ? null : coldInMs > 0 ? "warm" : "cold",
@@ -490,7 +494,8 @@ class SessionReader {
       const file = path.join(folder, `${s.sessionId}.jsonl`);
       live.add(file);
       this.files.set(s.sessionId, file);
-      transcripts[s.sessionId] = this.readTranscript(file);
+      try { transcripts[s.sessionId] = this.readTranscript(file); }
+      catch (e) { this.cache.delete(file); errors.push(`Transcript not read: ${file} (${e.code || e.message})`); }
     }
     for (const file of this.cache.keys()) if (!live.has(file)) this.cache.delete(file);
     for (const id of this.found.keys()) if (!liveIds.has(id)) this.found.delete(id);
@@ -567,7 +572,10 @@ class SessionWatcher {
     this.tick = setInterval(() => this.onChange(), this.tickMs);
   }
 
+  /** Watches every folder listed and stops watching the project folders a read no longer lists (they left the scope). */
   watchAll(folders) {
+    const keep = new Set([path.join(this.claudeDir, "sessions"), path.join(this.claudeDir, "projects"), ...folders]);
+    for (const [folder, w] of this.watchers) if (!keep.has(folder)) { w.close(); this.watchers.delete(folder); }
     for (const f of folders) this.watch(f);
   }
 
@@ -594,4 +602,4 @@ class SessionWatcher {
   }
 }
 
-module.exports = { projectSlug, zone, dips, readRegistry, readTail, parseTranscript, seriesFor, contextFacts, growthRows, buildSessions, inFolder, projectName, SessionReader, SessionWatcher };
+module.exports = { projectSlug, zone, dips, readRegistry, readTail, parseTranscript, seriesFor, contextFacts, growthRows, buildSessions, inFolder, projectName, modelShort, SessionReader, SessionWatcher };

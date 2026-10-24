@@ -13,12 +13,12 @@ on Windows"), `changelog` (2.1.152, 2.1.234, 2.1.246).
 ## Registry entry seen on macOS (Claude Code 2.1.301)
 
 ```json
-{"pid":1303,"sessionId":"aaaa-1","cwd":"/Users/frode/Dev/my-project","startedAt":1792603960396,"version":"2.1.301","kind":"interactive","entrypoint":"claude-vscode","name":"my-project-08","nameSource":"derived","updatedAt":1792603961075,"status":"busy","statusUpdatedAt":1792603961075}
+{"pid":1303,"sessionId":"aaaa-1","cwd":"/Users/me/Dev/my-project","startedAt":1792603960396,"version":"2.1.301","kind":"interactive","entrypoint":"claude-vscode","name":"my-project-08","nameSource":"derived","updatedAt":1792603961075,"status":"busy","statusUpdatedAt":1792603961075}
 ```
 
 ## Windows (seen 2026-10-22, Windows 11)
 
-- Versions (step 0): VS Code 1.141.2, git 2.56.0.windows.2, Node 26.12.1, Claude Code 2.1.304. `npm test`
+- Versions: VS Code 1.141.2, git 2.56.0.windows.2, Node 26.12.1, Claude Code 2.1.304. `npm test`
   was green (34 tests) on the fresh clone before any change.
 - Registry fields and the form of `cwd`: the same fields as on macOS plus `procStart`, `peerProtocol`,
   `peerFeatures`, `pidDomain` (`win32:<host>`), `messagingSocketPath` (a named pipe) and `nameSince`. `cwd`
@@ -41,7 +41,7 @@ on Windows"), `changelog` (2.1.152, 2.1.234, 2.1.246).
   `ephemeral_5m_input_tokens` (the sum equals the flat field). Prompt caching works in the region.
 - `message.id` and `isSidechain` present: yes, both (`message.id` starts with `msg_bdrk_`).
 
-So step 4 of the plan needs no code change: the core already reads Bedrock transcripts correctly.
+So the core reads Bedrock transcripts without a code change.
 
 ## The prompt cache in the transcript (seen 2026-10-22, Claude Code 2.1.301–2.1.304)
 
