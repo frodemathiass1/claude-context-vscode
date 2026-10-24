@@ -108,7 +108,8 @@ What differs from VS Code:
   own scope.
 - The theme follows the system's light or dark setting, in the colours of VS Code's Light Modern and Dark Modern
   themes, and a browser tab is usually wide enough for the four columns.
-- When the server stops, the page keeps its last list and says that it has lost the connection.
+- When the server stops, the page keeps its last list and says that it has lost the connection; a page that never
+  reached the server (opened from an earlier start, say) says the same over an empty list.
 
 > [!NOTE]
 > The server listens on `127.0.0.1` only, so no other machine can reach it. The URL carries a random token made at

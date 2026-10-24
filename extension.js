@@ -7,9 +7,7 @@
 "use strict";
 
 const vscode = require("vscode");
-const crypto = require("node:crypto");
 const fs = require("node:fs");
-const os = require("node:os");
 const path = require("node:path");
 const core = require("./core.cjs");
 
@@ -17,8 +15,7 @@ const VIEW_ID = "claudeContext.panel";
 const SCOPE_KEY = "claudeContext.allProjects";
 /** The folder Claude Code stores its data in: the setting, else CLAUDE_CONFIG_DIR, else ~/.claude. Read at activation. */
 function claudeDir() {
-  const setting = String(vscode.workspace.getConfiguration("claudeContext").get("claudeDir") || "").trim();
-  return setting || process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
+  return core.claudeDir(vscode.workspace.getConfiguration("claudeContext").get("claudeDir"));
 }
 
 function activate(context) {
@@ -60,8 +57,8 @@ class ClaudeContextViewProvider {
   }
 
   renderHtml() {
-    const nonce = randomNonce();
-    const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}';">`;
+    const nonce = core.randomNonce();
+    const csp = `<meta http-equiv="Content-Security-Policy" content="${core.pageCsp(nonce)}">`;
     return fs.readFileSync(path.join(__dirname, "panel.html"), "utf8")
       .replace("<!-- csp -->", csp)
       .replace(/\{\{nonce\}\}/g, nonce);
@@ -81,11 +78,6 @@ class ClaudeContextViewProvider {
   }
 
   dispose() { this.watcher.stop(); }
-}
-
-/** A CSP nonce: unguessable, so only the panel's own inline style and script run. */
-function randomNonce() {
-  return crypto.randomBytes(16).toString("base64");
 }
 
 module.exports = { activate, deactivate };

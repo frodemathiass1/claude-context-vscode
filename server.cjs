@@ -19,7 +19,6 @@
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const http = require("node:http");
-const os = require("node:os");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 const core = require("./core.cjs");
@@ -68,22 +67,18 @@ function themeCss(theme) {
  * and returns { getState, setState, postMessage }. `connect` lets the page reach its own origin (fetch,
  * EventSource); without it the CSP is the webview's.
  */
-function browserPage({ theme, host, connect = false, nonce = randomNonce() }) {
+function browserPage({ theme, host, connect = false, nonce = core.randomNonce() }) {
   const standIn = `
   (() => {
     const deliver = (msg) => setTimeout(() => window.postMessage(msg, "*"));
     const api = (${host})(deliver);
     window.acquireVsCodeApi = () => api;
   })();`;
-  const head = `<meta http-equiv="Content-Security-Policy" content="${pageCsp(nonce, connect)}">
+  const head = `<meta http-equiv="Content-Security-Policy" content="${core.pageCsp(nonce, connect)}">
 <style nonce="${nonce}">${themeCss(theme)}</style>
 <script nonce="${nonce}">${standIn}</script>`;
   // a function, so a "$&" in the host's source is not a replacement pattern
   return fs.readFileSync(PANEL, "utf8").replace("<!-- csp -->", () => head).replace(/\{\{nonce\}\}/g, nonce);
-}
-
-function pageCsp(nonce, connect) {
-  return `default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}';${connect ? " connect-src 'self';" : ""}`;
 }
 
 /**
@@ -91,51 +86,63 @@ function pageCsp(nonce, connect) {
  * a page has. getState and setState keep the webview state in localStorage, and so does a scope switch, where VS
  * Code keeps it in globalState; postMessage is a POST to /message, and the events on /events go to the panel. The
  * page names itself with a random client id, so each tab has its own scope. A message sent before the event stream
- * is open waits for it, so the server knows the page before `ready` arrives. When the stream drops, the last list
- * comes back with an error line, so the panel does not go on as if it were live.
+ * is open waits for it, so the server knows the page before `ready` arrives. When the stream drops, or never opens,
+ * the last list (or an empty one) comes back with an error line, so the panel does not go on as if it were live.
+ * test/server.test.js runs this function with stand-ins for what the browser gives it.
  */
 function browserHost(deliver) {
-  const STATE = "claudeContext.state", SCOPE = "claudeContext.allProjects";
+  const STATE = "claudeContext.state", SCOPE = "claudeContext.allProjects", RETRY_MS = 2000;
+  const NO_SERVER = "No connection to the server: is node server.cjs still running? Start it again and open the URL it prints.";
   const load = (key) => { try { return JSON.parse(localStorage.getItem(key)); } catch { return null; } };
   const save = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* storage off: the choice lasts this page */ } };
-  let state = load(STATE);
+  let state = load(STATE), all = !!load(SCOPE);
   const token = new URLSearchParams(location.search).get("token") || "";
   const client = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
   const query = (extra) => `?${new URLSearchParams({ token, client, ...extra })}`;
-  const send = (msg) => fetch(`message${query()}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(msg) }).catch(() => {});
-  let open = false, opened = false, last = null;
+  // one at a time, in the order the panel sent them: two fetches at once can arrive the other way round, and of two
+  // scope switches the server keeps the last to arrive
+  let sending = Promise.resolve();
+  const send = (msg) => {
+    sending = sending.then(() => fetch(`message${query()}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(msg) })).catch(() => {});
+  };
+  let open = false, opened = false, told = false, last = null;
   const queued = [];
-  const events = new EventSource(`events${query({ all: load(SCOPE) ? "1" : "0" })}`);
-  events.onopen = () => {
-    open = true;
-    if (opened) send({ type: "scope", all: !!load(SCOPE) }); // a new stream after a drop: the server forgot the page; this also sends the list
-    opened = true;
-    queued.splice(0).forEach(send);
+  // the page opens the stream again itself after a drop, not EventSource, which would keep the URL it was made with:
+  // the scope is in the URL, so the server starts the page in the scope it is in now, not the one it loaded with
+  const connect = () => {
+    const events = new EventSource(`events${query({ all: all ? "1" : "0" })}`);
+    events.onopen = () => {
+      open = true;
+      told = false;
+      if (opened) send({ type: "ready" }); // a new stream after a drop: the server forgot the page; ready brings the list
+      opened = true;
+      queued.splice(0).forEach(send);
+    };
+    events.onmessage = (e) => {
+      let msg;
+      try { msg = JSON.parse(e.data); } catch { return; }
+      if (msg && msg.type === "sessions") last = msg;
+      deliver(msg);
+    };
+    events.onerror = () => {
+      events.close();
+      open = false;
+      setTimeout(connect, RETRY_MS);
+      if (told) return; // the panel hears of the drop once, not on every retry
+      told = true;
+      const list = last || { type: "sessions", all };
+      deliver({ ...list, full: false, errors: [...(list.errors || []), NO_SERVER] });
+    };
   };
-  events.onmessage = (e) => {
-    let msg;
-    try { msg = JSON.parse(e.data); } catch { return; }
-    if (msg && msg.type === "sessions") last = msg;
-    deliver(msg);
-  };
-  events.onerror = () => {
-    if (!open) return; // EventSource retries every 2 s; the panel hears of the drop once
-    open = false;
-    if (last) deliver({ ...last, full: false, errors: [...(last.errors || []), "No connection to the server: is node server.cjs still running? Start it again and open the URL it prints."] });
-  };
+  connect();
   return {
     getState: () => state,
     setState: (s) => { state = s; save(STATE, s); },
     postMessage: (msg) => {
-      if (msg && msg.type === "scope") save(SCOPE, !!msg.all);
+      if (msg && msg.type === "scope") { all = !!msg.all; save(SCOPE, all); }
       if (open) send(msg); else queued.push(msg);
     },
   };
-}
-
-/** A CSP nonce: unguessable, so only the panel's own inline style and script run. */
-function randomNonce() {
-  return crypto.randomBytes(16).toString("base64");
 }
 
 // ── The server ──
@@ -146,27 +153,28 @@ function randomNonce() {
  */
 function parseArgs(argv, env = process.env, cwd = process.cwd()) {
   const opts = { folders: [], port: null, claudeDir: null, open: true, help: false };
-  const value = (i, flag) => { if (i >= argv.length) throw new Error(`${flag} needs a value`); return argv[i]; };
+  // an empty value (an unset variable in `--port "$PORT"`) or the next flag is no value
+  const value = (i, flag) => { if (i >= argv.length || !argv[i].trim() || argv[i].startsWith("--")) throw new Error(`${flag} needs a value`); return argv[i]; };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--port") {
-      const n = Number(value(++i, a));
-      if (!Number.isInteger(n) || n < 0 || n > 65535) throw new Error(`Not a port: ${argv[i]}`);
+      const raw = value(++i, a), n = Number(raw);
+      if (!/^\d+$/.test(raw) || n > 65535) throw new Error(`Not a port: ${raw}`);
       opts.port = n;
-    } else if (a === "--claude-dir") opts.claudeDir = path.resolve(cwd, value(++i, a));
+    } else if (a === "--claude-dir") opts.claudeDir = value(++i, a);
     else if (a === "--no-open") opts.open = false;
     else if (a === "--help" || a === "-h") opts.help = true;
     else if (a.startsWith("-")) throw new Error(`Unknown option: ${a}`);
     else opts.folders.push(path.resolve(cwd, a));
   }
-  opts.claudeDir = opts.claudeDir || (env.CLAUDE_CONFIG_DIR ? path.resolve(cwd, env.CLAUDE_CONFIG_DIR) : path.join(os.homedir(), ".claude"));
+  opts.claudeDir = core.claudeDir(opts.claudeDir, env, cwd);
   return opts;
 }
 
 /**
  * Starts the server on 127.0.0.1. `folders` are "This workspace" (none: every live session, as in a VS Code window
  * without a folder); `port` null tries DEFAULT_PORT, then a free one; `alive` and `tickMs` are for the tests.
- * Resolves to { server, url, port, token, close }.
+ * Resolves to { server, url, port, token, close, readers } (readers: the one per scope, for the tests).
  */
 async function startServer({ claudeDir, folders = [], port = null, alive, tickMs } = {}) {
   const token = crypto.randomBytes(24).toString("hex");
@@ -190,8 +198,17 @@ async function startServer({ claudeDir, folders = [], port = null, alive, tickMs
       watched.set(all, payload.projectFolders);
       for (const c of clients.values()) if (c.all === all) push(c, { type: "sessions", ...payload, full: full && c === client }); // full: the requester's refresh receipt
     }
+    prune();
+  }
+
+  /**
+   * Drops the reader and the folders of each scope no page is in now: the reader of "All projects" holds the parsed
+   * state of every live transcript, and would otherwise stay in memory after its last page closed or switched.
+   */
+  function prune() {
     const scopes = new Set([...clients.values()].map((c) => c.all));
-    watcher.watchAll([...new Set([...watched].filter(([all]) => scopes.has(all)).flatMap(([, f]) => f))]);
+    for (const all of [...readers.keys()]) if (!scopes.has(all)) { readers.delete(all); watched.delete(all); }
+    watcher.watchAll([...new Set([...watched.values()].flat())]);
   }
 
   function onMessage(client, msg) {
@@ -205,8 +222,19 @@ async function startServer({ claudeDir, folders = [], port = null, alive, tickMs
     }
   }
 
-  const server = http.createServer((req, res) => {
-    const own = server.address().port;
+  let own = null; // the port, known once listening; server.address() is null again once close() has begun
+  const sockets = new Set();
+  // one bad request must not end the server for every page: an exception is that request's 500
+  const guard = (res, fn) => {
+    try { fn(); } catch (e) {
+      console.error("Claude Context: a request failed", e);
+      if (res.headersSent) res.destroy(); else refuse(res, 500, "Server error");
+    }
+  };
+  const server = http.createServer((req, res) => guard(res, () => route(req, res)));
+  server.on("connection", (socket) => { sockets.add(socket); socket.on("close", () => sockets.delete(socket)); });
+
+  function route(req, res) {
     const host = String(req.headers.host || "").toLowerCase();
     if (host !== `127.0.0.1:${own}` && host !== `localhost:${own}`) return refuse(res, 403, "Host not allowed"); // DNS rebinding
     let url;
@@ -214,9 +242,9 @@ async function startServer({ claudeDir, folders = [], port = null, alive, tickMs
     if (!sameToken(url.searchParams.get("token"), token)) return refuse(res, 403, "Wrong or missing token");
     if (url.pathname === "/") {
       if (req.method !== "GET") return refuse(res, 405, "Method not allowed");
-      const nonce = randomNonce();
+      const nonce = core.randomNonce();
       res.writeHead(200, headers({ "Content-Type": "text/html; charset=utf-8",
-        "Content-Security-Policy": `${pageCsp(nonce, true)} frame-ancestors 'none'; base-uri 'none'; form-action 'none';` }));
+        "Content-Security-Policy": `${core.pageCsp(nonce, true)} frame-ancestors 'none'; base-uri 'none'; form-action 'none';` }));
       return res.end(browserPage({ theme: "auto", host: browserHost.toString(), connect: true, nonce }));
     }
     const id = url.searchParams.get("client");
@@ -224,12 +252,12 @@ async function startServer({ claudeDir, folders = [], port = null, alive, tickMs
       if (req.method !== "GET") return refuse(res, 405, "Method not allowed");
       if (!CLIENT_ID.test(id || "")) return refuse(res, 400, "Bad client id");
       res.writeHead(200, headers({ "Content-Type": "text/event-stream; charset=utf-8" }));
-      res.write("retry: 2000\n\n");
+      res.write(": open\n\n"); // a comment line, so the headers go now and the page's onopen fires
       const before = clients.get(id);
       if (before) before.res.end();
       const client = { res, all: url.searchParams.get("all") === "1" };
       clients.set(id, client);
-      req.on("close", () => { if (clients.get(id) === client) clients.delete(id); });
+      req.on("close", () => { if (clients.get(id) === client) { clients.delete(id); prune(); } });
       return;
     }
     if (url.pathname === "/message") {
@@ -238,16 +266,16 @@ async function startServer({ claudeDir, folders = [], port = null, alive, tickMs
       if (!/^application\/json\b/.test(String(req.headers["content-type"] || ""))) return refuse(res, 415, "Expected application/json");
       const client = clients.get(id);
       if (!client) return refuse(res, 404, "No event stream for this client");
-      return readBody(req, (err, body) => {
+      return readBody(req, (err, body) => guard(res, () => {
         if (err) return refuse(res, 413, "Message too large");
         let msg;
         try { msg = JSON.parse(body); } catch { return refuse(res, 400, "Not JSON"); }
         onMessage(client, msg);
         res.writeHead(204, headers()).end();
-      });
+      }));
     }
     refuse(res, 404, "Not found");
-  });
+  }
 
   const listen = (p) => new Promise((resolve, reject) => {
     server.once("error", reject);
@@ -258,15 +286,17 @@ async function startServer({ claudeDir, folders = [], port = null, alive, tickMs
     catch (e) { if (e.code !== "EADDRINUSE") throw e; await listen(0); }
   } else await listen(port);
   watcher.start();
-  const actual = server.address().port;
+  own = server.address().port;
   return {
-    server, url: `http://127.0.0.1:${actual}/?token=${token}`, port: actual, token,
+    server, url: `http://127.0.0.1:${own}/?token=${token}`, port: own, token, readers,
     close: () => new Promise((resolve) => {
       watcher.stop();
       for (const c of clients.values()) c.res.end();
       clients.clear();
       server.close(() => resolve());
-      server.closeAllConnections();
+      // the event streams and keep-alive sockets would hold close() open; server.closeAllConnections() does this,
+      // but only from Node 18.2, and the README asks for 18
+      for (const socket of sockets) socket.destroy();
     }),
   };
 }
@@ -281,10 +311,14 @@ function refuse(res, status, text) {
   res.writeHead(status, headers({ "Content-Type": "text/plain; charset=utf-8" })).end(`${text}\n`);
 }
 
-/** Compared in constant time, so the token cannot be guessed a character at a time. */
+/**
+ * Compared in constant time, so the token cannot be guessed a character at a time. The lengths compared are the
+ * bytes': 48 characters outside ASCII are more than 48 bytes, and timingSafeEqual throws on buffers of two lengths.
+ */
 function sameToken(given, token) {
-  if (typeof given !== "string" || given.length !== token.length) return false;
-  return crypto.timingSafeEqual(Buffer.from(given), Buffer.from(token));
+  if (typeof given !== "string") return false;
+  const a = Buffer.from(given), b = Buffer.from(token);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
 function readBody(req, done) {
