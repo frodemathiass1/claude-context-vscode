@@ -461,6 +461,12 @@ describe("buildSessions", () => {
     expect(without).toMatchObject({ tokens: null, zone: null, modelShort: null, title: null, turns: 0, sinceMs: null, dimmed: false });
   });
 
+  it("startedAt is the registry's epoch ms as ISO, null when missing or not a number", () => {
+    const withStart = [{ ...reg(1, "a", MINE, "idle"), startedAt: 1792603960396 }, { ...reg(2, "b", MINE, "idle"), startedAt: "soon" }, reg(3, "c", MINE, "idle")];
+    const r = K.buildSessions({ registry: withStart, transcripts: {}, now: NOW, workspaceFolders: [MINE], all: false });
+    expect(Object.fromEntries(r.sessions.map((s) => [s.sessionId, s.startedAt]))).toEqual({ a: "2026-10-21T17:32:40.396Z", b: null, c: null });
+  });
+
   it("all projects takes the whole machine grouped per project, in the order of the list", () => {
     const r = K.buildSessions({ registry, transcripts, now: NOW, workspaceFolders: [MINE], all: true });
     expect(r.sessions.map((s) => s.sessionId)).toEqual(["busy", "other", "new", "old", "without"]);
