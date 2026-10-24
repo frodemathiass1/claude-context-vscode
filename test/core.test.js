@@ -4,6 +4,8 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
+import os from "node:os";
+import path from "node:path";
 const require = createRequire(import.meta.url);
 const K = require("../core.cjs");
 
@@ -402,6 +404,25 @@ describe("projectName", () => {
     expect(K.projectName("/Users/me/Dev/my-project")).toBe("my-project");
     expect(K.projectName("c:\\Develop\\my-project")).toBe("my-project");
     expect(K.projectName("C:\\Develop\\my-project\\")).toBe("my-project");
+  });
+});
+
+describe("claudeDir", () => {
+  const cwd = path.resolve("/work");
+  it("is the setting or flag, else CLAUDE_CONFIG_DIR, else ~/.claude; a relative one is resolved against the working folder", () => {
+    expect(K.claudeDir("", {}, cwd)).toBe(path.join(os.homedir(), ".claude"));
+    expect(K.claudeDir(undefined, { CLAUDE_CONFIG_DIR: path.resolve("/env") }, cwd)).toBe(path.resolve("/env"));
+    expect(K.claudeDir("  ", { CLAUDE_CONFIG_DIR: "rel" }, cwd)).toBe(path.join(cwd, "rel")); // a blank setting is no setting
+    expect(K.claudeDir(" c ", { CLAUDE_CONFIG_DIR: path.resolve("/env") }, cwd)).toBe(path.join(cwd, "c"));
+  });
+});
+
+describe("pageCsp and randomNonce", () => {
+  it("allow only the nonce'd inline style and script; connect adds the page's own origin", () => {
+    expect(K.pageCsp("n")).toBe("default-src 'none'; style-src 'nonce-n'; script-src 'nonce-n';");
+    expect(K.pageCsp("n", true)).toBe("default-src 'none'; style-src 'nonce-n'; script-src 'nonce-n'; connect-src 'self';");
+    expect(K.randomNonce()).toMatch(/^[A-Za-z0-9+/]{22}==$/);
+    expect(K.randomNonce()).not.toBe(K.randomNonce());
   });
 });
 

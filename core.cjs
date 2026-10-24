@@ -1,10 +1,12 @@
 // core.cjs — pure functions behind the "Claude Context" panel. No VS Code dependency: the extension
-// host (extension.js) and the tests (test/core.test.js) both require this file. The transcript format is
+// hosts (extension.js, server.cjs) and the tests (test/core.test.js) all require this file. The transcript format is
 // Claude Code's internal one and may change between versions, so a missing field yields null
 // ("unknown"), never an error.
 "use strict";
 
+const crypto = require("node:crypto");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 
 // Quality warnings, not the window limit: absolute token counts calibrated on Matt Pocock's smart/dumb zone
@@ -455,6 +457,28 @@ function modelShort(model) {
 }
 
 /**
+ * The folder Claude Code stores its data in, for both hosts: `given` (the VS Code setting or the --claude-dir flag),
+ * else CLAUDE_CONFIG_DIR, else ~/.claude. A relative one is resolved against `cwd`, so both hosts read the same one.
+ */
+function claudeDir(given, env = process.env, cwd = process.cwd()) {
+  const dir = String(given || "").trim() || env.CLAUDE_CONFIG_DIR;
+  return dir ? path.resolve(cwd, dir) : path.join(os.homedir(), ".claude");
+}
+
+/**
+ * The panel's CSP, one copy for both hosts and the demo: only the nonce'd inline style and script run; `connect`
+ * lets the browser page reach its own origin (fetch, EventSource), which the webview never needs.
+ */
+function pageCsp(nonce, connect = false) {
+  return `default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}';${connect ? " connect-src 'self';" : ""}`;
+}
+
+/** A CSP nonce: unguessable, so only the panel's own inline style and script run. */
+function randomNonce() {
+  return crypto.randomBytes(16).toString("base64");
+}
+
+/**
  * Reads the registry and the transcripts incrementally: each transcript keeps its parsed state and byte
  * offset, so a refresh reads only the new bytes; `read({ full: true })` forgets that state first and reads
  * every transcript from its first byte (the panel's refresh button). It lives here and not in extension.js
@@ -602,4 +626,4 @@ class SessionWatcher {
   }
 }
 
-module.exports = { projectSlug, zone, dips, readRegistry, readTail, parseTranscript, seriesFor, contextFacts, growthRows, buildSessions, inFolder, projectName, modelShort, SessionReader, SessionWatcher };
+module.exports = { projectSlug, zone, dips, readRegistry, readTail, parseTranscript, seriesFor, contextFacts, growthRows, buildSessions, inFolder, projectName, modelShort, claudeDir, pageCsp, randomNonce, SessionReader, SessionWatcher };

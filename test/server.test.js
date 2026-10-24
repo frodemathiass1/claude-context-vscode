@@ -130,6 +130,8 @@ describe("server.cjs", () => {
       expect((await request(srv.port, "/")).status).toBe(403);
       expect((await request(srv.port, `/?token=${"0".repeat(48)}`)).status).toBe(403);
       expect((await request(srv.port, `/?token=${srv.token.slice(1)}`)).status).toBe(403);
+      expect((await request(srv.port, `/?token=${"%C3%A9".repeat(48)}`)).status).toBe(403); // 48 characters, 96 bytes
+      expect((await request(srv.port, `/?token=${srv.token}`)).status).toBe(200); // and the server is still there
       expect((await request(srv.port, `/events?client=${"a".repeat(32)}`)).status).toBe(403);
     } finally { await srv.close(); }
   });
@@ -224,6 +226,32 @@ describe("server.cjs", () => {
       expect(last.all).toBe(true);
     } finally { a.close(); b.close(); await srv.close(); }
   });
+
+  it("a scope no page is in loses its reader, after a switch and after the last page closed", async () => {
+    const srv = await start([MINE]);
+    const p = await page(srv);
+    try {
+      await p.post({ type: "scope", all: true });
+      await p.next("sessions");
+      expect([...srv.readers.keys()]).toEqual([true]);
+      await p.post({ type: "scope", all: false });
+      await p.next("sessions");
+      expect([...srv.readers.keys()]).toEqual([false]);
+      p.close();
+      await vi.waitFor(() => expect(srv.readers.size).toBe(0));
+    } finally { p.close(); await srv.close(); }
+  });
+
+  it("close() ends with a page's event stream and a keep-alive socket still open", async () => {
+    const srv = await start();
+    const p = await page(srv);
+    const agent = new http.Agent({ keepAlive: true });
+    await new Promise((resolve) => http.get({ host: "127.0.0.1", port: srv.port, path: `/?token=${srv.token}`, agent,
+      headers: { host: `127.0.0.1:${srv.port}` } }, (res) => res.resume().on("end", resolve)));
+    await srv.close();
+    agent.destroy();
+    p.close();
+  });
 });
 
 describe("parseArgs (server.cjs)", () => {
@@ -242,6 +270,15 @@ describe("parseArgs (server.cjs)", () => {
     expect(() => S.parseArgs(["--port", "70000"], {}, cwd)).toThrow("Not a port");
     expect(() => S.parseArgs(["--port"], {}, cwd)).toThrow("--port needs a value");
     expect(() => S.parseArgs(["--open"], {}, cwd)).toThrow("Unknown option: --open");
+    expect(() => S.parseArgs(["--port", ""], {}, cwd)).toThrow("--port needs a value"); // `--port "$PORT"` with PORT unset
+    expect(() => S.parseArgs(["--port", " "], {}, cwd)).toThrow("--port needs a value");
+    expect(() => S.parseArgs(["--port", "1e3"], {}, cwd)).toThrow("Not a port: 1e3");
+    expect(() => S.parseArgs(["--port", "-1"], {}, cwd)).toThrow("Not a port: -1");
+    expect(() => S.parseArgs(["--claude-dir", "--no-open"], {}, cwd)).toThrow("--claude-dir needs a value");
+  });
+
+  it("a relative CLAUDE_CONFIG_DIR is resolved against the working folder", () => {
+    expect(S.parseArgs([], { CLAUDE_CONFIG_DIR: "rel" }, cwd).claudeDir).toBe(path.join(cwd, "rel"));
   });
 });
 
@@ -255,7 +292,7 @@ describe("the browser stand-in, shared by server.cjs and scripts/demo.cjs", () =
     expect(page).toContain("window.acquireVsCodeApi = () => api;");
     expect(page).not.toContain("prefers-color-scheme: dark) { html");
     expect(page).not.toContain("connect-src");
-    expect(page).toContain(`<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'nonce-demo'; script-src 'nonce-demo';">`);
+    expect(page).toContain(`<meta http-equiv="Content-Security-Policy" content="${K.pageCsp("demo")}">`); // the one extension.js gives the webview
   });
 
   it("the server's page follows the system theme with both variable sets, and may connect to its own origin", () => {
@@ -268,5 +305,85 @@ describe("the browser stand-in, shared by server.cjs and scripts/demo.cjs", () =
 
   it("a $ pattern in the host's source is kept as it is", () => {
     expect(S.browserPage({ theme: "light", host: "() => ({ x: \"$&$'\" })" })).toContain("x: \"$&$'\"");
+  });
+});
+
+/**
+ * browserHost as the server's page runs it, with stand-ins for what the browser gives it: EventSource, fetch (each
+ * call waits until the test answers it), localStorage, location, crypto and setTimeout.
+ */
+function browserHost({ storage = {} } = {}) {
+  const sources = [], fetches = [], timers = [], delivered = [];
+  class EventSource {
+    constructor(url) { this.url = url; this.closed = false; sources.push(this); }
+    close() { this.closed = true; }
+  }
+  const fetch = (url, init) => new Promise((resolve) => fetches.push({ url, msg: JSON.parse(init.body), resolve }));
+  const localStorage = { getItem: (k) => (k in storage ? storage[k] : null), setItem: (k, v) => { storage[k] = String(v); } };
+  const make = new Function("EventSource", "fetch", "localStorage", "location", "crypto", "setTimeout", `return (${S.browserHost.toString()});`);
+  const api = make(EventSource, fetch, localStorage, { search: "?token=t" }, crypto.webcrypto, (fn) => timers.push(fn))((m) => delivered.push(m));
+  const settle = () => new Promise((resolve) => setImmediate(resolve));
+  /** Answers every fetch, one after the other as they come, and gives the messages sent. */
+  const drain = async () => {
+    await settle();
+    for (let i = 0; i < fetches.length; i++) { fetches[i].resolve(); await settle(); }
+    return fetches.map((f) => f.msg);
+  };
+  return { api, sources, fetches, timers, delivered, storage, settle, drain };
+}
+
+describe("browserHost (server.cjs), the host in the server's page", () => {
+  it("names the page and its scope in the stream's URL, and holds messages until the stream is open", async () => {
+    const h = browserHost({ storage: { "claudeContext.allProjects": "true" } });
+    expect(h.sources[0].url).toMatch(/^events\?token=t&client=[0-9a-f]{32}&all=1$/);
+    h.api.postMessage({ type: "ready" });
+    await h.settle();
+    expect(h.fetches).toHaveLength(0);
+    h.sources[0].onopen();
+    expect(await h.drain()).toEqual([{ type: "ready" }]);
+    expect(h.fetches[0].url).toMatch(/^message\?token=t&client=[0-9a-f]{32}$/);
+  });
+
+  it("sends one message at a time, in the order the panel sent them", async () => {
+    const h = browserHost();
+    h.sources[0].onopen();
+    h.api.postMessage({ type: "scope", all: true });
+    h.api.postMessage({ type: "scope", all: false });
+    h.api.postMessage({ type: "detail", sessionId: "x" });
+    await h.settle();
+    expect(h.fetches).toHaveLength(1); // the next waits for the answer to this one
+    expect(await h.drain()).toEqual([{ type: "scope", all: true }, { type: "scope", all: false }, { type: "detail", sessionId: "x" }]);
+    expect(h.storage["claudeContext.allProjects"]).toBe("false");
+  });
+
+  it("after a drop: the last list with an error line once, and a new stream in the scope the page is in now, which asks for the list", async () => {
+    const h = browserHost();
+    h.sources[0].onopen();
+    const list = { type: "sessions", sessions: [{ sessionId: "a" }], errors: ["one"] };
+    h.sources[0].onmessage({ data: JSON.stringify(list) });
+    h.api.postMessage({ type: "scope", all: true });
+    h.sources[0].onerror();
+    expect(h.sources[0].closed).toBe(true);
+    expect(h.delivered.at(-1)).toEqual({ ...list, full: false, errors: ["one", expect.stringContaining("No connection to the server")] });
+    h.timers.shift()();
+    expect(h.sources[1].url).toMatch(/&all=1$/);
+    h.sources[1].onerror(); // a retry that fails too: no second error line
+    expect(h.delivered).toHaveLength(2);
+    h.timers.shift()();
+    h.sources[2].onopen();
+    expect(await h.drain()).toEqual([{ type: "scope", all: true }, { type: "ready" }]);
+  });
+
+  it("a stream that never opens gives an empty list with the error line, so the panel does not wait for good", () => {
+    const h = browserHost();
+    h.sources[0].onerror();
+    expect(h.delivered).toEqual([{ type: "sessions", all: false, full: false, errors: [expect.stringContaining("No connection to the server")] }]);
+    expect(h.timers).toHaveLength(1);
+  });
+
+  it("keeps the webview state in localStorage, for the next page", () => {
+    const h = browserHost();
+    h.api.setState({ open: "a" });
+    expect(browserHost({ storage: h.storage }).api.getState()).toEqual({ open: "a" });
   });
 });

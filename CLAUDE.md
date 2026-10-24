@@ -10,7 +10,8 @@ No dependencies, no build step, and it stays that way: VS Code loads the folder 
 server as it is.
 
 - `core.cjs`: pure functions and the two classes that touch the disk (`SessionReader`, `SessionWatcher`).
-  No `vscode` import, so the tests can run all of it. Everything that can be computed belongs here.
+  No `vscode` import, so the tests can run all of it. Everything that can be computed belongs here, and what
+  both hosts need (the Claude folder, the panel's CSP), so there is one copy.
 - `extension.js`: the VS Code host. Reads the setting, owns the reader and the watcher, and talks to the webview
   with `postMessage` only (`ready`, `refresh`, `scope`, `detail` in; `sessions`, `detail` out).
 - `server.cjs`: the browser host, with Node's `http` only. The same messages as `extension.js`, in as
@@ -18,7 +19,8 @@ server as it is.
   stand-in for the webview (the `--vscode-*` theme variables and `acquireVsCodeApi`), which `scripts/demo.cjs`
   uses too, so there is one copy. Its rules: listen on `127.0.0.1` only, never `0.0.0.0`; every request carries
   the token made at start; refuse a `Host` that is not `127.0.0.1:<port>` or `localhost:<port>` and a `POST`
-  from another `Origin`; send no CORS headers. A new route keeps all four, with a test.
+  from another `Origin`; send no CORS headers. A new route keeps all four, with a test. Its page host,
+  `browserHost`, runs in the browser but is tested in Node with stand-ins for what the browser gives it.
 - `panel.html`: the webview, one file with its CSS and script. It cannot read files. The CSP allows only
   nonce'd inline style and script (and, in the browser, `connect-src 'self'`), so no external resources. It has
   no automated tests, so keep logic that can be tested out of it. Its words fit both hosts.
