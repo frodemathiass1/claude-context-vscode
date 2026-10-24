@@ -73,15 +73,18 @@ describe("parseTranscript", () => {
     expect(K.parseTranscript(lines("synthetic-last")).series).toEqual([140005]);
   });
 
-  it("the series keeps the last 200 turns: older points fall out first", () => {
+  it("the series keeps every turn of the transcript; the list's cut to the last 200 is seriesFor's", () => {
     const all = [];
     for (let i = 1; i <= 230; i++) all.push(turn(i, 1000 * i));
     const t = K.parseTranscript(all);
     expect(t.turns).toBe(230);
-    expect(t.series.length).toBe(200);
-    expect(t.series[0]).toBe(31000);
-    expect(t.series[199]).toBe(230000);
+    expect(t.series.length).toBe(230);
+    expect(t.series[0]).toBe(1000);
     expect(t.tokens).toBe(230000);
+    const listed = K.seriesFor(t, 200).series;
+    expect(listed.length).toBe(200);
+    expect(listed[0]).toBe(31000);
+    expect(listed[199]).toBe(230000);
   });
 
   it("the continuation gives the same series as the whole file, also past the 200 limit, and the previous state is not mutated", () => {
@@ -173,14 +176,17 @@ describe("parseTranscript", () => {
     expect(K.parseTranscript(all.slice(0, 7)).compactions).toEqual([]);
   });
 
-  it("the compaction index follows the series when it is trimmed to 200 turns, and drops out with its turn", () => {
+  it("the compaction index stays the turn's index in the whole series; cut to 200 turns it moves with the cut and drops out with its turn", () => {
     const boundary = JSON.stringify({ type: "system", subtype: "compact_boundary", isSidechain: false, compactMetadata: { trigger: "manual", preTokens: 9, postTokens: 1 } });
     const all = [];
     for (let i = 1; i <= 205; i++) { if (i === 10) all.push(boundary); all.push(turn(i, 1000 * i)); }
-    // turn 10 is index 9; five turns fall out, so it is index 4
-    expect(K.parseTranscript(all).compactions).toEqual([{ at: 4, trigger: "manual", preTokens: 9, postTokens: 1, durationMs: null }]);
+    const c = { trigger: "manual", preTokens: 9, postTokens: 1, durationMs: null };
+    // turn 10 is index 9; cut to 200, five turns fall out, so it is index 4
+    expect(K.parseTranscript(all).compactions).toEqual([{ at: 9, ...c }]);
+    expect(K.seriesFor(K.parseTranscript(all), 200).compactions).toEqual([{ at: 4, ...c }]);
     all.push(...Array.from({ length: 5 }, (_, j) => turn(206 + j, 1000)));
-    expect(K.parseTranscript(all).compactions).toEqual([]);
+    expect(K.parseTranscript(all).compactions).toEqual([{ at: 9, ...c }]);
+    expect(K.seriesFor(K.parseTranscript(all), 200).compactions).toEqual([]);
   });
 
   it("a boundary without metadata or in a sidechain: the first gives a compaction without numbers, the second nothing", () => {
@@ -213,11 +219,12 @@ describe("parseTranscript", () => {
     expect(K.parseTranscript([turn(1, 5000, {}, { output_tokens: 42 })])).toMatchObject({ outputSeries: [42], thinkingSeries: [0], outputTotal: 42, thinkingTotal: 0, effort: null });
     const all = lines("compaction");
     expect(K.parseTranscript(all.slice(4), K.parseTranscript(all.slice(0, 4)))).toEqual(K.parseTranscript(all));
-    // past the 200 limit the output series is trimmed with the series, the totals are not
+    // past 200 turns the output series is kept whole like the series, and cut with it for the list
     const many = Array.from({ length: 205 }, (_, j) => turn(j + 1, 1000, {}, { output_tokens: 2 }));
     const t = K.parseTranscript(many);
-    expect(t.outputSeries.length).toBe(200);
+    expect(t.outputSeries.length).toBe(205);
     expect(t.outputTotal).toBe(410);
+    expect(K.seriesFor(t, 200)).toMatchObject({ outputSeries: Array(200).fill(2), thinkingSeries: Array(200).fill(0) });
   });
 
   // the baseline: the first turn of the current segment, which starts with the transcript or at a compaction
@@ -248,12 +255,17 @@ describe("parseTranscript", () => {
     expect(K.parseTranscript(all.slice(2, 4), older)).toMatchObject({ baseline: null, baselineCause: null });
   });
 
-  it("baselineAt follows the series when it is trimmed to 200 turns and is null once the first turn falls out; the baseline stays", () => {
+  it("baselineAt is the index in the whole series; cut to 200 turns it moves with the cut and is null once the first turn falls out, the baseline stays", () => {
     const all = Array.from({ length: 201 }, (_, j) => turn(j + 1, 1000 * (j + 1)));
-    expect(K.parseTranscript(all)).toMatchObject({ baseline: 1000, baselineAt: null, baselineCause: "start" });
+    const whole = K.parseTranscript(all);
+    expect(whole).toMatchObject({ baseline: 1000, baselineAt: 0, baselineCause: "start" });
+    expect(whole.series[whole.baselineAt]).toBe(whole.baseline);
+    expect(K.seriesFor(whole, 200).baselineAt).toBeNull();
     const boundary = JSON.stringify({ type: "system", subtype: "compact_boundary", isSidechain: false, compactMetadata: { trigger: "auto" } });
-    const later = [...all.slice(0, 10), boundary, ...all.slice(10)];
-    expect(K.parseTranscript(later)).toMatchObject({ baseline: 11000, baselineAt: 9, baselineCause: "compaction" });
+    const later = K.parseTranscript([...all.slice(0, 10), boundary, ...all.slice(10)]);
+    expect(later).toMatchObject({ baseline: 11000, baselineAt: 10, baselineCause: "compaction" });
+    expect(later.series[later.baselineAt]).toBe(later.baseline);
+    expect(K.seriesFor(later, 200).baselineAt).toBe(9);
   });
 
   // the growth by source: each turn's growth split over the previous output and what entered since
@@ -423,6 +435,75 @@ describe("readTail", () => {
   });
 });
 
+describe("seriesFor", () => {
+  const state = { series: [10, 20, 30, 5, 40, 2], outputSeries: [1, 2, 3, 4, 5, 6], thinkingSeries: [0, 1, 0, 1, 0, 1],
+    compactions: [{ at: 1, trigger: "auto" }, { at: 3, trigger: "manual" }], baselineAt: 3 };
+
+  it("without a limit it gives every turn, and the dips without the turns of a compaction", () => {
+    expect(K.seriesFor(state)).toEqual({ series: [10, 20, 30, 5, 40, 2], outputSeries: [1, 2, 3, 4, 5, 6], thinkingSeries: [0, 1, 0, 1, 0, 1],
+      compactions: [{ at: 1, trigger: "auto" }, { at: 3, trigger: "manual" }], dips: [5], baselineAt: 3 });
+  });
+
+  it("cut to the last turns, the compactions and baselineAt move with the cut, and a cut one drops out or becomes null", () => {
+    expect(K.seriesFor(state, 4)).toEqual({ series: [30, 5, 40, 2], outputSeries: [3, 4, 5, 6], thinkingSeries: [0, 1, 0, 1],
+      compactions: [{ at: 1, trigger: "manual" }], dips: [3], baselineAt: 1 });
+    expect(K.seriesFor(state, 2)).toMatchObject({ series: [40, 2], compactions: [], baselineAt: null });
+  });
+
+  it("a state without the fields (older core, no transcript) gives empty lists and no baselineAt", () => {
+    expect(K.seriesFor({})).toEqual({ series: [], outputSeries: [], thinkingSeries: [], compactions: [], dips: [], baselineAt: null });
+  });
+});
+
+describe("summaryText", () => {
+  it("zone only: the zone and nothing else", () => {
+    expect(K.summaryText({ zone: "green" }, null)).toBe("Green zone.");
+  });
+
+  it("with the compactions of the session, one or more", () => {
+    expect(K.summaryText({ zone: "red", compactionCount: 1 }, null)).toBe("Red zone after 1 compaction.");
+    expect(K.summaryText({ zone: "orange", compactionCount: 2, baseline: 60000, baselineCause: "compaction" }, 45000))
+      .toBe("Orange zone after 2 compactions; this segment started at 60K, a fresh session here typically starts at ~45K.");
+  });
+
+  it("the segment's start: \"this segment\" after a compaction, \"the session\" from the start", () => {
+    expect(K.summaryText({ zone: "red", compactionCount: 1, baseline: 168600, baselineCause: "compaction" }, null)).toBe("Red zone after 1 compaction; this segment started at 169K.");
+    expect(K.summaryText({ zone: "yellow", compactionCount: 0, baseline: 29589, baselineCause: "start" }, null)).toBe("Yellow zone; the session started at 30K.");
+  });
+
+  it("with a median the typical fresh start follows, without one (null) the clause is left out", () => {
+    expect(K.summaryText({ zone: "red", compactionCount: 1, baseline: 168600, baselineCause: "compaction" }, 29000))
+      .toBe("Red zone after 1 compaction; this segment started at 169K, a fresh session here typically starts at ~29K.");
+    expect(K.summaryText({ zone: "green" }, 40500)).toBe("Green zone, a fresh session here typically starts at ~41K.");
+    expect(K.summaryText({ zone: "green", baseline: 12000, baselineCause: "start" }, null)).toBe("Green zone; the session started at 12K.");
+  });
+
+  it("no count gives no zone, and no advice or threshold is ever added", () => {
+    expect(K.summaryText({ zone: null, compactionCount: 0, baseline: null }, 40000)).toBe("No token count yet, so no zone.");
+    const all = ["green", "yellow", "orange", "red"].map((zone) => K.summaryText({ zone, compactionCount: 3, baseline: 50000, baselineCause: "start" }, 40000));
+    for (const text of all) expect(text).not.toMatch(/clear|compact |break|fresh session now|should|phase/i);
+  });
+});
+
+describe("growthRows", () => {
+  it("largest first, equal counts by name, each with its share of the sum", () => {
+    const rows = K.growthRows({ output: 10000, Read: 40000, Bash: 40000, you: 10000 });
+    expect(rows.map((r) => r.source)).toEqual(["Bash", "Read", "output", "you"]);
+    expect(rows.map((r) => r.tokens)).toEqual([40000, 40000, 10000, 10000]);
+    expect(rows.map((r) => r.share)).toEqual([0.4, 0.4, 0.1, 0.1]);
+  });
+
+  it("zero, negative and non-numbers are left out; nothing gives no rows", () => {
+    expect(K.growthRows({ Read: 0, Bash: -5, Grep: "x", Edit: NaN, you: 300 })).toEqual([{ source: "you", tokens: 300, share: 1 }]);
+    expect(K.growthRows({})).toEqual([]);
+    expect(K.growthRows(null)).toEqual([]);
+  });
+
+  it("a row carries the source, the tokens and the share only: the estimate's caveat is stated once under the chart, not per bar", () => {
+    for (const row of K.growthRows({ Read: 41200, output: 9600, mcp__royktest__browser_click: 700 })) expect(Object.keys(row)).toEqual(["source", "tokens", "share"]);
+  });
+});
+
 describe("buildSessions", () => {
   const NOW = "2026-10-21T22:40:00.000Z";
   const MINE = "/Users/frode/Dev/my-project", OTHER = "/Users/frode/Dev/other-project";
@@ -523,6 +604,38 @@ describe("buildSessions", () => {
       now: NOW, workspaceFolders: [MINE], all: false });
     expect(r.sessions.find((s) => s.sessionId === "new").growthBySource).toEqual({ Read: 41200, output: 9600 });
     expect(r.sessions.find((s) => s.sessionId === "without").growthBySource).toEqual({});
+  });
+
+  it("the growth as rows for the detail chart, largest first; none without a transcript", () => {
+    const r = K.buildSessions({ registry, transcripts: { ...transcripts, new: tail(143002, NOW, { growthBySource: { output: 9600, Read: 41200 } }) },
+      now: NOW, workspaceFolders: [MINE], all: false });
+    expect(r.sessions.find((s) => s.sessionId === "new").growth.map((g) => [g.source, g.tokens])).toEqual([["Read", 41200], ["output", 9600]]);
+    expect(r.sessions.find((s) => s.sessionId === "without").growth).toEqual([]);
+  });
+
+  it("the list keeps the last 200 turns of a longer session; compactionCount and the sentence count the whole session's compactions", () => {
+    const series = Array.from({ length: 233 }, (_, i) => 1000 * (i + 1));
+    const long = tail(233000, NOW, { turns: 233, series, outputSeries: series.map(() => 5), thinkingSeries: series.map(() => 1),
+      compactions: [{ at: 10, trigger: "auto" }, { at: 220, trigger: "manual" }], baseline: 221000, baselineAt: 220, baselineCause: "compaction" });
+    const r = K.buildSessions({ registry, transcripts: { ...transcripts, new: long }, now: NOW, workspaceFolders: [MINE], all: false });
+    const s = r.sessions.find((x) => x.sessionId === "new");
+    expect(s.series.length).toBe(200);
+    expect(s.series[0]).toBe(34000);
+    expect(s.outputSeries.length).toBe(200);
+    expect(s.compactions).toEqual([{ at: 187, trigger: "manual" }]);
+    expect(s.baselineAt).toBe(187);
+    expect(s.compactionCount).toBe(2);
+    expect(s.summary).toBe("Red zone after 2 compactions; this segment started at 221K.");
+    expect(r.sessions.find((x) => x.sessionId === "without")).toMatchObject({ compactionCount: 0, summary: "No token count yet, so no zone." });
+  });
+
+  it("the sentence of every session takes the list's median of the fresh starts", () => {
+    const at = (baseline, baselineCause) => tail(143002, NOW, { baseline, baselineAt: 0, baselineCause });
+    const r = K.buildSessions({ registry, transcripts: { ...transcripts, new: at(62000, "start"), old: at(30000, "compaction"), busy: at(40000, "start") },
+      now: NOW, workspaceFolders: [MINE], all: false });
+    expect(r.baselineMedian).toBe(51000);
+    expect(r.sessions.find((s) => s.sessionId === "old").summary).toBe("Orange zone; this segment started at 30K, a fresh session here typically starts at ~51K.");
+    expect(r.sessions.find((s) => s.sessionId === "new").summary).toBe("Orange zone; the session started at 62K, a fresh session here typically starts at ~51K.");
   });
 
   it("the count per zone covers the listed sessions in all four zones, unknown is not counted, and with all projects everything shown is counted", () => {
@@ -667,6 +780,48 @@ describe("SessionReader", () => {
       expect(result.sessions[0]).toMatchObject({ sessionId: "aaaa-1", turns: 2, tokens: 143002 });
       expect(result.projectFolders).toEqual([other]);
       expect(reader.found.get("aaaa-1")).toBe(other);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it("detail() gives every turn of a session from the last read while the list keeps 200; baselineAt indexes the full series", () => {
+    const { dir, file } = rig();
+    try {
+      const boundary = JSON.stringify({ type: "system", subtype: "compact_boundary", isSidechain: false, compactMetadata: { trigger: "auto", preTokens: 9000, postTokens: 1000 } });
+      const long = [];
+      for (let i = 1; i <= 230; i++) { if (i === 11) long.push(boundary); long.push(turn(i, i === 11 ? 1000 : 1000 * i)); }
+      writeFileSync(file, long.join("\n") + "\n");
+      const reader = new K.SessionReader(dir, { alive: (pid) => pid === 1303 });
+      const list = reader.read({ workspaceFolders: [MINE], all: false });
+      expect(list.sessions[0]).toMatchObject({ turns: 230, compactions: [], compactionCount: 1, baselineAt: null });
+      expect(list.sessions[0].series.length).toBe(200);
+      const d = reader.detail("aaaa-1");
+      expect(d.turns).toBe(230);
+      expect(d.series.length).toBe(230);
+      expect(d.outputSeries.length).toBe(230);
+      expect(d.compactions).toEqual([{ at: 10, trigger: "auto", preTokens: 9000, postTokens: 1000, durationMs: null }]);
+      expect(d.dips).toEqual([]); // the fall at turn 11 is the compaction, not a dip
+      expect(d.baselineAt).toBe(10);
+      expect(d.series[d.baselineAt]).toBe(list.sessions[0].baseline);
+      // new bytes without a read: the detail stays the last read's, the same transcript as the list
+      appendFileSync(file, turn(231, 231000) + "\n");
+      expect(reader.detail("aaaa-1").turns).toBe(230);
+      reader.read({ workspaceFolders: [MINE], all: false });
+      expect(reader.detail("aaaa-1").series.length).toBe(231);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it("detail() is null for a session the last read did not parse: unknown, dead, or without a transcript", () => {
+    const { dir, file } = rig();
+    try {
+      const reader = new K.SessionReader(dir, { alive: (pid) => pid === 1303 });
+      expect(reader.detail("aaaa-1")).toBeNull(); // nothing read yet
+      reader.read({ workspaceFolders: [MINE], all: false });
+      expect(reader.detail("aaaa-1")).toMatchObject({ turns: 1, series: [40004] });
+      expect(reader.detail("dead")).toBeNull();
+      expect(reader.detail("nope")).toBeNull();
+      rmSync(file);
+      reader.read({ workspaceFolders: [MINE], all: false });
+      expect(reader.detail("aaaa-1")).toBeNull();
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 

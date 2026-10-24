@@ -31,11 +31,15 @@ started, title; rows without a value go last) and filters the idle group: hide t
 only the orange and red zones, switch a model off with its chip. A busy session is never hidden; the header
 keeps counting everything and says "showing 4 of 10" while a filter is on, a group heading says "4 of 9",
 and "reset" puts the view back. The view is remembered like the folds. Click a row (or press Enter on it) to open the
-session's detail view in its place: the title, project, model and effort, turns, start and last turn over a
-large curve of tokens per turn with the four zone bands, every compaction labelled with its trigger and
-counts, and the segment's start; hovering a turn, or moving the "Turn" slider from the keyboard, shows its
-count and the change from the turn before, with the output per turn as bars under it. When the panel only
-has the last 200 turns, the curve says so ("last 200 of 233 turns"). Two tables follow: the prompt cache and
+session's detail view in its place: the title, project, model and effort, turns, start and last turn; one
+sentence of facts ("Red zone after 1 compaction; this segment started at 169K, a fresh session here typically
+starts at ~29K", the last part from the header's start median, no advice); a large curve of tokens per turn over
+the whole session with the four zone bands, every compaction labelled with its trigger and counts, and the
+segment's start; hovering a turn, or moving the "Turn" slider from the keyboard, shows its count and the change
+from the turn before, with the output per turn as bars under it. Beside the curve (under it when narrow), where
+the context went since the segment's start: one bar per source, largest first, with the estimate's caveat once
+under them. The list carries the last 200 turns of each session; the detail view asks the host for all of them,
+and says "last 200 of 233 turns" only if the host cannot answer. Two tables follow: the prompt cache and
 output, and the session (working folder, process id and session id with a copy button). The view follows the
 live list, says so if the session leaves the registry, and goes back to the list on Escape or the back
 button; the panel remembers the open session, and a browser host keeps it in the address (`#<sessionId>`).
@@ -117,7 +121,9 @@ Claude Code keeps one small file per running process in `~/.claude/sessions/` an
 every session in `~/.claude/projects/<project>/<sessionId>.jsonl` (`~/.claude` is `%USERPROFILE%\.claude`
 on Windows; `CLAUDE_CONFIG_DIR` moves it). The extension joins the two, parses only the new bytes of a
 transcript on every change (`fs.watch` on the folders, debounced, plus a 30-second tick) and pushes the
-list to the webview.
+list to the webview. While a session is open, the webview asks for every turn of it after each list (the
+message `{ type: "detail", sessionId }`; a browser host serves `/claude-context/api/detail?session=<id>`), and
+the host answers from the state it already parsed, without reading the transcript again.
 
 The transcript format is Claude Code's internal one and can change between versions. A field the panel
 cannot find shows as "unknown"; nothing throws.

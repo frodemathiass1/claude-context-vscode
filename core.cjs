@@ -18,7 +18,7 @@ const DIM_AFTER_MS = 60 * 60 * 1000;
 // write costs 1.25× input, a 1-hour write 2×, a read 0.1× (0.025× on Fable and Mythos 5.1, 0.05× on Opus and
 // Sonnet 5.5). A session that went cold rewrites its whole context on the next turn.
 const TTL_1H_MS = 60 * 60 * 1000, TTL_5M_MS = 5 * 60 * 1000;
-const SERIES_MAX = 200; // the sparkline keeps the last 200 turns, so the payload to the webview stays small
+const SERIES_MAX = 200; // the list keeps the last 200 turns per session, so its payload stays small; the detail view asks for all of them
 const DIP_BELOW = 0.7; // a turn is a dip when its context is below 70 % of the previous turn's
 // What an image weighs against text when a turn's growth is split by length. Measured in the owner's transcripts
 // on 2026-10-23: one image grew the context by a median 1 643 tokens (113 gaps with an image and little else),
@@ -88,8 +88,8 @@ function readTail(file, { from, bytes } = {}) {
  * the last turn that created cache, read from `usage.cache_creation` (ephemeral_1h_input_tokens or
  * ephemeral_5m_input_tokens above zero); a turn that created nothing says nothing, and it is null until seen.
  * A turn is one API call: Claude Code writes one entry per content block of a response, all sharing
- * message.id, so turns are counted per id. `series` is the token count per turn, oldest first, kept to the
- * last SERIES_MAX turns. `compactions` are the compact_boundary entries Claude Code writes, each at `at`, the
+ * message.id, so turns are counted per id. `series` is the token count per turn, oldest first, over the whole
+ * transcript (the list payload keeps the last SERIES_MAX, see seriesFor). `compactions` are the compact_boundary entries Claude Code writes, each at `at`, the
  * index in `series` of the first turn after it, with the trigger ("auto", "manual") and the counts before and
  * after; a /clear starts a new transcript, so it never shows here. `outputSeries` and `thinkingSeries` are the
  * output tokens per turn and the thinking part of them (usage.output_tokens, output_tokens_details.thinking_tokens),
@@ -98,8 +98,8 @@ function readTail(file, { from, bytes } = {}) {
  * `baseline` is the token count of the first turn of the current segment: the fixed load (CLAUDE.md, memory,
  * skill and tool listings) plus the first message. A segment starts with the transcript (a new session or a
  * /clear) or at a compaction, which `baselineCause` says ("start", "compaction"); later blocks of that turn
- * update it like the series. `baselineAt` is the segment's first index in `series`, null once it is trimmed
- * out (the baseline stays). A state parsed by an older core gets no baseline: its first turn is unknown.
+ * update it like the series. `baselineAt` is the segment's first index in `series`. A state parsed by an older
+ * core gets no baseline: its first turn is unknown.
  * `growthBySource` estimates where the segment's context went since its first turn. The growth from one turn
  * to the next (a fall is skipped) goes first to "output", up to the previous turn's output_tokens (what the
  * model wrote is read back as input), and the rest is split by length over what entered between the two
@@ -127,7 +127,7 @@ function parseTranscript(lines, previous) {
   const series = Array.isArray(p.series) ? p.series.slice() : [];
   const outputSeries = Array.isArray(p.outputSeries) ? p.outputSeries.slice() : [];
   const thinkingSeries = Array.isArray(p.thinkingSeries) ? p.thinkingSeries.slice() : [];
-  let compactions = Array.isArray(p.compactions) ? p.compactions.map((c) => ({ ...c })) : [];
+  const compactions = Array.isArray(p.compactions) ? p.compactions.map((c) => ({ ...c })) : [];
   for (const line of lines) {
     const entry = parseEntry(line);
     if (!entry || entry.isSidechain) continue;
@@ -173,12 +173,6 @@ function parseTranscript(lines, previous) {
       if (cause) { baseline = tokens; baselineAt = series.length - 1; baselineCause = cause; baselineId = id; growthBySource = {}; }
       else if (before !== null) attribute(growthBySource, tokens - before, turnOutput, pendingInput);
       pendingInput = {};
-      if (series.length > SERIES_MAX) {
-        series.shift();
-        compactions = compactions.map((c) => ({ ...c, at: c.at - 1 })).filter((c) => c.at >= 0);
-        if (baselineAt !== null) baselineAt = baselineAt > 0 ? baselineAt - 1 : null;
-      }
-      if (outputSeries.length > SERIES_MAX) { outputSeries.shift(); thinkingSeries.shift(); }
     } else {
       if (series.length) series[series.length - 1] = tokens; // another content block of the same turn
       else series.push(tokens); // the same turn continued from a state without a series: a point, not a new turn
@@ -244,6 +238,59 @@ function dips(series) {
   return out;
 }
 
+/**
+ * The per-turn fields of a parsed transcript, kept to the last `max` turns: `series`, and `outputSeries` and
+ * `thinkingSeries` aligned to its right end; the compactions and `baselineAt` move with the cut (a compaction
+ * whose turn is cut drops out, a cut first turn makes baselineAt null; the baseline itself stays); `dips` of
+ * what is kept, without the turns of a compaction (those are marked as such). Without `max`, every turn.
+ */
+function seriesFor(t, max = Infinity) {
+  const all = Array.isArray(t.series) ? t.series : [];
+  const cut = Math.max(0, all.length - max);
+  const series = all.slice(cut);
+  const last = (a) => (Array.isArray(a) ? a.slice(Math.max(0, a.length - max)) : []);
+  const compactions = (Array.isArray(t.compactions) ? t.compactions : []).map((c) => ({ ...c, at: c.at - cut })).filter((c) => c.at >= 0);
+  const compactedAt = new Set(compactions.map((c) => c.at));
+  const baselineAt = Number.isFinite(t.baselineAt) && t.baselineAt >= cut ? t.baselineAt - cut : null;
+  return { series, outputSeries: last(t.outputSeries), thinkingSeries: last(t.thinkingSeries), compactions,
+    dips: dips(series).filter((i) => !compactedAt.has(i)), baselineAt };
+}
+
+/** The panel's number format ("850", "43K", "1.2M", "unknown"), for the sentence below; panel.html has the same rule, since the webview cannot require this file. */
+function tokensText(tokens) {
+  if (!Number.isFinite(tokens)) return "unknown";
+  if (tokens < 1000) return String(tokens);
+  if (Math.round(tokens / 1000) < 1000) return `${Math.round(tokens / 1000)}K`;
+  return `${(tokens / 1000000).toFixed(1)}M`;
+}
+
+/**
+ * One sentence of facts for the detail view, no advice: the zone, the compactions in the whole session, where
+ * the current segment started, and what a fresh session in the list typically starts at (`median`, the list's
+ * baselineMedian; the clause is left out when it is null). "Red zone after 1 compaction; this segment started
+ * at 169K, a fresh session here typically starts at ~29K."
+ */
+function summaryText({ zone: z, compactionCount, baseline, baselineCause }, median) {
+  if (!z) return "No token count yet, so no zone.";
+  let text = `${z[0].toUpperCase()}${z.slice(1)} zone`;
+  if (compactionCount > 0) text += ` after ${compactionCount} ${compactionCount === 1 ? "compaction" : "compactions"}`;
+  if (Number.isFinite(baseline)) text += `; ${baselineCause === "compaction" ? "this segment" : "the session"} started at ${tokensText(baseline)}`;
+  if (Number.isFinite(median)) text += `, a fresh session here typically starts at ~${tokensText(median)}`;
+  return `${text}.`;
+}
+
+/**
+ * growthBySource as the rows of a chart: { source, tokens, share } for every source above zero, largest first
+ * (equal counts by name), `share` of their sum. An estimate (see parseTranscript); the caveat belongs once
+ * under the chart, so a row carries none.
+ */
+function growthRows(growthBySource) {
+  const g = growthBySource && typeof growthBySource === "object" ? growthBySource : {};
+  const list = Object.entries(g).filter(([, n]) => Number.isFinite(n) && n > 0).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const sum = list.reduce((a, [, n]) => a + n, 0);
+  return list.map(([source, tokens]) => ({ source, tokens, share: tokens / sum }));
+}
+
 function parseEntry(line) {
   if (!line || line[0] !== "{") return null;
   try { return JSON.parse(line); } catch { return null; }
@@ -290,7 +337,10 @@ function userText(content) {
  * turn plus the TTL), `coldInMs` (until then, negative when past) and `cacheState` ("warm" or "cold", null
  * without a TTL); `cacheCounts` counts the listed sessions per state. `baselineMedian` is the median baseline
  * of the listed sessions whose segment is a start (after a compaction the baseline holds the summary too), null
- * when there are none, so a CLAUDE.md that grew shows as a higher start for every new session.
+ * when there are none, so a CLAUDE.md that grew shows as a higher start for every new session. The per-turn
+ * fields are kept to the last SERIES_MAX turns (seriesFor; SessionReader.detail gives all of them);
+ * `compactionCount` counts the whole session's. `growth` is growthBySource as rows (growthRows), and `summary`
+ * the detail view's sentence (summaryText) with the list's baselineMedian.
  */
 function buildSessions({ registry = [], transcripts = {}, now, workspaceFolders = [], all = false }) {
   const nowMs = typeof now === "number" ? now : Date.parse(now);
@@ -299,9 +349,7 @@ function buildSessions({ registry = [], transcripts = {}, now, workspaceFolders 
     .map((r) => {
       const t = transcripts[r.sessionId] || {};
       const tokens = Number.isFinite(t.tokens) ? t.tokens : null;
-      const series = Array.isArray(t.series) ? t.series : [];
-      const compactions = Array.isArray(t.compactions) ? t.compactions : [];
-      const compactedAt = new Set(compactions.map((c) => c.at));
+      const { series, outputSeries, thinkingSeries, compactions, dips: drops, baselineAt } = seriesFor(t, SERIES_MAX);
       const lastMs = t.lastTurn ? Date.parse(t.lastTurn) : NaN;
       const sinceMs = Number.isFinite(lastMs) && Number.isFinite(nowMs) ? Math.max(0, nowMs - lastMs) : null;
       const cacheTtlMs = Number.isFinite(t.cacheTtlMs) ? t.cacheTtlMs : null;
@@ -312,15 +360,15 @@ function buildSessions({ registry = [], transcripts = {}, now, workspaceFolders 
         pid: r.pid, sessionId: r.sessionId, cwd: r.cwd, project: projectName(r.cwd),
         startedAt: Number.isFinite(Number(r.startedAt)) && r.startedAt ? new Date(Number(r.startedAt)).toISOString() : null, // the registry's epoch ms, as ISO like lastTurn
         title: t.title || null, model: t.model || null, modelShort: modelShort(t.model),
-        tokens, zone: zone(tokens), turns: t.turns || 0, series, compactions,
-        dips: dips(series).filter((i) => !compactedAt.has(i)), // a compaction is marked as such, not again as a dip
-        lastTurn: t.lastTurn || null, sinceMs,
-        outputSeries: Array.isArray(t.outputSeries) ? t.outputSeries : [], thinkingSeries: Array.isArray(t.thinkingSeries) ? t.thinkingSeries : [],
+        tokens, zone: zone(tokens), turns: t.turns || 0, series, compactions, dips: drops,
+        compactionCount: Array.isArray(t.compactions) ? t.compactions.length : 0, // the whole session's, also those cut from the series
+        lastTurn: t.lastTurn || null, sinceMs, outputSeries, thinkingSeries,
         outputTotal: Number.isFinite(t.outputTotal) ? t.outputTotal : null, thinkingTotal: Number.isFinite(t.thinkingTotal) ? t.thinkingTotal : null,
         effort: typeof t.effort === "string" ? t.effort : null,
-        baseline: Number.isFinite(t.baseline) ? t.baseline : null, baselineAt: Number.isFinite(t.baselineAt) ? t.baselineAt : null,
+        baseline: Number.isFinite(t.baseline) ? t.baseline : null, baselineAt,
         baselineCause: t.baselineCause === "start" || t.baselineCause === "compaction" ? t.baselineCause : null,
         growthBySource: t.growthBySource && typeof t.growthBySource === "object" ? t.growthBySource : {},
+        growth: growthRows(t.growthBySource),
         cacheTtlMs, cacheRead, cacheCreated: Number.isFinite(t.cacheCreated) ? t.cacheCreated : null,
         hitShare: cacheRead !== null && tokens ? cacheRead / tokens : null,
         coldAt: Number.isFinite(coldMs) ? new Date(coldMs).toISOString() : null, coldInMs,
@@ -344,6 +392,7 @@ function buildSessions({ registry = [], transcripts = {}, now, workspaceFolders 
   const starts = sessions.filter((s) => s.baselineCause === "start" && s.baseline !== null).map((s) => s.baseline).sort((a, b) => a - b);
   const mid = starts.length >> 1;
   const baselineMedian = !starts.length ? null : starts.length % 2 ? starts[mid] : (starts[mid - 1] + starts[mid]) / 2;
+  for (const s of sessions) s.summary = summaryText(s, baselineMedian);
   return { sessions, groups, count: sessions.length, zoneCounts, cacheCounts, baselineMedian, baselineSessions: starts.length };
 }
 
@@ -387,6 +436,7 @@ class SessionReader {
     this.alive = alive || isAlive;
     this.cache = new Map(); // transcript file → { end, state }
     this.found = new Map(); // sessionId → project folder found by searching, when the slug folder is missing
+    this.files = new Map(); // sessionId → transcript file of the last read, for detail()
   }
 
   read({ workspaceFolders, all, full = false }) {
@@ -401,6 +451,7 @@ class SessionReader {
     const projectFolders = new Set();
     const live = new Set();
     const liveIds = new Set();
+    this.files = new Map();
     for (const s of inScope) {
       if (!s.cwd || !s.sessionId) continue;
       liveIds.add(s.sessionId);
@@ -410,12 +461,26 @@ class SessionReader {
       if (!folder) { errors.push(`Project folder not found: ${slugFolder}`); continue; }
       const file = path.join(folder, `${s.sessionId}.jsonl`);
       live.add(file);
+      this.files.set(s.sessionId, file);
       transcripts[s.sessionId] = this.readTranscript(file);
     }
     for (const file of this.cache.keys()) if (!live.has(file)) this.cache.delete(file);
     for (const id of this.found.keys()) if (!liveIds.has(id)) this.found.delete(id);
     const list = buildSessions({ registry: registry.sessions, transcripts, now: Date.now(), workspaceFolders, all });
     return { ...list, all, errors: [...new Set(errors)], generatedAt: new Date().toISOString(), projectFolders: [...projectFolders] };
+  }
+
+  /**
+   * Every turn of one session, for the detail view: `turns`, and `series`, `outputSeries`, `thinkingSeries`,
+   * `compactions`, `dips` and `baselineAt` as in the list but not cut to SERIES_MAX. Taken from the state the
+   * last read parsed, without reading again, so it is the same transcript as the list the panel shows; null
+   * for a session that read did not parse (outside the scope, gone, or its transcript missing).
+   */
+  detail(sessionId) {
+    const file = this.files.get(sessionId);
+    const cached = file ? this.cache.get(file) : null;
+    if (!cached || !cached.state) return null;
+    return { turns: cached.state.turns || 0, ...seriesFor(cached.state) };
   }
 
   /**
@@ -501,4 +566,4 @@ class SessionWatcher {
   }
 }
 
-module.exports = { projectSlug, zone, dips, readRegistry, readTail, parseTranscript, buildSessions, inFolder, projectName, SessionReader, SessionWatcher, isAlive };
+module.exports = { projectSlug, zone, dips, readRegistry, readTail, parseTranscript, seriesFor, summaryText, growthRows, buildSessions, inFolder, projectName, SessionReader, SessionWatcher, isAlive };
