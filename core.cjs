@@ -54,6 +54,7 @@ function readRegistry(dir, alive) {
     sessions.push({
       pid, sessionId: entry.sessionId || null, cwd: entry.cwd || null, status: entry.status || null,
       statusUpdatedAt: entry.statusUpdatedAt || null, startedAt: entry.startedAt || null,
+      name: typeof entry.name === "string" && entry.name ? entry.name : null, // "my-project-08", derived by Claude Code
     });
   }
   return { sessions, error: null };
@@ -108,14 +109,16 @@ function readTail(file, { from, bytes } = {}) {
  * so the split is an estimate; earlier thinking stays in the context, so "output" is not overstated (NOTES.md,
  * "Where the context grows"). The open tool calls (id → name) and the characters since the last turn are
  * hidden state. The title is the last ai-title entry, else
- * the first user message (meta entries and tool results skipped) collapsed to one line. With `previous`, the
+ * the first user message (meta entries and tool results skipped) collapsed to one line, else the first local
+ * command ("/context all": a system entry, subtype local_command, never its output). With `previous`, the
  * lines are parsed as the continuation of an already parsed transcript, so the host reads only the new bytes.
  */
 function parseTranscript(lines, previous) {
   const p = previous || {};
   let tokens = p.tokens ?? null, model = p.model ?? null, lastTurn = p.lastTurn ?? null;
   let cacheTtlMs = p.cacheTtlMs ?? null, cacheRead = p.cacheRead ?? null, cacheCreated = p.cacheCreated ?? null;
-  let title = p.title || null, firstUser = p.firstUser || null;
+  // `title` is the shown title, composed below; the continuation needs the ai-title alone, so a command's title gives way to a later user message
+  let title = ("aiTitle" in p ? p.aiTitle : p.title) || null, firstUser = p.firstUser || null, firstCommand = p.firstCommand || null;
   let turns = p.turns || 0, lastId = p.lastId || null;
   let pendingCompaction = p.pendingCompaction || null;
   let outputTotal = p.outputTotal || 0, thinkingTotal = p.thinkingTotal || 0, effort = p.effort ?? null;
@@ -132,6 +135,7 @@ function parseTranscript(lines, previous) {
     const entry = parseEntry(line);
     if (!entry || entry.isSidechain) continue;
     if (entry.type === "system" && entry.subtype === "compact_boundary") { pendingCompaction = compaction(entry.compactMetadata); continue; }
+    if (entry.type === "system" && entry.subtype === "local_command") { if (!firstCommand && /<command-name>/.test(entry.content)) firstCommand = userText(entry.content); continue; }
     if (entry.type === "ai-title") { if (entry.aiTitle) title = String(entry.aiTitle); continue; }
     if (entry.type === "attachment") { if (Array.isArray(entry.rendered)) for (const r of entry.rendered) enter("other", contentChars(r && r.content)); continue; }
     if (entry.type === "user") {
@@ -184,13 +188,15 @@ function parseTranscript(lines, previous) {
     }
     turnOutput = output; turnThinking = thinking;
   }
-  const out = { tokens, model, lastTurn, title: title || firstUser || null, turns, series, cacheTtlMs, cacheRead, cacheCreated, compactions,
+  const out = { tokens, model, lastTurn, title: title || firstUser || firstCommand || null, turns, series, cacheTtlMs, cacheRead, cacheCreated, compactions,
     outputSeries, thinkingSeries, outputTotal, thinkingTotal, effort, baseline, baselineAt, baselineCause, growthBySource };
   // hidden state for the continuation: not part of what the panel shows, and not part of toEqual
   Object.defineProperty(out, "lastId", { value: lastId, enumerable: false });
   Object.defineProperty(out, "turnOutput", { value: turnOutput, enumerable: false });
   Object.defineProperty(out, "turnThinking", { value: turnThinking, enumerable: false });
+  Object.defineProperty(out, "aiTitle", { value: title, enumerable: false });
   Object.defineProperty(out, "firstUser", { value: firstUser, enumerable: false });
+  Object.defineProperty(out, "firstCommand", { value: firstCommand, enumerable: false });
   Object.defineProperty(out, "pendingCompaction", { value: pendingCompaction, enumerable: false });
   Object.defineProperty(out, "baselineId", { value: baselineId, enumerable: false });
   Object.defineProperty(out, "pendingInput", { value: pendingInput, enumerable: false });
@@ -270,8 +276,8 @@ function tokensText(tokens) {
  * baselineMedian; the clause is left out when it is null). "Red zone after 1 compaction; this segment started
  * at 169K, a fresh session here typically starts at ~29K."
  */
-function summaryText({ zone: z, compactionCount, baseline, baselineCause }, median) {
-  if (!z) return "No token count yet, so no zone.";
+function summaryText({ zone: z, compactionCount, baseline, baselineCause, turns }, median) {
+  if (!z) return turns ? "No token count yet, so no zone." : "No turns yet, so no count and no zone.";
   let text = `${z[0].toUpperCase()}${z.slice(1)} zone`;
   if (compactionCount > 0) text += ` after ${compactionCount} ${compactionCount === 1 ? "compaction" : "compactions"}`;
   if (Number.isFinite(baseline)) text += `; ${baselineCause === "compaction" ? "this segment" : "the session"} started at ${tokensText(baseline)}`;
@@ -357,7 +363,7 @@ function buildSessions({ registry = [], transcripts = {}, now, workspaceFolders 
       const coldMs = cacheTtlMs !== null && Number.isFinite(lastMs) ? lastMs + cacheTtlMs : NaN;
       const coldInMs = Number.isFinite(coldMs) && Number.isFinite(nowMs) ? coldMs - nowMs : null;
       return {
-        pid: r.pid, sessionId: r.sessionId, cwd: r.cwd, project: projectName(r.cwd),
+        pid: r.pid, sessionId: r.sessionId, cwd: r.cwd, project: projectName(r.cwd), name: r.name || null,
         startedAt: Number.isFinite(Number(r.startedAt)) && r.startedAt ? new Date(Number(r.startedAt)).toISOString() : null, // the registry's epoch ms, as ISO like lastTurn
         title: t.title || null, model: t.model || null, modelShort: modelShort(t.model),
         tokens, zone: zone(tokens), turns: t.turns || 0, series, compactions, dips: drops,

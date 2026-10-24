@@ -1,0 +1,6 @@
+{"type":"mode","mode":"normal","sessionId":"cccc-3"}
+{"type":"permission-mode","permissionMode":"auto","sessionId":"cccc-3"}
+{"type":"bridge-session","sessionId":"cccc-3","bridgeSessionId":"cse_x","lastSequenceNum":0}
+{"parentUuid":null,"isSidechain":false,"type":"system","subtype":"local_command","content":"<command-name>/context</command-name>\n            <command-message>context</command-message>\n            <command-args>all</command-args>","level":"info","isMeta":false,"timestamp":"2026-10-24T00:45:05.526Z","uuid":"l1","sessionId":"cccc-3","version":"2.1.309"}
+{"parentUuid":"l1","isSidechain":false,"type":"system","subtype":"local_command","content":"<local-command-stdout> \u001b[1mContext Usage\u001b[22m\n\u001b[38;2;153;153;153m⛶ ⛶ ⛶\u001b[39m  Fable 5.1</local-command-stdout>","level":"info","isMeta":false,"timestamp":"2026-10-24T00:45:05.526Z","uuid":"l2","sessionId":"cccc-3","version":"2.1.309"}
+{"parentUuid":"l2","isSidechain":false,"promptId":"p1","type":"user","message":{"role":"user","content":"## Context Usage\n\n**Model:** claude-fable-5-1  \n**Tokens:** 25.7k / 1m (3%)"},"isMeta":true,"timestamp":"2026-10-24T00:45:05.526Z","uuid":"l3","sessionId":"cccc-3","version":"2.1.309"}

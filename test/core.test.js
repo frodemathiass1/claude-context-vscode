@@ -34,6 +34,19 @@ describe("parseTranscript", () => {
     expect(K.parseTranscript(lines("command-first")).title).toBe("/implement 153");
   });
 
+  it("a session where only a local command ran is titled by the command: no turns, no count, and its output is never the title", () => {
+    const t = K.parseTranscript(lines("local-command-only"));
+    expect(t).toMatchObject({ title: "/context all", turns: 0, tokens: null, series: [] });
+    const stdoutOnly = lines("local-command-only").filter((l) => l.includes("local-command-stdout"));
+    expect(K.parseTranscript(stdoutOnly).title).toBeNull();
+  });
+
+  it("a user message after a local command is the title, also when it comes in a later read", () => {
+    const user = JSON.stringify({ type: "user", message: { role: "user", content: "why is the panel slow" }, uuid: "u9" });
+    expect(K.parseTranscript([...lines("local-command-only"), user]).title).toBe("why is the panel slow");
+    expect(K.parseTranscript([user], K.parseTranscript(lines("local-command-only"))).title).toBe("why is the panel slow");
+  });
+
   it("a sidechain entry (subagent) last in the file does not count: the number is the main session's", () => {
     const t = K.parseTranscript(lines("sidechain-last"));
     expect(t.tokens).toBe(100005);
@@ -397,7 +410,8 @@ describe("readRegistry", () => {
     const r = K.readRegistry(`${FIX}registry`, (pid) => pid === 1303 || pid === 5555);
     expect(r.error).toBeNull();
     expect(r.sessions.map((s) => s.pid)).toEqual([1303, 5555]);
-    expect(r.sessions[0]).toMatchObject({ sessionId: "aaaa-1", cwd: "/Users/frode/Dev/my-project", status: "busy" });
+    expect(r.sessions[0]).toMatchObject({ sessionId: "aaaa-1", cwd: "/Users/frode/Dev/my-project", status: "busy", name: "my-project-08" });
+    expect(r.sessions[1].name).toBeNull();
   });
 
   it("a missing registry folder gives an error text and an empty list, not an exception", () => {
@@ -479,7 +493,8 @@ describe("summaryText", () => {
   });
 
   it("no count gives no zone, and no advice or threshold is ever added", () => {
-    expect(K.summaryText({ zone: null, compactionCount: 0, baseline: null }, 40000)).toBe("No token count yet, so no zone.");
+    expect(K.summaryText({ zone: null, compactionCount: 0, baseline: null, turns: 3 }, 40000)).toBe("No token count yet, so no zone.");
+    expect(K.summaryText({ zone: null, compactionCount: 0, baseline: null, turns: 0 }, 40000)).toBe("No turns yet, so no count and no zone.");
     const all = ["green", "yellow", "orange", "red"].map((zone) => K.summaryText({ zone, compactionCount: 3, baseline: 50000, baselineCause: "start" }, 40000));
     for (const text of all) expect(text).not.toMatch(/clear|compact |break|fresh session now|should|phase/i);
   });
@@ -539,7 +554,13 @@ describe("buildSessions", () => {
       sinceMs: 12 * 60000, busy: false, dimmed: false, project: "my-project", title: "T" });
     expect(old).toMatchObject({ zone: "red", dimmed: true, sinceMs: 80 * 60000, modelShort: "Opus 5.5" });
     expect(busy).toMatchObject({ busy: true, zone: "green", dimmed: true });
-    expect(without).toMatchObject({ tokens: null, zone: null, modelShort: null, title: null, turns: 0, sinceMs: null, dimmed: false });
+    expect(without).toMatchObject({ tokens: null, zone: null, modelShort: null, title: null, turns: 0, sinceMs: null, dimmed: false, name: null });
+  });
+
+  it("name is the registry's, for the panel's title when the transcript has none; null when missing", () => {
+    const named = [{ ...reg(1, "a", MINE, "idle"), name: "my-project-08" }, { ...reg(2, "b", MINE, "idle"), name: "" }];
+    const r = K.buildSessions({ registry: named, transcripts: {}, now: NOW, workspaceFolders: [MINE] });
+    expect(Object.fromEntries(r.sessions.map((s) => [s.sessionId, s.name]))).toEqual({ a: "my-project-08", b: null });
   });
 
   it("startedAt is the registry's epoch ms as ISO, null when missing or not a number", () => {
@@ -626,7 +647,7 @@ describe("buildSessions", () => {
     expect(s.baselineAt).toBe(187);
     expect(s.compactionCount).toBe(2);
     expect(s.summary).toBe("Red zone after 2 compactions; this segment started at 221K.");
-    expect(r.sessions.find((x) => x.sessionId === "without")).toMatchObject({ compactionCount: 0, summary: "No token count yet, so no zone." });
+    expect(r.sessions.find((x) => x.sessionId === "without")).toMatchObject({ compactionCount: 0, summary: "No turns yet, so no count and no zone." });
   });
 
   it("the sentence of every session takes the list's median of the fresh starts", () => {

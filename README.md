@@ -111,9 +111,11 @@ Anthropic API.
 
 ## Privacy
 
-The title of a session is its AI-generated title or, before there is one, the start of its first message.
-The panel only shows it locally, but it can contain whatever was typed, so keep that in mind when sharing
-your screen.
+The title of a session is its AI-generated title or, before there is one, the start of its first message,
+or the first local command when only that ran ("/context all"). A session without any of these, such as a tab
+opened and not written to, is "new session" with the name Claude Code gave it ("new session ·
+my-project-08"), muted, and says "no turns yet" with "—" for the count. The panel only shows titles locally,
+but they can contain whatever was typed, so keep that in mind when sharing your screen.
 
 ## How it works
 

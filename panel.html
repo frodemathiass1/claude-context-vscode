@@ -170,6 +170,8 @@
     font-size: 1.25em; color: var(--kx-zone-text, var(--kx-muted));
   }
   .kx-num[data-zone="unknown"] { font-family: inherit; font-size: 1em; font-weight: 500; }
+  /* a title the transcript did not give: "new session" and the registry's name, muted so it is not read as a message */
+  .kx-title[data-fallback], .kx-d-head h1[data-fallback] { color: var(--kx-muted); font-weight: 500; }
   .kx-zone-txt { font-size: 0.78em; line-height: 1; color: var(--kx-muted); }
   /* the context bar: a track scaled 0–200K, the fill in the zone's fill colour, a gap at every limit */
   .kx-bar-col { grid-area: bar; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
@@ -551,6 +553,25 @@
     const d = new Date(iso);
     return Number.isFinite(d.getTime()) ? `${d.toLocaleDateString([], { day: "2-digit", month: "short" })} ${clockText(iso)}` : "unknown";
   }
+
+  /**
+   * The transcript's title, else "new session" (no turns yet: a tab opened and not written to) or "untitled
+   * session", with the registry's name ("new session · my-project-08"); `fallback` marks the second kind.
+   */
+  function titleOf(session) {
+    if (session.title) return { text: session.title, fallback: false };
+    return { text: [session.turns ? "untitled session" : "new session", session.name].filter(Boolean).join(" · "), fallback: true };
+  }
+  function titled(e, session) {
+    const t = titleOf(session);
+    e.textContent = t.text;
+    if (t.fallback) e.dataset.fallback = "";
+    return e;
+  }
+  const startText = (session) => (session.startedAt ? `started ${clockText(session.startedAt)}` : "start unknown");
+  /** The count, or "—" before the first turn: an empty session is not an unknown count. */
+  const countText = (session) => (session.turns || Number.isFinite(session.tokens) ? tokensText(session.tokens) : "—");
+  const countLabel = (session) => (session.turns || Number.isFinite(session.tokens) ? `${tokensText(session.tokens)} tokens, zone ${ZONE_NAME[session.zone] || "unknown"}` : "no turns yet");
   // what to do at the next phase boundary, per zone (Pocock's PHASE-BOUNDARIES.md); shown in the bar's tooltip
   const ZONE_ADVICE = {
     yellow: "plan to break at the next phase boundary",
@@ -749,14 +770,14 @@
       // the whole row is the click target; clicks and keys are handled once on the list (openFromList)
       row.tabIndex = 0;
       row.setAttribute("role", "button");
-      row.setAttribute("aria-label", `Open details: ${session.title || "unknown"}, ${tokensText(session.tokens)} tokens, zone ${ZONE_NAME[session.zone] || "unknown"}`);
+      row.setAttribute("aria-label", `Open details: ${titleOf(session).text}, ${countLabel(session)}`);
     }
     const titleRow = el("div", "kx-row-title");
     const dot = el("span", "kx-dot" + (session.busy ? " kx-pulse" : ""));
     dot.title = `Zone: ${ZONE_NAME[session.zone] || "unknown"}`;
     titleRow.appendChild(dot);
-    const title = el("div", "kx-title", session.title || "unknown");
-    title.title = session.title || "unknown";
+    const title = titled(el("div", "kx-title"), session);
+    title.title = title.textContent;
     titleRow.appendChild(title);
     if (session.busy) {
       const badge = el("span", "kx-badge");
@@ -766,9 +787,9 @@
     }
     row.appendChild(titleRow);
     const count = el("div", "kx-count");
-    const tokens = zoned(el("div", "kx-num", tokensText(session.tokens)), session.zone);
+    const tokens = zoned(el("div", "kx-num", countText(session)), session.zone);
     tokens.dataset.testid = "tokens";
-    tokens.setAttribute("aria-label", `${tokensText(session.tokens)} tokens, zone ${ZONE_NAME[session.zone] || "unknown"}`);
+    tokens.setAttribute("aria-label", countLabel(session));
     count.appendChild(tokens);
     if (ZONE_NAME[session.zone]) count.appendChild(el("span", "kx-zone-txt", ZONE_NAME[session.zone]));
     row.appendChild(count);
@@ -784,12 +805,15 @@
     row.appendChild(curveWrap);
     const meta = el("div", "kx-meta");
     const add = (name, text) => { const s = el("span"); s.appendChild(icon(name)); s.appendChild(document.createTextNode(text)); meta.appendChild(s); };
-    add("cpu", (session.modelShort || "unknown") + (session.effort ? ` · ${session.effort}` : ""));
-    if (session.effort) meta.lastChild.title = `Model and the effort level of the last turn`;
-    add("repeat", `${session.turns} ${session.turns === 1 ? "turn" : "turns"}`);
-    const output = outputMeta(session);
-    if (output) meta.appendChild(output);
-    add("clock", sinceText(session.sinceMs));
+    if (!session.turns) add("play", startText(session)); // no model, turns or last turn to show yet; the curve says "no turns yet"
+    else {
+      add("cpu", (session.modelShort || "unknown") + (session.effort ? ` · ${session.effort}` : ""));
+      if (session.effort) meta.lastChild.title = `Model and the effort level of the last turn`;
+      add("repeat", `${session.turns} ${session.turns === 1 ? "turn" : "turns"}`);
+      const output = outputMeta(session);
+      if (output) meta.appendChild(output);
+      add("clock", sinceText(session.sinceMs));
+    }
     const cache = cacheFor(session);
     if (cache) meta.appendChild(cache);
     row.dataset.cache = cache ? cache.dataset.cache : "unknown";
@@ -988,7 +1012,8 @@
     const dips = Array.isArray(session.dips) ? session.dips.filter((i) => i > 0 && i < series.length) : [];
     const lbl = el("div", "kx-d-lbl");
     const span = first > 1 ? `last ${series.length} of ${plural(turns, "turn", "turns")}` : plural(series.length, "turn", "turns");
-    const summary = el("span", "", `Tokens per turn · ${span} · ${plural(compactions.length, "compaction", "compactions")}${dips.length ? ` · ${plural(dips.length, "other drop", "other drops")}` : ""}`);
+    const summary = el("span", "", !turns ? "Tokens per turn" // the field below says "no turns yet"
+      : `Tokens per turn · ${span} · ${plural(compactions.length, "compaction", "compactions")}${dips.length ? ` · ${plural(dips.length, "other drop", "other drops")}` : ""}`);
     summary.dataset.testid = "detail-curve-label";
     lbl.appendChild(summary);
     const legend = (text, dashed) => { const s = el("span", "kx-d-leg"); s.appendChild(el("i", dashed ? "kx-d-dash" : "")); s.appendChild(document.createTextNode(text)); lbl.appendChild(s); };
@@ -1270,25 +1295,27 @@
     const dot = el("span", "kx-dot" + (session.busy ? " kx-pulse" : ""));
     dot.title = `Zone: ${ZONE_NAME[session.zone] || "unknown"}`;
     head.appendChild(dot);
-    const h = el("h1", "", session.title || "unknown");
+    const h = titled(el("h1"), session);
     h.dataset.testid = "detail-title";
     head.appendChild(h);
     const count = el("div", "kx-d-count");
-    const n = zoned(el("div", "kx-num", tokensText(session.tokens)), session.zone);
+    const n = zoned(el("div", "kx-num", countText(session)), session.zone);
     n.dataset.testid = "detail-tokens";
-    n.setAttribute("aria-label", `${tokensText(session.tokens)} tokens, zone ${ZONE_NAME[session.zone] || "unknown"}`);
+    n.setAttribute("aria-label", countLabel(session));
     count.appendChild(n);
-    count.appendChild(el("div", "kx-d-zone", ZONE_NAME[session.zone] || "unknown"));
+    if (session.turns || ZONE_NAME[session.zone]) count.appendChild(el("div", "kx-d-zone", ZONE_NAME[session.zone] || "unknown"));
     head.appendChild(count);
     root.appendChild(head);
     const meta = el("div", "kx-d-meta");
     meta.dataset.testid = "detail-meta";
     const add = (name, text) => { const s = el("span"); s.appendChild(icon(name)); s.appendChild(document.createTextNode(text)); meta.appendChild(s); return s; };
     add("folder", session.project || "unknown").title = session.cwd || "";
-    add("cpu", (session.modelShort || "unknown") + (session.effort ? ` · ${session.effort}` : ""));
-    add("repeat", plural(session.turns || 0, "turn", "turns"));
-    add("play", session.startedAt ? `started ${clockText(session.startedAt)}` : "start unknown");
-    add("clock", sinceText(session.sinceMs));
+    if (session.turns) { // before the first turn the sentence and the curve say "no turns yet"
+      add("cpu", (session.modelShort || "unknown") + (session.effort ? ` · ${session.effort}` : ""));
+      add("repeat", plural(session.turns, "turn", "turns"));
+    }
+    add("play", startText(session));
+    if (session.turns) add("clock", sinceText(session.sinceMs));
     root.appendChild(meta);
     if (session.summary) {
       const sum = el("p", "kx-d-sum", session.summary); // composed by the core (core.cjs summaryText): facts, no advice
