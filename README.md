@@ -12,6 +12,7 @@ in real time. The same panel runs in a browser tab too, for Claude Code in a ter
 
 [![test](https://github.com/frodemathiass1/claude-context-vscode/actions/workflows/test.yml/badge.svg)](https://github.com/frodemathiass1/claude-context-vscode/actions/workflows/test.yml)
 ![VS Code 1.131 or newer](https://img.shields.io/badge/VS%20Code-1.131%2B-007ACC)
+![or Node.js 18 or newer in a browser](https://img.shields.io/badge/or%20Node.js-18%2B-5FA04E)
 ![no dependencies](https://img.shields.io/badge/dependencies-none-2ea043)
 [![MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
@@ -34,8 +35,10 @@ started, and when its prompt cache goes cold, so you can see when it is time to 
 
 ## Install
 
-There are two ways to run the panel: as a VS Code extension in the sidebar, or as a page in the browser served by
-a small local server. Both read the same files and show the same panel; use either or both.
+There are two ways to run the panel, and neither needs the other: as a VS Code extension in the sidebar, or as a
+page in a browser tab served by a small local server, for Claude Code in a terminal, JetBrains or the desktop app.
+Both read the same files and show the same panel; use either or both. Without VS Code, go straight to
+[In a browser](#in-a-browser).
 
 ### In VS Code
 
@@ -60,13 +63,31 @@ Installed Extensions** → Claude Context → **Uninstall**, then delete the clo
 
 ### In a browser
 
-You need Node.js 18 or newer and Claude Code running on the same machine. Without a clone:
+No VS Code needed: you need Node.js 18 or newer, Git, and Claude Code running on the same machine.
+
+To try it, one command in a terminal fetches the repo from GitHub and starts the server:
 
 ```
 npx github:frodemathiass1/claude-context-vscode
 ```
 
-or from a clone, `node server.cjs`. It prints a URL and opens it in the default browser; Ctrl+C stops it.
+For regular use, clone the repo once and start the server from the clone:
+
+```
+git clone https://github.com/frodemathiass1/claude-context-vscode
+cd claude-context-vscode
+node server.cjs
+```
+
+Either way it prints a URL and opens it in the default browser. The server runs as long as its terminal does;
+Ctrl+C stops it. The URL carries a token that is new on every start (see the note below), so start the server
+when you want the panel rather than at login, and use the URL it prints.
+
+To update a clone, run `git pull` and start the server again. npx may run the copy it fetched the first time; to
+be sure of the latest, delete npx's cache (`~/.npm/_npx`, or `%LocalAppData%\npm-cache\_npx` on Windows) first.
+To uninstall, delete the clone: nothing else is installed.
+
+The flags, the same for both:
 
 ```
 node server.cjs [folder…] [--port <n>] [--claude-dir <dir>] [--no-open]
