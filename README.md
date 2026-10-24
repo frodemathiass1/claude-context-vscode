@@ -144,8 +144,7 @@ npm install
 npm test        # Vitest; the same suite runs on Ubuntu and Windows in GitHub Actions
 ```
 
-`PLAN.md` is the work plan for the Windows and Amazon Bedrock support; `NOTES.md` holds the facts found
-along the way.
+`NOTES.md` holds the facts measured about Claude Code's files; `CLAUDE.md` is how the repo is worked on.
 
 ## License
 
