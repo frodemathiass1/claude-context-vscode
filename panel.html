@@ -37,6 +37,7 @@
     --kx-badge-fg: var(--vscode-badge-foreground, #ffffff);
     --kx-heading: var(--vscode-sideBarSectionHeader-foreground, var(--kx-muted));
     --kx-accent: var(--vscode-focusBorder, #0969da);
+    --kx-surface: var(--vscode-editorWidget-background, #f6f8fa); /* the field behind the detail view's curve */
     --kx-font: var(--vscode-font-family, system-ui, sans-serif);
     --kx-font-size: var(--vscode-font-size, 13px);
     --kx-mono: var(--vscode-editor-font-family, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
@@ -219,6 +220,78 @@
   .kx-ttl[data-ttl="5m"] { color: var(--kx-orange); border-color: currentColor; } /* a drop from 1h is the thing to notice */
   /* the axis line above each group: column names and the marks of the bar; only in the wide layout */
   .kx-axis { display: none; }
+  /* the whole row opens the session's detail view */
+  .kx-session[tabindex] { cursor: pointer; }
+  .kx-session[tabindex]:focus-visible { outline: 1px solid var(--kx-accent); outline-offset: -1px; }
+
+  /* ── Detail view of one session: replaces the header, the controls and the list. Top bar, header, meta
+     line, the large curve with output bars under it, the facts tables; stacked under 620 px ── */
+  .kx-detail { padding: 8px 12px 16px; }
+  .kx-d-top { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; }
+  .kx-d-back {
+    display: inline-flex; align-items: center; gap: 4px; font: inherit; font-size: 0.92em; color: var(--kx-muted);
+    background: transparent; border: 1px solid transparent; border-radius: 4px; padding: 2px 8px 2px 4px; cursor: pointer;
+  }
+  .kx-d-back:hover { background: var(--kx-row-hover); color: var(--kx-fg); }
+  .kx-d-back:focus-visible, .kx-d-copy:focus-visible, .kx-d-turn:focus-visible { outline: 1px solid var(--kx-accent); outline-offset: 1px; }
+  .kx-d-back svg { width: 14px; height: 14px; }
+  .kx-d-esc { margin-left: auto; font-size: 0.78em; color: var(--kx-muted); font-family: var(--kx-mono); }
+  .kx-d-head { display: flex; align-items: center; gap: 8px; min-width: 0; margin: 4px 0 2px; }
+  .kx-d-head h1 { margin: 0; font-size: 1.15em; font-weight: 600; line-height: 1.3; min-width: 0; overflow-wrap: anywhere; }
+  .kx-d-head .kx-dot { width: 12px; height: 12px; }
+  .kx-d-count { margin-left: auto; }
+  .kx-d-head .kx-num { font-size: 1.6em; }
+  .kx-d-zone { font-size: 0.78em; color: var(--kx-muted); text-align: right; }
+  .kx-d-meta { display: flex; flex-wrap: wrap; gap: 3px 12px; color: var(--kx-muted); font-size: 0.86em; margin: 0 0 8px; }
+  .kx-d-meta span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; min-width: 0; }
+  .kx-d-meta svg { width: 12px; height: 12px; opacity: 0.8; }
+  .kx-d-sec { margin: 0 0 12px; }
+  /* the curve: a field with the zone bands, the axis at the right edge, a hairline and a tooltip per turn */
+  .kx-d-field { position: relative; height: 150px; border: 1px solid var(--kx-border); border-radius: 6px; background: var(--kx-surface); overflow: hidden; }
+  .kx-d-curve { position: absolute; inset: 0; width: 100%; height: 100%; display: block; overflow: visible; color: var(--kx-zone-fill, var(--kx-muted)); }
+  .kx-d-band { fill: var(--kx-band, transparent); opacity: 0.09; }
+  .kx-d-axis {
+    position: absolute; right: 4px; font-size: 0.7em; color: var(--kx-muted); font-variant-numeric: tabular-nums; line-height: 1;
+    transform: translateY(-50%); pointer-events: none; background: color-mix(in srgb, var(--kx-surface) 80%, transparent); padding: 0 2px; border-radius: 2px;
+  }
+  .kx-d-field[data-axis="2"] .kx-d-axis-mid, .kx-d-field[data-axis="1"] .kx-d-axis-mid, .kx-d-field[data-axis="1"] .kx-d-axis-low { display: none; }
+  .kx-d-hair { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--kx-fg); opacity: 0.6; pointer-events: none; display: none; }
+  .kx-d-tip {
+    position: absolute; top: 40px; max-width: min(260px, 80%); background: var(--kx-bg); border: 1px solid var(--kx-border-strong);
+    border-radius: 4px; padding: 4px 8px; font-size: 0.8em; line-height: 1.35; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18); pointer-events: none; display: none;
+  }
+  .kx-d-tip b { font-family: var(--kx-mono); font-variant-numeric: tabular-nums; }
+  .kx-d-field.kx-d-hover .kx-d-hair, .kx-d-field.kx-d-hover .kx-d-tip { display: block; }
+  /* the compaction's label on its own row under the top axis label, the segment's start at the bottom */
+  .kx-d-mark {
+    position: absolute; top: 22px; font-size: 0.7em; color: var(--kx-fg); background: var(--kx-bg); border: 1px solid var(--kx-border-strong);
+    border-radius: 3px; padding: 0 4px; white-space: nowrap; transform: translateX(-50%); pointer-events: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis;
+  }
+  .kx-d-mark.kx-d-start { top: auto; bottom: 4px; color: var(--kx-muted); }
+  .kx-d-lbl { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; font-size: 0.8em; color: var(--kx-muted); margin: 0 0 4px; }
+  .kx-d-leg { display: inline-flex; align-items: center; gap: 4px; }
+  .kx-d-leg i { display: inline-block; width: 12px; height: 0; border-top: 2px solid var(--kx-fg); }
+  .kx-d-leg i.kx-d-dash { border-top-style: dashed; border-top-width: 1px; border-color: var(--kx-grid); }
+  /* the turn chooser: the keyboard's way to the same tooltip */
+  .kx-d-turn-row { display: flex; align-items: center; gap: 8px; margin: 6px 0 0; font-size: 0.82em; color: var(--kx-muted); }
+  .kx-d-turn { flex: 1 1 auto; min-width: 0; accent-color: var(--kx-accent); margin: 0; height: 18px; }
+  .kx-d-turn-val { font-family: var(--kx-mono); font-variant-numeric: tabular-nums; white-space: nowrap; min-width: 9ch; text-align: right; }
+  .kx-d-out { display: block; width: 100%; height: 28px; margin-top: 4px; color: var(--kx-muted); }
+  /* the facts: two tables, key over value in the narrow layout so a long path never overflows */
+  .kx-d-facts { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px 20px; }
+  .kx-d-facts table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 0.9em; }
+  .kx-d-facts caption { text-align: left; font-size: 0.78em; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--kx-heading); padding: 0 0 4px; }
+  .kx-d-facts tr { display: block; padding: 4px 0; border-bottom: 1px solid var(--kx-border); }
+  .kx-d-facts th, .kx-d-facts td { display: block; text-align: left; padding: 0; border: 0; vertical-align: top; overflow-wrap: anywhere; }
+  .kx-d-facts th { font-weight: 500; font-size: 0.86em; color: var(--kx-muted); }
+  .kx-d-facts td { font-variant-numeric: tabular-nums; }
+  .kx-d-facts td code { font-family: var(--kx-mono); font-size: 0.9em; overflow-wrap: anywhere; }
+  .kx-d-copy {
+    font: inherit; font-size: 0.8em; color: var(--kx-muted); background: transparent; border: 1px solid var(--kx-border-strong);
+    border-radius: 4px; padding: 0 6px; margin-left: 6px; cursor: pointer; vertical-align: 1px;
+  }
+  .kx-d-copy:hover { color: var(--kx-fg); background: var(--kx-row-hover); }
+  .kx-d-copy[data-done] { color: var(--kx-green); border-color: currentColor; }
 
   @container (min-width: 620px) {
     .kx-session {
@@ -238,6 +311,17 @@
     .kx-axis .kx-scale span:first-child { transform: none; }
     .kx-axis .kx-scale span:last-child { transform: translateX(-100%); }
     .kx-axis .kx-r { text-align: right; }
+    .kx-detail { padding: 10px 16px 20px; }
+    .kx-d-head h1 { font-size: 1.35em; }
+    .kx-d-head .kx-num { font-size: 2em; }
+    .kx-d-field { height: 220px; }
+    .kx-d-field[data-axis] .kx-d-axis { display: block; }
+    .kx-d-field[data-axis-wide="2"] .kx-d-axis-mid, .kx-d-field[data-axis-wide="1"] .kx-d-axis-mid, .kx-d-field[data-axis-wide="1"] .kx-d-axis-low { display: none; }
+    .kx-d-out { height: 40px; }
+    .kx-d-facts { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    .kx-d-facts tr { display: table-row; padding: 0; border: 0; }
+    .kx-d-facts th, .kx-d-facts td { display: table-cell; padding: 3px 6px 3px 0; border-bottom: 1px solid var(--kx-border); }
+    .kx-d-facts th { width: 42%; font-size: 1em; }
   }
   /* with five marks the labels need about 240 px; until the bar column is that wide (a container of about
      880 px), every second label drops to a second row so neighbours never overlap */
@@ -290,6 +374,7 @@
 </div>
 <div data-testid="errors" hidden></div>
 <main data-testid="list"></main>
+<section class="kx-detail" data-testid="detail" aria-label="Session details" hidden></section>
 
 <script nonce="{{nonce}}">
 (function () {
@@ -312,6 +397,9 @@
   const hotEl = document.querySelector('[data-testid="filter-hot"]');
   const modelsEl = document.querySelector('[data-testid="models"]');
   const resetEl = document.querySelector('[data-testid="reset"]');
+  const headerEl = document.querySelector("header");
+  const controlsEl = document.querySelector('[data-testid="controls"]');
+  const detailEl = document.querySelector('[data-testid="detail"]');
   // the VS Code webview API when the panel runs in VS Code; null when a dev server hosts this file (the adapter at the end)
   const vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : null;
 
@@ -442,6 +530,13 @@
     return items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
   }
   const MARKS_TEXT = listText(LIMITS.map(tokensText));
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
+  /** "24 Oct 00:06": a day and a time for the facts table; "unknown" without a date. */
+  function dayText(iso) {
+    const d = new Date(iso);
+    return Number.isFinite(d.getTime()) ? `${d.toLocaleDateString([], { day: "2-digit", month: "short" })} ${clockText(iso)}` : "unknown";
+  }
   // what to do at the next phase boundary, per zone (Pocock's PHASE-BOUNDARIES.md); shown in the bar's tooltip
   const ZONE_ADVICE = {
     yellow: "plan to break at the next phase boundary",
@@ -493,6 +588,8 @@
     pen: ["M12 20h9", "M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838a.5.5 0 0 1-.62-.62l.838-2.872a2 2 0 0 1 .506-.854z"],
     chevron: ["m9 18 6-6-6-6"],
     refresh: ["M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8", "M3 3v5h5", "M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16", "M16 16h5v5"],
+    back: ["m12 19-7-7 7-7", "M19 12H5"],
+    play: ["M5 3v18l15-9z"],
   };
   function icon(name) {
     const svg = svgEl("svg", { class: "kx-ico", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": 2, "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": "true" });
@@ -516,7 +613,6 @@
     const y = (v) => CURVE_H - 1 - (v / top) * (CURVE_H - 2); // 1 px margin top and bottom for the stroke
     const dips = Array.isArray(session.dips) ? session.dips.filter((i) => i > 0 && i < series.length) : [];
     const compactions = Array.isArray(session.compactions) ? session.compactions.filter((c) => c && c.at > 0 && c.at < series.length) : [];
-    const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
     const label = `Tokens per turn, ${plural(series.length, "turn", "turns")}, ${plural(compactions.length, "compaction", "compactions")}, ${plural(dips.length, "other drop", "other drops")}`;
     const svg = svgEl("svg", {
       class: "kx-curve", viewBox: `0 0 ${CURVE_W} ${CURVE_H}`, preserveAspectRatio: "none", role: "img",
@@ -539,9 +635,10 @@
    * Output per turn as bars under the curve, one per turn of the series (the output series is aligned to its
    * right end, so an older state with a shorter one still lines up), scaled to the session's own largest turn.
    * The thinking part of each bar is drawn over it, from the bottom. Nothing when no turn wrote anything.
+   * `className` sizes it: the row's strip, or the detail view's taller one.
    */
   const OUT_H = 8;
-  function outputFor(session) {
+  function outputFor(session, className = "kx-out") {
     const series = Array.isArray(session.series) ? session.series : [];
     const output = Array.isArray(session.outputSeries) ? session.outputSeries.slice(-series.length) : [];
     const thinking = Array.isArray(session.thinkingSeries) ? session.thinkingSeries.slice(-series.length) : [];
@@ -549,7 +646,7 @@
     if (series.length < 2 || !top) return null;
     const offset = series.length - output.length, w = CURVE_W / series.length, gap = series.length <= 60 ? w * 0.2 : 0;
     const bar = (i, v) => (v > 0 ? `M${num((i + offset) * w)},${OUT_H} h${num(w - gap)} v${num(-(v / top) * OUT_H)} h${num(gap - w)} Z` : "");
-    const svg = svgEl("svg", { class: "kx-out", viewBox: `0 0 ${CURVE_W} ${OUT_H}`, preserveAspectRatio: "none", role: "img", "data-testid": "output", "data-bars": output.length, "aria-label": `Output tokens per turn, largest ${tokensText(top)}` });
+    const svg = svgEl("svg", { class: className, viewBox: `0 0 ${CURVE_W} ${OUT_H}`, preserveAspectRatio: "none", role: "img", "data-testid": "output", "data-bars": output.length, "aria-label": `Output tokens per turn, largest ${tokensText(top)}` });
     const title = svgEl("title", {});
     title.textContent = `Output tokens per turn (faint) and the thinking part of them (strong), scaled to the largest turn: ${tokensText(top)}`;
     svg.appendChild(title);
@@ -635,6 +732,12 @@
   function rowFor(session) {
     const row = zoned(el("article", "kx-session" + (session.dimmed ? " kx-dimmed" : "")), session.zone);
     row.dataset.session = session.sessionId || "";
+    if (session.sessionId) {
+      // the whole row is the click target; clicks and keys are handled once on the list (openFromList)
+      row.tabIndex = 0;
+      row.setAttribute("role", "button");
+      row.setAttribute("aria-label", `Open details: ${session.title || "unknown"}, ${tokensText(session.tokens)} tokens, zone ${ZONE_NAME[session.zone] || "unknown"}`);
+    }
     const titleRow = el("div", "kx-row-title");
     const dot = el("span", "kx-dot" + (session.busy ? " kx-pulse" : ""));
     dot.title = `Zone: ${ZONE_NAME[session.zone] || "unknown"}`;
@@ -829,6 +932,381 @@
     resetEl.hidden = viewIsDefault();
   }
 
+  // ── Detail view of one session: replaces the header, the controls and the list in the same webview. The
+  // open session is kept in the webview state in VS Code and in the hash (#<sessionId>) on a dev server.
+  // Every list draws it again, so the curve grows with the session; the turn in the tooltip, the focus and
+  // a copy receipt survive that redraw. ──
+  const D_W = 100, D_H = 100; // the large curve's viewBox, stretched to its field like the sparkline's
+  const D_FIELD_H = { narrow: 150, wide: 220 }; // the field's height in the style (.kx-d-field), below and above 620 px
+  const AXIS_GAP_PX = 11; // an axis label is about 10 px tall; neighbours closer than this would overlap
+  const COPIED_MS = 2000;
+  let openId = null; // the sessionId shown, null while the list is shown
+  let turnShown = null; // the turn number in the curve's tooltip, null when none is shown
+  let focusBack = false; // the back button takes the focus on the next draw (a session was just opened)
+  let redrawing = false; // the detail is being replaced: a blur from that is not the user's
+  let listScroll = 0; // the list's scroll position, restored on the way back
+  const copied = {}; // copy button key → { until, text } while its receipt shows
+
+  /**
+   * The large curve: zone bands, dashed limits, area and line in the zone colour, compactions as solid lines
+   * with their label, dips dotted, the segment's start labelled at the bottom, the axis at the right edge.
+   * Hovering shows a hairline and "turn 2 · 60K · +9K from turn 1"; the range under it does the same from the
+   * keyboard. The series holds the last SERIES_MAX turns (core.cjs), so its first point is turn `first`.
+   */
+  function detailCurve(session) {
+    const wrap = el("div", "kx-d-sec");
+    const series = Array.isArray(session.series) ? session.series : [];
+    const turns = Math.max(session.turns || 0, series.length);
+    const first = turns - series.length + 1, last = turns;
+    const compactions = Array.isArray(session.compactions) ? session.compactions.filter((c) => c && c.at >= 0 && c.at < series.length) : [];
+    const dips = Array.isArray(session.dips) ? session.dips.filter((i) => i > 0 && i < series.length) : [];
+    const lbl = el("div", "kx-d-lbl");
+    const span = first > 1 ? `last ${series.length} of ${plural(turns, "turn", "turns")}` : plural(series.length, "turn", "turns");
+    const summary = el("span", "", `Tokens per turn · ${span} · ${plural(compactions.length, "compaction", "compactions")}${dips.length ? ` · ${plural(dips.length, "other drop", "other drops")}` : ""}`);
+    summary.dataset.testid = "detail-curve-label";
+    lbl.appendChild(summary);
+    const legend = (text, dashed) => { const s = el("span", "kx-d-leg"); s.appendChild(el("i", dashed ? "kx-d-dash" : "")); s.appendChild(document.createTextNode(text)); lbl.appendChild(s); };
+    legend("compaction", false);
+    legend(LIMITS.map(tokensText).join(" · "), true);
+    wrap.appendChild(lbl);
+    const field = el("div", "kx-d-field");
+    field.dataset.testid = "detail-curve";
+    wrap.appendChild(field);
+    if (series.length < 2) { field.appendChild(el("p", "kx-message", session.turns ? "one turn, no curve yet" : "no turns yet")); return wrap; }
+    const top = Math.max(SCALE, ...series);
+    const x = (i) => (i / (series.length - 1)) * D_W;
+    const y = (v) => D_H - 1 - (v / top) * (D_H - 2);
+    const svg = svgEl("svg", { class: "kx-d-curve", viewBox: `0 0 ${D_W} ${D_H}`, preserveAspectRatio: "none", role: "img", "data-points": series.length, "aria-label": `Tokens per turn, ${span}; now ${tokensText(session.tokens)}` });
+    const bands = [["green", 0, LIMITS[0]], ["yellow", LIMITS[0], LIMITS[1]], ["orange", LIMITS[1], LIMITS[2]], ["red", LIMITS[2], top]];
+    for (const [z, a, b] of bands) {
+      const r = svgEl("rect", { class: "kx-d-band", x: 0, width: D_W, y: num(y(b)), height: num(y(a) - y(b)) });
+      r.style.setProperty("--kx-band", `var(--kx-${z}-fill)`);
+      svg.appendChild(r);
+    }
+    for (const g of LIMITS) svg.appendChild(svgEl("line", { class: "kx-limit", x1: 0, x2: D_W, y1: num(y(g)), y2: num(y(g)), "vector-effect": "non-scaling-stroke" }));
+    const points = series.map((v, i) => `${num(x(i))},${num(y(v))}`).join(" L");
+    svg.appendChild(svgEl("path", { class: "kx-area", d: `M0,${D_H} L${points} L${D_W},${D_H} Z` }));
+    svg.appendChild(svgEl("path", { class: "kx-line", d: `M${points}`, "vector-effect": "non-scaling-stroke" }));
+    for (const i of dips) svg.appendChild(svgEl("line", { class: "kx-dip", "data-turn": first + i, x1: num(x(i)), x2: num(x(i)), y1: 0, y2: D_H, "vector-effect": "non-scaling-stroke" }));
+    for (const c of compactions) svg.appendChild(svgEl("line", { class: "kx-compact", "data-turn": first + c.at, x1: num(x(c.at)), x2: num(x(c.at)), y1: 0, y2: D_H, "vector-effect": "non-scaling-stroke" }));
+    field.appendChild(svg);
+    // the axis labels: the limits and the top of the scale; when the scale runs far above 200K the limits sit
+    // close together, so the middle one goes first and then the lowest, and they never overlap. How many fit
+    // is decided for both field heights; the style shows data-axis below 620 px and data-axis-wide above
+    const room = (y(LIMITS[0]) - y(LIMITS[LIMITS.length - 1])) / D_H;
+    const fits = (h) => (room * h >= 2 * AXIS_GAP_PX ? 3 : room * h >= AXIS_GAP_PX ? 2 : 1);
+    field.dataset.axis = fits(D_FIELD_H.narrow);
+    field.dataset.axisWide = fits(D_FIELD_H.wide);
+    const axisClass = { [LIMITS[0]]: " kx-d-axis-low", [LIMITS[1]]: " kx-d-axis-mid" };
+    for (const g of [...LIMITS, top]) {
+      const a = el("span", `kx-d-axis${g === top ? "" : axisClass[g] || ""}`, tokensText(g));
+      a.setAttribute("aria-hidden", "true");
+      a.style.top = `${pct(y(g) / D_H)}%`;
+      field.appendChild(a);
+    }
+    // a label near the right edge is anchored to its right, near the left edge to its left, so it stays in the field
+    for (const c of compactions) {
+      const m = el("span", "kx-d-mark", compactionText(c));
+      m.dataset.testid = "detail-compaction";
+      const left = x(c.at) / D_W;
+      if (left > 0.6) { m.style.left = `calc(${pct(left)}% - 2px)`; m.style.transform = "translateX(-100%)"; m.style.maxWidth = "60%"; }
+      else if (left < 0.25) { m.style.left = `calc(${pct(left)}% + 2px)`; m.style.transform = "none"; }
+      else m.style.left = `${pct(left)}%`;
+      m.title = `turn ${first + c.at}: ${compactionText(c)}`;
+      field.appendChild(m);
+    }
+    if (Number.isFinite(session.baselineAt) && session.baselineAt >= 0 && session.baselineAt < series.length && Number.isFinite(session.baseline)) {
+      const m = el("span", "kx-d-mark kx-d-start", `${session.baselineCause === "compaction" ? "start after compaction" : "start"} ${tokensText(session.baseline)}`);
+      m.dataset.testid = "detail-start";
+      m.style.left = `${pct(Math.min(0.9, Math.max(0.1, x(session.baselineAt) / D_W)))}%`;
+      field.appendChild(m);
+    }
+    const hair = el("div", "kx-d-hair"), tip = el("div", "kx-d-tip");
+    tip.dataset.testid = "detail-tip";
+    field.appendChild(hair);
+    field.appendChild(tip);
+    const row = el("div", "kx-d-turn-row");
+    const lab = el("label", "", "Turn");
+    lab.htmlFor = "kx-d-turn";
+    const range = el("input", "kx-d-turn");
+    range.type = "range";
+    range.id = lab.htmlFor;
+    range.dataset.testid = "detail-turn";
+    range.min = String(first);
+    range.max = String(last);
+    range.value = String(last);
+    const val = el("span", "kx-d-turn-val", `${last} / ${last}`);
+    val.dataset.testid = "detail-turn-value";
+    row.appendChild(lab);
+    row.appendChild(range);
+    row.appendChild(val);
+    function show(i) {
+      const v = series[i], prev = i > 0 ? series[i - 1] : null;
+      const delta = prev === null ? "" : ` · ${v >= prev ? "+" : "−"}${tokensText(Math.abs(v - prev))} from turn ${first + i - 1}`;
+      const comp = compactions.find((c) => c.at === i);
+      tip.textContent = "";
+      tip.appendChild(document.createTextNode(`turn ${first + i} · `));
+      tip.appendChild(el("b", "", tokensText(v)));
+      tip.appendChild(document.createTextNode(delta));
+      if (comp) { tip.appendChild(el("br")); tip.appendChild(document.createTextNode(compactionText(comp))); }
+      const left = x(i) / D_W;
+      hair.style.left = `${pct(left)}%`;
+      tip.style.left = left < 0.6 ? `calc(${pct(left)}% + 8px)` : "auto";
+      tip.style.right = left < 0.6 ? "auto" : `calc(${pct(1 - left)}% + 8px)`;
+      field.classList.add("kx-d-hover");
+      turnShown = first + i;
+      range.value = String(turnShown);
+      range.setAttribute("aria-valuetext", tip.textContent);
+      val.textContent = `${turnShown} / ${last}`;
+    }
+    function hide() {
+      if (redrawing) return;
+      field.classList.remove("kx-d-hover");
+      turnShown = null;
+    }
+    const at = (turn) => Math.max(0, Math.min(series.length - 1, turn - first));
+    field.addEventListener("mousemove", (e) => {
+      const r = field.getBoundingClientRect();
+      show(Math.max(0, Math.min(series.length - 1, Math.round(((e.clientX - r.left) / r.width) * (series.length - 1)))));
+    });
+    field.addEventListener("mouseleave", hide);
+    range.addEventListener("input", () => show(at(Number(range.value))));
+    range.addEventListener("focus", () => show(at(Number(range.value))));
+    range.addEventListener("blur", hide);
+    if (turnShown !== null && turnShown >= first && turnShown <= last) show(turnShown - first); else turnShown = null;
+    wrap.appendChild(row);
+    const out = outputFor(session, "kx-d-out");
+    if (out) {
+      wrap.appendChild(out);
+      const largest = Math.max(0, ...(Array.isArray(session.outputSeries) ? session.outputSeries.slice(-series.length) : []));
+      wrap.appendChild(el("div", "kx-d-lbl", `Output per turn (faint) and the thinking part (strong) · largest ${tokensText(largest)}`));
+    }
+    return wrap;
+  }
+
+  /** Copies `text`: the clipboard API, else a hidden textarea and execCommand. True when either worked. */
+  async function copyText(text) {
+    try { await navigator.clipboard.writeText(text); return true; } catch { /* no clipboard API in this frame: the older way */ }
+    const area = el("textarea");
+    area.value = text;
+    area.setAttribute("readonly", "");
+    area.style.position = "fixed";
+    area.style.opacity = "0";
+    document.body.appendChild(area);
+    area.select();
+    let ok = false;
+    try { ok = document.execCommand("copy"); } catch { ok = false; }
+    area.remove();
+    return ok;
+  }
+
+  /** A value in code with a "copy" button that says "copied" for two seconds; `key` names it across redraws. */
+  function copyable(key, text) {
+    const span = el("span");
+    span.appendChild(el("code", "", text));
+    const b = el("button", "kx-d-copy");
+    b.type = "button";
+    b.dataset.testid = `copy-${key}`;
+    b.setAttribute("aria-label", `Copy ${text}`);
+    const receipt = copied[key] && copied[key].until > Date.now() ? copied[key] : null;
+    b.textContent = receipt ? receipt.text : "copy";
+    if (receipt && receipt.text === "copied") b.dataset.done = "";
+    b.addEventListener("click", async () => {
+      const ok = await copyText(text);
+      copied[key] = { until: Date.now() + COPIED_MS, text: ok ? "copied" : "copy failed" };
+      const now = detailEl.querySelector(`[data-testid="copy-${key}"]`) || b; // a redraw may have replaced the button
+      now.textContent = copied[key].text;
+      if (ok) now.dataset.done = ""; else delete now.dataset.done;
+      if (document.activeElement === document.body) now.focus({ preventScroll: true }); // the textarea way took the focus
+      setTimeout(() => {
+        if (copied[key] && copied[key].until > Date.now()) return; // a later click owns the receipt
+        delete copied[key];
+        const current = detailEl.querySelector(`[data-testid="copy-${key}"]`);
+        if (current) { current.textContent = "copy"; delete current.dataset.done; }
+      }, COPIED_MS);
+    });
+    span.appendChild(b);
+    return span;
+  }
+
+  /** The facts: "Prompt cache and output" and "Session", side by side from 620 px, key over value below that. */
+  function detailFacts(session) {
+    const wrap = el("div", "kx-d-sec kx-d-facts");
+    wrap.dataset.testid = "detail-facts";
+    const table = (caption, rows) => {
+      const t = el("table");
+      t.appendChild(el("caption", "", caption));
+      const body = el("tbody");
+      for (const [k, v] of rows) {
+        const tr = el("tr");
+        const th = el("th", "", k);
+        th.scope = "row";
+        const td = el("td");
+        if (typeof v === "string") td.textContent = v; else td.appendChild(v);
+        tr.appendChild(th);
+        tr.appendChild(td);
+        body.appendChild(tr);
+      }
+      t.appendChild(body);
+      return t;
+    };
+    const ttl = TTL_TEXT[session.cacheTtlMs];
+    const ttlEl = el("span");
+    if (ttl) {
+      const pill = el("span", "kx-ttl", ttl);
+      pill.dataset.ttl = ttl;
+      ttlEl.appendChild(pill);
+      ttlEl.appendChild(document.createTextNode(ttl === "1h" ? " 1-hour" : " 5-minute"));
+    } else ttlEl.textContent = "unknown";
+    const now = session.cacheState === "cold" ? `cold since ${clockText(session.coldAt)}`
+      : session.cacheState === "warm" ? `warm · ${leftText(session.coldInMs)} left (cold at ${clockText(session.coldAt)})` : "unknown";
+    const thinking = session.outputTotal > 0 && Number.isFinite(session.thinkingTotal) ? `${tokensText(session.thinkingTotal)} (${Math.round((session.thinkingTotal / session.outputTotal) * 100)} %)` : "unknown";
+    const out = Array.isArray(session.outputSeries) ? session.outputSeries : [], th = Array.isArray(session.thinkingSeries) ? session.thinkingSeries : [];
+    wrap.appendChild(table("Prompt cache and output", [
+      ["Cache TTL", ttlEl],
+      ["Cache now", now],
+      ["Last turn read from cache", Number.isFinite(session.cacheRead) ? `${tokensText(session.cacheRead)} (${Number.isFinite(session.hitShare) ? `${Math.round(session.hitShare * 100)} %` : "unknown share"} of the context)` : "unknown"],
+      ["Last turn written to cache", Number.isFinite(session.cacheCreated) ? tokensText(session.cacheCreated) : "unknown"],
+      ["Output, whole session", Number.isFinite(session.outputTotal) ? tokensText(session.outputTotal) : "unknown"],
+      ["Of it thinking", thinking],
+      ["Output, last turn", out.length ? `${tokensText(out[out.length - 1])} (${tokensText(th[th.length - 1] || 0)} thinking)` : "unknown"],
+    ]));
+    wrap.appendChild(table("Session", [
+      ["Turns", String(session.turns || 0)],
+      ["Started", session.startedAt ? dayText(session.startedAt) : "unknown"],
+      ["Last turn", session.lastTurn ? `${dayText(session.lastTurn)} (${sinceText(session.sinceMs)})` : "no turn"],
+      ["Model · effort", `${session.modelShort || "unknown"}${session.effort ? ` · ${session.effort}` : ""}`],
+      ["Working folder", session.cwd || "unknown"],
+      ["Process id", Number.isFinite(session.pid) ? copyable("pid", String(session.pid)) : "unknown"],
+      ["Session id", session.sessionId ? copyable("session", session.sessionId) : "unknown"],
+    ]));
+    return wrap;
+  }
+
+  function backButton() {
+    const b = el("button", "kx-d-back");
+    b.type = "button";
+    b.dataset.testid = "detail-back";
+    b.appendChild(icon("back"));
+    b.appendChild(document.createTextNode("Sessions"));
+    b.addEventListener("click", () => setOpen(null));
+    return b;
+  }
+
+  /** The view of one session, top to bottom: top bar, header, meta line, curve, facts. */
+  function detailFor(session) {
+    const root = zoned(el("article"), session.zone);
+    root.dataset.session = session.sessionId;
+    const top = el("div", "kx-d-top");
+    top.appendChild(backButton());
+    if (session.busy) {
+      const badge = el("span", "kx-badge");
+      badge.dataset.testid = "detail-busy";
+      badge.appendChild(icon("zap"));
+      badge.appendChild(document.createTextNode("busy"));
+      top.appendChild(badge);
+    }
+    const esc = el("span", "kx-d-esc", "Esc");
+    esc.title = "Escape returns to the list";
+    esc.setAttribute("aria-hidden", "true");
+    top.appendChild(esc);
+    root.appendChild(top);
+    const head = el("div", "kx-d-head");
+    const dot = el("span", "kx-dot" + (session.busy ? " kx-pulse" : ""));
+    dot.title = `Zone: ${ZONE_NAME[session.zone] || "unknown"}`;
+    head.appendChild(dot);
+    const h = el("h1", "", session.title || "unknown");
+    h.dataset.testid = "detail-title";
+    head.appendChild(h);
+    const count = el("div", "kx-d-count");
+    const n = zoned(el("div", "kx-num", tokensText(session.tokens)), session.zone);
+    n.dataset.testid = "detail-tokens";
+    n.setAttribute("aria-label", `${tokensText(session.tokens)} tokens, zone ${ZONE_NAME[session.zone] || "unknown"}`);
+    count.appendChild(n);
+    count.appendChild(el("div", "kx-d-zone", ZONE_NAME[session.zone] || "unknown"));
+    head.appendChild(count);
+    root.appendChild(head);
+    const meta = el("div", "kx-d-meta");
+    meta.dataset.testid = "detail-meta";
+    const add = (name, text) => { const s = el("span"); s.appendChild(icon(name)); s.appendChild(document.createTextNode(text)); meta.appendChild(s); return s; };
+    add("folder", session.project || "unknown").title = session.cwd || "";
+    add("cpu", (session.modelShort || "unknown") + (session.effort ? ` · ${session.effort}` : ""));
+    add("repeat", plural(session.turns || 0, "turn", "turns"));
+    add("play", session.startedAt ? `started ${clockText(session.startedAt)}` : "start unknown");
+    add("clock", sinceText(session.sinceMs));
+    root.appendChild(meta);
+    root.appendChild(detailCurve(session));
+    root.appendChild(detailFacts(session));
+    return root;
+  }
+
+  /** The open session drawn from the last list, or "gone" when the registry no longer has it. */
+  function drawDetail() {
+    if (!openId || !lastData) return; // without a list yet, the first one draws it
+    const session = allSessions(lastData).find((s) => s.sessionId === openId);
+    const active = document.activeElement;
+    const focused = !focusBack && active && detailEl.contains(active) ? active.dataset.testid : null;
+    redrawing = true;
+    detailEl.textContent = "";
+    redrawing = false;
+    if (session) detailEl.appendChild(detailFor(session));
+    else {
+      turnShown = null;
+      const gone = el("div");
+      gone.appendChild(backButton());
+      const p = el("p", "kx-message", "That session is gone from the registry.");
+      p.dataset.testid = "detail-gone";
+      gone.appendChild(p);
+      detailEl.appendChild(gone);
+    }
+    const target = focusBack ? detailEl.querySelector('[data-testid="detail-back"]') : focused ? detailEl.querySelector(`[data-testid="${focused}"]`) : null;
+    focusBack = false;
+    if (target) target.focus({ preventScroll: true });
+  }
+
+  const scroller = () => document.scrollingElement || document.documentElement;
+  /** The list or the detail on screen; the list keeps being drawn behind the detail, so it is current on the way back. */
+  function showMode() {
+    for (const e of [headerEl, controlsEl, listEl]) e.hidden = !!openId;
+    detailEl.hidden = !openId;
+    if (!openId) detailEl.textContent = "";
+  }
+
+  /** Opens a session (`id`) or returns to the list (null), and remembers it: webview state in VS Code, the hash elsewhere. */
+  function setOpen(id, { fromHash = false } = {}) {
+    const next = id || null;
+    if (next === openId) return;
+    const closing = openId;
+    if (next && !closing) listScroll = scroller().scrollTop;
+    openId = next;
+    turnShown = null;
+    if (vscode) store.set("open", openId);
+    else if (!fromHash) history.replaceState(null, "", openId ? `#${encodeURIComponent(openId)}` : location.pathname + location.search);
+    showMode();
+    if (openId) {
+      focusBack = true;
+      scroller().scrollTop = 0;
+      drawDetail();
+      return;
+    }
+    scroller().scrollTop = listScroll;
+    const row = closing && [...listEl.querySelectorAll(".kx-session[tabindex]")].find((r) => r.dataset.session === closing);
+    if (row) row.focus({ preventScroll: true });
+  }
+
+  listEl.addEventListener("click", (e) => {
+    const row = e.target.closest(".kx-session[tabindex]");
+    if (row && row.dataset.session) setOpen(row.dataset.session);
+  });
+  listEl.addEventListener("keydown", (e) => {
+    if ((e.key !== "Enter" && e.key !== " ") || !e.target.matches(".kx-session[tabindex]")) return;
+    e.preventDefault();
+    setOpen(e.target.dataset.session);
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && openId) { e.preventDefault(); setOpen(null); }
+  });
+
   sortEl.addEventListener("change", () => { view.sort = SORTS.includes(sortEl.value) ? sortEl.value : "last"; saveView(); });
   dimmedEl.addEventListener("click", () => { view.hideDimmed = !view.hideDimmed; saveView(); });
   hotEl.addEventListener("click", () => { view.hotOnly = !view.hotOnly; saveView(); });
@@ -882,6 +1360,7 @@
   function render(data) {
     lastData = data;
     refreshDone(data);
+    drawDetail();
     countEl.textContent = String(data.count || 0);
     renderMeter(data.zoneCounts || {});
     const cacheCounts = data.cacheCounts || {};
@@ -946,6 +1425,10 @@
     refreshEl.setAttribute("aria-busy", "true");
     ask();
   }
+  // the session open when the panel was last shown (VS Code) or named in the address (a dev server)
+  const hashId = () => { try { return decodeURIComponent(location.hash.slice(1)) || null; } catch { return null; } };
+  const remembered = vscode ? store.get("open") : hashId();
+  if (typeof remembered === "string" && remembered) { openId = remembered; focusBack = true; showMode(); }
   if (vscode) {
     window.addEventListener("message", (e) => { if (e.data && e.data.type === "sessions") render(e.data); });
     allEl.addEventListener("change", () => vscode.postMessage({ type: "scope", all: allEl.checked }));
@@ -958,6 +1441,7 @@
     // stream is closed and the page says so with "Try again"; no silent reconnects, so what the page
     // shows is always either live or marked as lost.
     allEl.parentElement.hidden = true;
+    window.addEventListener("hashchange", () => setOpen(hashId(), { fromHash: true }));
     let stream = null;
 
     function lost() {
