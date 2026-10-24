@@ -469,34 +469,39 @@ describe("seriesFor", () => {
   });
 });
 
-describe("summaryText", () => {
-  it("zone only: the zone and nothing else", () => {
-    expect(K.summaryText({ zone: "green" }, null)).toBe("Green zone.");
+describe("contextFacts", () => {
+  it("zone only: no named facts and no typical start", () => {
+    expect(K.contextFacts({ zone: "orange" }, null)).toEqual({ advice: expect.any(String), facts: [], typicalStart: null });
   });
 
-  it("with the compactions of the session, one or more", () => {
-    expect(K.summaryText({ zone: "red", compactionCount: 1 }, null)).toBe("Red zone after 1 compaction.");
-    expect(K.summaryText({ zone: "orange", compactionCount: 2, baseline: 60000, baselineCause: "compaction" }, 45000))
-      .toBe("Orange zone after 2 compactions; this segment started at 60K, a fresh session here typically starts at ~45K.");
+  it("from the start: \"Session started at\", and no compactions row without a compaction", () => {
+    expect(K.contextFacts({ zone: "yellow", compactionCount: 0, baseline: 29589, baselineCause: "start" }, null).facts).toEqual([["Session started at", "30K"]]);
   });
 
-  it("the segment's start: \"this segment\" after a compaction, \"the session\" from the start", () => {
-    expect(K.summaryText({ zone: "red", compactionCount: 1, baseline: 168600, baselineCause: "compaction" }, null)).toBe("Red zone after 1 compaction; this segment started at 169K.");
-    expect(K.summaryText({ zone: "yellow", compactionCount: 0, baseline: 29589, baselineCause: "start" }, null)).toBe("Yellow zone; the session started at 30K.");
+  it("a segment after a compaction: \"This segment started at\" and the session's compactions, one or more", () => {
+    expect(K.contextFacts({ zone: "red", compactionCount: 1, baseline: 168600, baselineCause: "compaction" }, null).facts)
+      .toEqual([["This segment started at", "169K"], ["Compactions", "1"]]);
+    expect(K.contextFacts({ zone: "red", compactionCount: 3 }, null).facts).toEqual([["Compactions", "3"]]);
   });
 
-  it("with a median the typical fresh start follows, without one (null) the clause is left out", () => {
-    expect(K.summaryText({ zone: "red", compactionCount: 1, baseline: 168600, baselineCause: "compaction" }, 29000))
-      .toBe("Red zone after 1 compaction; this segment started at 169K, a fresh session here typically starts at ~29K.");
-    expect(K.summaryText({ zone: "green" }, 40500)).toBe("Green zone, a fresh session here typically starts at ~41K.");
-    expect(K.summaryText({ zone: "green", baseline: 12000, baselineCause: "start" }, null)).toBe("Green zone; the session started at 12K.");
+  it("with a median the typical fresh start, without one (null) none", () => {
+    expect(K.contextFacts({ zone: "green", baseline: 12000, baselineCause: "start" }, 28809.5).typicalStart).toBe("~29K");
+    expect(K.contextFacts({ zone: "green", baseline: 12000, baselineCause: "start" }, null).typicalStart).toBeNull();
   });
 
-  it("no count gives no zone, and no advice or threshold is ever added", () => {
-    expect(K.summaryText({ zone: null, compactionCount: 0, baseline: null, turns: 3 }, 40000)).toBe("No token count yet, so no zone.");
-    expect(K.summaryText({ zone: null, compactionCount: 0, baseline: null, turns: 0 }, 40000)).toBe("No turns yet, so no count and no zone.");
-    const all = ["green", "yellow", "orange", "red"].map((zone) => K.summaryText({ zone, compactionCount: 3, baseline: 50000, baselineCause: "start" }, 40000));
-    for (const text of all) expect(text).not.toMatch(/clear|compact |break|fresh session now|should|phase/i);
+  it("advice for yellow, orange and red as a sentence; none for green or an unknown zone", () => {
+    const advice = (zone) => K.contextFacts({ zone }, null).advice;
+    expect(advice("yellow")).toBe("Plan to break at the next phase boundary.");
+    expect(advice("orange")).toBe("Break at the first phase boundary; continue only if the next phase fits under 150K.");
+    expect(advice("red")).toBe("Do not start a new phase: /clear, /handoff, a subagent, or /compact.");
+    expect(advice("green")).toBeNull();
+    expect(advice(null)).toBeNull();
+    expect(advice("purple")).toBeNull();
+  });
+
+  it("never repeats the count or the zone, which the header carries, nor says what a break would give back", () => {
+    const all = ["green", "yellow", "orange", "red"].map((zone) => K.contextFacts({ zone, compactionCount: 2, baseline: 50000, baselineCause: "start" }, 40000));
+    for (const { facts } of all) expect(JSON.stringify(facts)).not.toMatch(/zone|give back|free/i);
   });
 });
 
@@ -685,7 +690,7 @@ describe("buildSessions", () => {
     expect(r.sessions.find((s) => s.sessionId === "without").growth).toEqual([]);
   });
 
-  it("the list keeps the last 200 turns of a longer session; compactionCount and the sentence count the whole session's compactions", () => {
+  it("the list keeps the last 200 turns of a longer session; compactionCount and the facts count the whole session's compactions", () => {
     const series = Array.from({ length: 233 }, (_, i) => 1000 * (i + 1));
     const long = tail(233000, NOW, { turns: 233, series, outputSeries: series.map(() => 5), thinkingSeries: series.map(() => 1),
       compactions: [{ at: 10, trigger: "auto" }, { at: 220, trigger: "manual" }], baseline: 221000, baselineAt: 220, baselineCause: "compaction" });
@@ -697,17 +702,17 @@ describe("buildSessions", () => {
     expect(s.compactions).toEqual([{ at: 187, trigger: "manual" }]);
     expect(s.baselineAt).toBe(187);
     expect(s.compactionCount).toBe(2);
-    expect(s.summary).toBe("Red zone after 2 compactions; this segment started at 221K.");
-    expect(r.sessions.find((x) => x.sessionId === "without")).toMatchObject({ compactionCount: 0, summary: "No turns yet, so no count and no zone." });
+    expect(s.facts).toEqual([["This segment started at", "221K"], ["Compactions", "2"]]);
+    expect(r.sessions.find((x) => x.sessionId === "without")).toMatchObject({ compactionCount: 0, facts: [], advice: null });
   });
 
-  it("the sentence of every session takes the list's median of the fresh starts", () => {
+  it("every session's typical start is the list's median of the fresh starts, and its advice follows its zone", () => {
     const at = (baseline, baselineCause) => tail(143002, NOW, { baseline, baselineAt: 0, baselineCause });
     const r = K.buildSessions({ registry, transcripts: { ...transcripts, new: at(62000, "start"), old: at(30000, "compaction"), busy: at(40000, "start") },
       now: NOW, workspaceFolders: [MINE], all: false });
     expect(r.baselineMedian).toBe(51000);
-    expect(r.sessions.find((s) => s.sessionId === "old").summary).toBe("Orange zone; this segment started at 30K, a fresh session here typically starts at ~51K.");
-    expect(r.sessions.find((s) => s.sessionId === "new").summary).toBe("Orange zone; the session started at 62K, a fresh session here typically starts at ~51K.");
+    expect(r.sessions.find((s) => s.sessionId === "old")).toMatchObject({ facts: [["This segment started at", "30K"]], typicalStart: "~51K", advice: expect.stringMatching(/^Break at/) });
+    expect(r.sessions.find((s) => s.sessionId === "new")).toMatchObject({ facts: [["Session started at", "62K"]], typicalStart: "~51K" });
   });
 
   it("the count per zone covers the listed sessions in all four zones, unknown is not counted, and with all projects everything shown is counted", () => {
