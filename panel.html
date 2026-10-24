@@ -277,6 +277,19 @@
   .kx-d-turn { flex: 1 1 auto; min-width: 0; accent-color: var(--kx-accent); margin: 0; height: 18px; }
   .kx-d-turn-val { font-family: var(--kx-mono); font-variant-numeric: tabular-nums; white-space: nowrap; min-width: 9ch; text-align: right; }
   .kx-d-out { display: block; width: 100%; height: 28px; margin-top: 4px; color: var(--kx-muted); }
+  /* one sentence of facts over the curve, edged and tinted in the zone colour */
+  .kx-d-sum {
+    margin: 0 0 10px; padding: 8px 10px; border-left: 3px solid var(--kx-zone-fill, var(--kx-muted)); border-radius: 0 4px 4px 0;
+    background: color-mix(in srgb, var(--kx-zone-fill, var(--kx-muted)) 8%, transparent); font-size: 0.95em; font-weight: 600;
+  }
+  /* where the context went: name · bar · tokens · share per source, the bars scaled to the largest; the caveat once under them */
+  .kx-d-bars { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 4px 10px; align-items: center; font-size: 0.9em; font-variant-numeric: tabular-nums; }
+  .kx-d-bar { height: 10px; border-radius: 5px; background: var(--kx-track); overflow: hidden; }
+  .kx-d-bar i { display: block; height: 100%; width: calc(var(--p) * 1%); background: var(--kx-zone-fill, var(--kx-muted)); border-radius: 5px; }
+  .kx-d-bar-n { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 16ch; } /* a long MCP name must not squeeze the bars */
+  .kx-d-bar-v { font-family: var(--kx-mono); white-space: nowrap; }
+  .kx-d-bar-s { color: var(--kx-muted); white-space: nowrap; min-width: 4ch; text-align: right; }
+  .kx-d-note { margin: 6px 0 0; font-size: 0.8em; color: var(--kx-muted); font-style: italic; }
   /* the facts: two tables, key over value in the narrow layout so a long path never overflows */
   .kx-d-facts { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px 20px; }
   .kx-d-facts table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 0.9em; }
@@ -318,6 +331,7 @@
     .kx-d-field[data-axis] .kx-d-axis { display: block; }
     .kx-d-field[data-axis-wide="2"] .kx-d-axis-mid, .kx-d-field[data-axis-wide="1"] .kx-d-axis-mid, .kx-d-field[data-axis-wide="1"] .kx-d-axis-low { display: none; }
     .kx-d-out { height: 40px; }
+    .kx-d-pair { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 0 20px; align-items: start; } /* the curve and where the context went */
     .kx-d-facts { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
     .kx-d-facts tr { display: table-row; padding: 0; border: 0; }
     .kx-d-facts th, .kx-d-facts td { display: table-cell; padding: 3px 6px 3px 0; border-bottom: 1px solid var(--kx-border); }
@@ -672,21 +686,20 @@
   /** "browser_click" for "mcp__royktest__browser_click": an MCP tool by its own name, without the server. */
   const sourceName = (source) => (/^mcp__/.test(source) ? source.split("__").pop() : source);
   const GROWTH_TOP = 3;
+  const GROWTH_HOW = "per turn, what the model wrote (output) first, the rest split by length over the tool results (by tool), your messages (you) and attachments and reminders (other); a fall is not counted";
+  const growthRows = (session) => (Array.isArray(session.growth) ? session.growth : []);
+  const growthSince = (session) => (session.baselineCause === "compaction" ? "since the compaction" : "since the first turn");
 
   /**
-   * "≈ Bash 39K · Read 27K · output 10K": the largest sources of the segment's growth (core.cjs growthBySource),
-   * every source in the tooltip with its share. Nothing before the second turn of a segment.
+   * "≈ Bash 39K · Read 27K · output 10K": the largest sources of the segment's growth (core.cjs growth, largest
+   * first), every source in the tooltip with its share. Nothing before the second turn of a segment.
    */
   function growthFor(session) {
-    const g = session.growthBySource && typeof session.growthBySource === "object" ? session.growthBySource : {};
-    const list = Object.entries(g).filter(([, n]) => Number.isFinite(n) && n > 0).sort((a, b) => b[1] - a[1]);
+    const list = growthRows(session);
     if (!list.length) return null;
-    const sum = list.reduce((a, [, n]) => a + n, 0);
-    const line = el("div", "kx-growth", `≈ ${list.slice(0, GROWTH_TOP).map(([k, n]) => `${sourceName(k)} ${tokensText(n)}`).join(" · ")}`);
+    const line = el("div", "kx-growth", `≈ ${list.slice(0, GROWTH_TOP).map((g) => `${sourceName(g.source)} ${tokensText(g.tokens)}`).join(" · ")}`);
     line.dataset.testid = "growth";
-    const since = session.baselineCause === "compaction" ? "since the compaction" : "since the first turn";
-    line.title = `Where the context grew ${since}, estimated: ${list.map(([k, n]) => `${sourceName(k)} ${tokensText(n)} (${Math.round((n / sum) * 100)} %)`).join(", ")}`
-      + ` · per turn, what the model wrote (output) first, the rest split by length over the tool results (by tool), your messages (you) and attachments and reminders (other); a fall is not counted`;
+    line.title = `Where the context grew ${growthSince(session)}, estimated: ${list.map((g) => `${sourceName(g.source)} ${tokensText(g.tokens)} (${Math.round(g.share * 100)} %)`).join(", ")} · ${GROWTH_HOW}`;
     return line;
   }
 
@@ -935,7 +948,8 @@
   // ── Detail view of one session: replaces the header, the controls and the list in the same webview. The
   // open session is kept in the webview state in VS Code and in the hash (#<sessionId>) on a dev server.
   // Every list draws it again, so the curve grows with the session; the turn in the tooltip, the focus and
-  // a copy receipt survive that redraw. ──
+  // a copy receipt survive that redraw. The list has the last 200 turns of a session; on open and after every
+  // list the panel asks the host for all of them (core.cjs SessionReader.detail), and draws again with those. ──
   const D_W = 100, D_H = 100; // the large curve's viewBox, stretched to its field like the sparkline's
   const D_FIELD_H = { narrow: 150, wide: 220 }; // the field's height in the style (.kx-d-field), below and above 620 px
   const AXIS_GAP_PX = 11; // an axis label is about 10 px tall; neighbours closer than this would overlap
@@ -946,12 +960,24 @@
   let redrawing = false; // the detail is being replaced: a blur from that is not the user's
   let listScroll = 0; // the list's scroll position, restored on the way back
   const copied = {}; // copy button key → { until, text } while its receipt shows
+  let detailAnswer = null; // the host's last answer for the open session, { sessionId, detail }: every turn of it
+  let askDetail = null; // the adapter's way to ask the host for that answer; set at the end
+
+  function requestDetail() { if (openId && askDetail) askDetail(openId); }
+
+  /** The host's answer: drawn when it is for the session still open; without a detail the list's 200 turns stay. */
+  function onDetail(answer) {
+    if (!answer || answer.sessionId !== openId) return;
+    detailAnswer = answer.detail && typeof answer.detail === "object" ? answer : null;
+    drawDetail();
+  }
 
   /**
    * The large curve: zone bands, dashed limits, area and line in the zone colour, compactions as solid lines
    * with their label, dips dotted, the segment's start labelled at the bottom, the axis at the right edge.
    * Hovering shows a hairline and "turn 2 · 60K · +9K from turn 1"; the range under it does the same from the
-   * keyboard. The series holds the last SERIES_MAX turns (core.cjs), so its first point is turn `first`.
+   * keyboard. Until the host's detail has come the series is the list's last SERIES_MAX turns (core.cjs), so
+   * its first point is turn `first`; with the detail it is every turn and `first` is 1.
    */
   function detailCurve(session) {
     const wrap = el("div", "kx-d-sec");
@@ -1183,6 +1209,35 @@
     return wrap;
   }
 
+  /** Where the context went since the segment's start: one bar per source, largest first (core.cjs growth), the estimate's caveat once under them. */
+  function detailGrowth(session) {
+    const wrap = el("div", "kx-d-sec");
+    wrap.dataset.testid = "detail-growth";
+    const h = el("h2", "kx-group");
+    h.appendChild(icon("play"));
+    h.appendChild(document.createTextNode(`Where the context went ${growthSince(session)}`));
+    wrap.appendChild(h);
+    const rows = growthRows(session);
+    if (!rows.length) { wrap.appendChild(el("p", "kx-d-note", session.turns ? "nothing yet since the segment's first turn" : "no turns yet")); return wrap; }
+    const bars = el("div", "kx-d-bars");
+    for (const g of rows) {
+      const name = el("span", "kx-d-bar-n", sourceName(g.source));
+      name.title = g.source;
+      const bar = el("span", "kx-d-bar");
+      bar.setAttribute("aria-hidden", "true");
+      const fill = el("i");
+      fill.style.setProperty("--p", pct(g.tokens / rows[0].tokens));
+      bar.appendChild(fill);
+      bars.appendChild(name);
+      bars.appendChild(bar);
+      bars.appendChild(el("span", "kx-d-bar-v", tokensText(g.tokens)));
+      bars.appendChild(el("span", "kx-d-bar-s", `${Math.round(g.share * 100)} %`));
+    }
+    wrap.appendChild(bars);
+    wrap.appendChild(el("p", "kx-d-note", `Estimate: ${GROWTH_HOW}.`));
+    return wrap;
+  }
+
   function backButton() {
     const b = el("button", "kx-d-back");
     b.type = "button";
@@ -1193,7 +1248,7 @@
     return b;
   }
 
-  /** The view of one session, top to bottom: top bar, header, meta line, curve, facts. */
+  /** The view of one session, top to bottom: top bar, header, meta line, the sentence, curve and where the context went (side by side from 620 px), facts. */
   function detailFor(session) {
     const root = zoned(el("article"), session.zone);
     root.dataset.session = session.sessionId;
@@ -1235,15 +1290,27 @@
     add("play", session.startedAt ? `started ${clockText(session.startedAt)}` : "start unknown");
     add("clock", sinceText(session.sinceMs));
     root.appendChild(meta);
-    root.appendChild(detailCurve(session));
+    if (session.summary) {
+      const sum = el("p", "kx-d-sum", session.summary); // composed by the core (core.cjs summaryText): facts, no advice
+      sum.dataset.testid = "detail-summary";
+      root.appendChild(sum);
+    }
+    const pair = el("div", "kx-d-pair");
+    pair.appendChild(detailCurve(session));
+    pair.appendChild(detailGrowth(session));
+    root.appendChild(pair);
     root.appendChild(detailFacts(session));
     return root;
   }
 
-  /** The open session drawn from the last list, or "gone" when the registry no longer has it. */
+  /**
+   * The open session drawn from the last list, with every turn from the host's detail when it has come, or
+   * "gone" when the registry no longer has it.
+   */
   function drawDetail() {
     if (!openId || !lastData) return; // without a list yet, the first one draws it
-    const session = allSessions(lastData).find((s) => s.sessionId === openId);
+    const listed = allSessions(lastData).find((s) => s.sessionId === openId);
+    const session = listed && detailAnswer && detailAnswer.sessionId === openId ? { ...listed, ...detailAnswer.detail } : listed;
     const active = document.activeElement;
     const focused = !focusBack && active && detailEl.contains(active) ? active.dataset.testid : null;
     redrawing = true;
@@ -1280,6 +1347,7 @@
     if (next && !closing) listScroll = scroller().scrollTop;
     openId = next;
     turnShown = null;
+    detailAnswer = null; // the answer for another session, or none
     if (vscode) store.set("open", openId);
     else if (!fromHash) history.replaceState(null, "", openId ? `#${encodeURIComponent(openId)}` : location.pathname + location.search);
     showMode();
@@ -1287,6 +1355,7 @@
       focusBack = true;
       scroller().scrollTop = 0;
       drawDetail();
+      requestDetail();
       return;
     }
     scroller().scrollTop = listScroll;
@@ -1361,6 +1430,7 @@
     lastData = data;
     refreshDone(data);
     drawDetail();
+    requestDetail(); // the new list's turns, all of them, for the open session
     countEl.textContent = String(data.count || 0);
     renderMeter(data.zoneCounts || {});
     const cacheCounts = data.cacheCounts || {};
@@ -1430,7 +1500,11 @@
   const remembered = vscode ? store.get("open") : hashId();
   if (typeof remembered === "string" && remembered) { openId = remembered; focusBack = true; showMode(); }
   if (vscode) {
-    window.addEventListener("message", (e) => { if (e.data && e.data.type === "sessions") render(e.data); });
+    window.addEventListener("message", (e) => {
+      if (e.data && e.data.type === "sessions") render(e.data);
+      if (e.data && e.data.type === "detail") onDetail(e.data);
+    });
+    askDetail = (id) => vscode.postMessage({ type: "detail", sessionId: id });
     allEl.addEventListener("change", () => vscode.postMessage({ type: "scope", all: allEl.checked }));
     refreshEl.addEventListener("click", () => requestRefresh(() => vscode.postMessage({ type: "refresh" })));
     vscode.postMessage({ type: "ready" });
@@ -1443,6 +1517,15 @@
     allEl.parentElement.hidden = true;
     window.addEventListener("hashchange", () => setOpen(hashId(), { fromHash: true }));
     let stream = null;
+    // every turn of the open session from /claude-context/api/detail; only the latest request's answer is drawn
+    let detailAsked = 0;
+    askDetail = (id) => {
+      const n = ++detailAsked;
+      fetch(`/claude-context/api/detail?session=${encodeURIComponent(id)}`, { cache: "no-store" })
+        .then((response) => (response.ok ? response.json() : null))
+        .then((answer) => { if (n === detailAsked) onDetail(answer); })
+        .catch(() => { /* a host without the endpoint: the list's last 200 turns stay */ });
+    };
 
     function lost() {
       if (stream) stream.close();

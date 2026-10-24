@@ -1,6 +1,7 @@
 // extension.js — the extension host side of the "Claude Context" panel. Reads the data with core.cjs
 // and watches Claude Code's sessions/ and projects/ folders with it (SessionReader and SessionWatcher),
-// and pushes the list to the webview with postMessage (the webview cannot read files itself).
+// and pushes the list to the webview with postMessage (the webview cannot read files itself), and answers
+// the detail view's request for every turn of one session.
 // CommonJS, because the extension host loads it that way. Install with
 // "Developer: Install Extension from Location…" (see README.md).
 "use strict";
@@ -49,6 +50,10 @@ class ClaudeContextViewProvider {
       if (msg.type === "ready") this.refresh();
       if (msg.type === "refresh") this.refresh({ full: true }); // the panel's button: forget the parsed state, read everything again
       if (msg.type === "scope") this.context.globalState.update(SCOPE_KEY, !!msg.all).then(() => this.refresh());
+      // the detail view asks for every turn of the open session after each list; the answer is the last read's
+      if (msg.type === "detail" && typeof msg.sessionId === "string") {
+        this.view.webview.postMessage({ type: "detail", sessionId: msg.sessionId, detail: this.reader.detail(msg.sessionId) });
+      }
     });
     view.onDidDispose(() => { this.view = null; this.stopWatching(); });
     this.startWatching();
