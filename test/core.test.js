@@ -557,6 +557,32 @@ describe("buildSessions", () => {
     expect(without).toMatchObject({ tokens: null, zone: null, modelShort: null, title: null, turns: 0, sinceMs: null, dimmed: false, name: null });
   });
 
+  it("abandoned: idle and no turn for an hour, never busy; abandonedCount counts them", () => {
+    const r = K.buildSessions({ registry, transcripts, now: NOW, workspaceFolders: [MINE], all: false });
+    expect(Object.fromEntries(r.sessions.map((s) => [s.sessionId, s.abandoned]))).toEqual({ busy: false, new: false, old: true, without: false });
+    expect(r.abandonedCount).toBe(1);
+  });
+
+  it("abandoned: an empty session (no turns) once it started more than an hour ago; not without a start", () => {
+    const at = (min) => Date.parse(NOW) - min * 60000;
+    const empty = [
+      { ...reg(1, "left", MINE, "idle"), startedAt: at(61) }, { ...reg(2, "opened", MINE, "idle"), startedAt: at(59) },
+      { ...reg(3, "working", MINE, "busy"), startedAt: at(90) }, reg(4, "unknown-start", MINE, "idle"),
+      { ...reg(5, "early", MINE, "idle"), startedAt: at(120) },
+    ];
+    const r = K.buildSessions({ registry: empty, transcripts: { early: tail(30000, new Date(at(5)).toISOString()) }, now: NOW, workspaceFolders: [MINE] });
+    expect(Object.fromEntries(r.sessions.map((s) => [s.sessionId, s.abandoned]))).toEqual({ left: true, opened: false, working: false, "unknown-start": false, early: false });
+    expect(r.abandonedCount).toBe(1);
+  });
+
+  it("abandoned: a tab reopened on an old session is not, while its process started within the hour; it stays dimmed", () => {
+    const at = (min) => Date.parse(NOW) - min * 60000;
+    const reopened = [{ ...reg(1, "reopened", MINE, "idle"), startedAt: at(7) }, { ...reg(2, "left", MINE, "idle"), startedAt: at(70) }];
+    const old = tail(90000, new Date(at(600)).toISOString());
+    const r = K.buildSessions({ registry: reopened, transcripts: { reopened: old, left: old }, now: NOW, workspaceFolders: [MINE] });
+    expect(r.sessions.map((s) => [s.sessionId, s.abandoned, s.dimmed])).toEqual([["reopened", false, true], ["left", true, true]]);
+  });
+
   it("name is the registry's, for the panel's title when the transcript has none; null when missing", () => {
     const named = [{ ...reg(1, "a", MINE, "idle"), name: "my-project-08" }, { ...reg(2, "b", MINE, "idle"), name: "" }];
     const r = K.buildSessions({ registry: named, transcripts: {}, now: NOW, workspaceFolders: [MINE] });

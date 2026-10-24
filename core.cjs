@@ -11,6 +11,10 @@ const path = require("node:path");
 // Quality warnings, not the window limit: absolute token counts calibrated on Matt Pocock's smart/dumb zone
 // (the dumb zone "commonly begins around 125K-150K tokens"); the orange band is that range.
 const YELLOW_FROM = 100000, ORANGE_FROM = 125000, RED_ABOVE = 150000;
+// A session without a turn for an hour is dimmed. One that is not busy and had neither a turn nor its process start
+// for an hour is abandoned, and the panel folds it away: a closed VS Code chat tab keeps its process (NOTES.md,
+// "Closed chat tabs") and nothing tells it from an open tab, so a quiet hour is the only sign there is. The start
+// counts because a tab reopened on an old session spawns a new process. An hour is also the longer cache TTL.
 const DIM_AFTER_MS = 60 * 60 * 1000;
 // The prompt cache's two TTLs. Every turn re-sends the whole context; while the cache is warm the context is
 // read from it, and the cache is refreshed on every use, so the deadline is the last turn plus the TTL.
@@ -346,7 +350,9 @@ function userText(content) {
  * when there are none, so a CLAUDE.md that grew shows as a higher start for every new session. The per-turn
  * fields are kept to the last SERIES_MAX turns (seriesFor; SessionReader.detail gives all of them);
  * `compactionCount` counts the whole session's. `growth` is growthBySource as rows (growthRows), and `summary`
- * the detail view's sentence (summaryText) with the list's baselineMedian.
+ * the detail view's sentence (summaryText) with the list's baselineMedian. `abandoned` is a session that is not busy
+ * and whose last turn and process start are both more than DIM_AFTER_MS ago (an empty session by its start alone);
+ * `abandonedCount` counts them.
  */
 function buildSessions({ registry = [], transcripts = {}, now, workspaceFolders = [], all = false }) {
   const nowMs = typeof now === "number" ? now : Date.parse(now);
@@ -362,9 +368,13 @@ function buildSessions({ registry = [], transcripts = {}, now, workspaceFolders 
       const cacheRead = Number.isFinite(t.cacheRead) ? t.cacheRead : null;
       const coldMs = cacheTtlMs !== null && Number.isFinite(lastMs) ? lastMs + cacheTtlMs : NaN;
       const coldInMs = Number.isFinite(coldMs) && Number.isFinite(nowMs) ? coldMs - nowMs : null;
+      const startedMs = Number(r.startedAt) || NaN;
+      const busy = r.status === "busy", dimmed = sinceMs !== null && sinceMs > DIM_AFTER_MS;
+      const activeMs = Math.max(Number.isFinite(lastMs) ? lastMs : -Infinity, Number.isFinite(startedMs) ? startedMs : -Infinity);
+      const quiet = Number.isFinite(activeMs) && Number.isFinite(nowMs) && nowMs - activeMs > DIM_AFTER_MS;
       return {
         pid: r.pid, sessionId: r.sessionId, cwd: r.cwd, project: projectName(r.cwd), name: r.name || null,
-        startedAt: Number.isFinite(Number(r.startedAt)) && r.startedAt ? new Date(Number(r.startedAt)).toISOString() : null, // the registry's epoch ms, as ISO like lastTurn
+        startedAt: Number.isFinite(startedMs) ? new Date(startedMs).toISOString() : null, // the registry's epoch ms, as ISO like lastTurn
         title: t.title || null, model: t.model || null, modelShort: modelShort(t.model),
         tokens, zone: zone(tokens), turns: t.turns || 0, series, compactions, dips: drops,
         compactionCount: Array.isArray(t.compactions) ? t.compactions.length : 0, // the whole session's, also those cut from the series
@@ -379,7 +389,7 @@ function buildSessions({ registry = [], transcripts = {}, now, workspaceFolders 
         hitShare: cacheRead !== null && tokens ? cacheRead / tokens : null,
         coldAt: Number.isFinite(coldMs) ? new Date(coldMs).toISOString() : null, coldInMs,
         cacheState: coldInMs === null ? null : coldInMs > 0 ? "warm" : "cold",
-        busy: r.status === "busy", dimmed: sinceMs !== null && sinceMs > DIM_AFTER_MS,
+        busy, dimmed, abandoned: !busy && quiet,
         _lastMs: Number.isFinite(lastMs) ? lastMs : -Infinity,
       };
     })
@@ -399,7 +409,8 @@ function buildSessions({ registry = [], transcripts = {}, now, workspaceFolders 
   const mid = starts.length >> 1;
   const baselineMedian = !starts.length ? null : starts.length % 2 ? starts[mid] : (starts[mid - 1] + starts[mid]) / 2;
   for (const s of sessions) s.summary = summaryText(s, baselineMedian);
-  return { sessions, groups, count: sessions.length, zoneCounts, cacheCounts, baselineMedian, baselineSessions: starts.length };
+  return { sessions, groups, count: sessions.length, zoneCounts, cacheCounts, baselineMedian, baselineSessions: starts.length,
+    abandonedCount: sessions.filter((s) => s.abandoned).length };
 }
 
 /**

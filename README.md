@@ -4,7 +4,7 @@ A VS Code panel that shows the context window of every live Claude Code session 
 in real time. The header has the count and a zone meter (how many sessions are green, below 100K tokens;
 yellow, below 125K; orange, up to 150K; red, above). The zones are absolute token counts, not a share of
 the model's window: they follow Matt Pocock's smart zone and dumb zone, where the dumb zone "commonly
-begins around 125K-150K tokens". The sessions sit under "Working now" and "Idle", one row each: title, a
+begins around 125K-150K tokens". The sessions sit under "Working now", "Idle" and "Idle over an hour", one row each: title, a
 context bar scaled 0–200K with marks at 100K, 125K and 150K (its tooltip says what to do at the next phase
 boundary in the yellow, orange and red zones), whose first part, in a muted shade, is the start of the session:
 the first turn, which holds the fixed load (CLAUDE.md, memory, skill and tool listings) and the first message
@@ -21,14 +21,18 @@ few minutes before that the text turns orange, and afterwards it says "cold". Th
 how much of the last turn's context was read from cache and how much was written. The header counts the
 warm and cold sessions beside the zone meter, and the median start of the sessions that began fresh, so
 a CLAUDE.md that grew shows at a glance. Busy sessions pulse and sort first; sessions idle for more
-than an hour are dimmed. The rows stack in the narrow sidebar and spread over four columns when the panel is 620 px or
+than an hour are dimmed. A session that is not busy and had neither a turn nor its process start for an hour
+(an empty one by its start alone) goes into "Idle over an hour", folded until you open it, and the header counts
+them ("3 idle over an hour"): VS Code keeps a chat tab's process running after the tab is closed, until
+**Developer: Reload Window**, and nothing tells a closed tab from an open one (`NOTES.md`, "Closed chat tabs"),
+so most of these are probably closed tabs. The rows stack in the narrow sidebar and spread over four columns when the panel is 620 px or
 wider. "All projects" lists the whole machine grouped by project; the default is the sessions inside the
-window's workspace folders. Every group heading ("Working now", "Idle", a project) folds and unfolds on a
+window's workspace folders. Every group heading ("Working now", "Idle", "Idle over an hour", a project) folds and unfolds on a
 click, keeping its count; the panel remembers which are folded. The refresh button at the end of the header
 reads the registry and every transcript again from the first byte, and says "updated 12:04:31" when done.
 A control row under the header sorts the rows inside each group (last turn, context size, time until cold,
-started, title; rows without a value go last) and filters the idle group: hide the dimmed sessions, show
-only the orange and red zones, switch a model off with its chip. A busy session is never hidden; the header
+started, title; rows without a value go last) and filters the two idle groups: show only the orange and
+red zones, switch a model off with its chip. A busy session is never hidden; the header
 keeps counting everything and says "showing 4 of 10" while a filter is on, a group heading says "4 of 9",
 and "reset" puts the view back. The view is remembered like the folds. Click a row (or press Enter on it) to open the
 session's detail view in its place: the title, project, model and effort, turns, start and last turn; one

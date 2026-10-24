@@ -85,6 +85,9 @@
   /* the median start cost of the sessions that began fresh, beside the cache counters */
   .kx-start-median { font-size: 0.82em; font-variant-numeric: tabular-nums; color: var(--kx-muted); white-space: nowrap; }
   .kx-start-median b { font-weight: 600; color: var(--kx-fg); }
+  /* how many sessions sit in the folded "Idle over an hour" group: processes left running, most likely closed tabs */
+  .kx-abandoned { font-size: 0.82em; font-variant-numeric: tabular-nums; color: var(--kx-muted); white-space: nowrap; }
+  .kx-abandoned b { font-weight: 600; color: var(--kx-fg); }
 
   /* "showing 4 of 10" beside the count while a filter hides sessions */
   .kx-showing { font-size: 0.82em; color: var(--kx-muted); white-space: nowrap; }
@@ -362,6 +365,7 @@
     <div class="kx-meter-leg"></div>
   </div>
   <span class="kx-start-median" data-testid="start-median" hidden><b></b> start</span>
+  <span class="kx-abandoned" data-testid="abandoned-count" hidden title="Sessions without a turn for more than an hour. A closed chat tab keeps its process running until Developer: Reload Window or VS Code quits, and the panel cannot tell a closed tab from an open one, so some of these are probably closed tabs"><b></b> idle over an hour</span>
   <span class="kx-cache-counts" data-testid="cache-counts" title="Prompt cache: how many of the listed sessions have a warm cache now, and how many went cold"><span><b data-testid="cache-warm">0</b> warm</span><span><b data-testid="cache-cold">0</b> cold</span></span>
   <div class="kx-tools">
     <label><input type="checkbox" data-testid="all"> All projects</label>
@@ -379,7 +383,6 @@
       <option value="title">title</option>
     </select>
   </label>
-  <button type="button" class="kx-chip" data-testid="filter-dimmed" aria-pressed="false" title="Hide the sessions idle for more than an hour">hide dimmed</button>
   <button type="button" class="kx-chip" data-testid="filter-hot" aria-pressed="false" title="Show only the sessions in the orange and red zones">orange and red only</button>
   <span class="kx-models" data-testid="models" role="group" aria-label="Models shown"></span>
   <button type="button" class="kx-reset" data-testid="reset" hidden>reset</button>
@@ -405,11 +408,11 @@
   const cacheWarmEl = document.querySelector('[data-testid="cache-warm"]');
   const cacheColdEl = document.querySelector('[data-testid="cache-cold"]');
   const startMedianEl = document.querySelector('[data-testid="start-median"]');
+  const abandonedEl = document.querySelector('[data-testid="abandoned-count"]');
   const refreshEl = document.querySelector('[data-testid="refresh"]');
   const refreshedEl = document.querySelector('[data-testid="refreshed"]');
   const showingEl = document.querySelector('[data-testid="showing"]');
   const sortEl = document.querySelector('[data-testid="sort"]');
-  const dimmedEl = document.querySelector('[data-testid="filter-dimmed"]');
   const hotEl = document.querySelector('[data-testid="filter-hot"]');
   const modelsEl = document.querySelector('[data-testid="models"]');
   const resetEl = document.querySelector('[data-testid="reset"]');
@@ -428,31 +431,39 @@
       try { if (vscode) vscode.setState({ ...(vscode.getState() || {}), [key]: value }); else localStorage.setItem(`kx-${key}`, JSON.stringify(value)); } catch { /* no storage: the choice lasts this render */ }
     },
   };
-  // group keys: "busy" and "idle" fold that group in every project; "project:<name>" folds a whole project
-  const folded = new Set(Array.isArray(store.get("folded")) ? store.get("folded").filter((k) => typeof k === "string") : []);
+  // group keys: "busy", "idle" and "abandoned" fold that group in every project; "project:<name>" folds a whole project.
+  // A group in FOLDED_FIRST starts folded, so `unfolded` remembers the opposite choice for it.
+  const FOLDED_FIRST = ["abandoned"];
+  const keys = (name) => new Set(Array.isArray(store.get(name)) ? store.get(name).filter((k) => typeof k === "string") : []);
+  const folded = keys("folded"), unfolded = keys("unfolded");
+  const isFolded = (key) => (FOLDED_FIRST.includes(key) ? !unfolded.has(key) : folded.has(key));
+  function toggleFold(key) {
+    const set = FOLDED_FIRST.includes(key) ? unfolded : folded;
+    if (set.has(key)) set.delete(key); else set.add(key);
+    store.set(set === folded ? "folded" : "unfolded", [...set]);
+  }
   let lastData = null; // the last list rendered, drawn again when a group is folded or unfolded, or the view changes
 
   // ── The view: the sort and the filters, remembered like the folds. The sort orders the rows inside each
-  // group (busy stays first); the filters apply to the idle group only, a busy session is never hidden.
+  // group (busy stays first); the filters apply to the idle groups only, a busy session is never hidden.
   // hiddenModels holds short model names the user switched off; a model that leaves the list takes its choice with it. ──
   const SORTS = ["last", "size", "cold", "started", "title"];
-  const VIEW_DEFAULT = { sort: "last", hideDimmed: false, hotOnly: false, hiddenModels: [] };
+  const VIEW_DEFAULT = { sort: "last", hotOnly: false, hiddenModels: [] };
   function loadView() {
     const v = store.get("view");
     const o = v && typeof v === "object" ? v : {};
     return {
-      sort: SORTS.includes(o.sort) ? o.sort : VIEW_DEFAULT.sort, hideDimmed: !!o.hideDimmed, hotOnly: !!o.hotOnly,
+      sort: SORTS.includes(o.sort) ? o.sort : VIEW_DEFAULT.sort, hotOnly: !!o.hotOnly,
       hiddenModels: Array.isArray(o.hiddenModels) ? o.hiddenModels.filter((m) => typeof m === "string") : [],
     };
   }
   let view = loadView();
   function saveView() { store.set("view", view); if (lastData) render(lastData); }
-  const viewIsDefault = () => view.sort === VIEW_DEFAULT.sort && !view.hideDimmed && !view.hotOnly && !view.hiddenModels.length;
+  const viewIsDefault = () => view.sort === VIEW_DEFAULT.sort && !view.hotOnly && !view.hiddenModels.length;
   const modelName = (s) => s.modelShort || "unknown";
   const HOT_ZONES = ["orange", "red"];
   function passes(s) {
     if (s.busy) return true;
-    if (view.hideDimmed && s.dimmed) return false;
     if (view.hotOnly && !HOT_ZONES.includes(s.zone)) return false;
     return !view.hiddenModels.includes(modelName(s));
   }
@@ -851,12 +862,12 @@
 
   /**
    * A group heading whose whole text is a fold button: aria-expanded says whether the rows under it are
-   * drawn, the count stays visible when folded. `key` is the group's name in `folded`; the rows under it
+   * drawn, the count stays visible when folded. `key` is the group's name in `folded` (or `unfolded`); the rows under it
    * come from rowsFor(), which links them through aria-controls.
    */
   function groupHeading(text, n, iconName, className, key) {
     const h = el("h2", "kx-group" + (className ? ` ${className}` : ""));
-    const open = !folded.has(key);
+    const open = !isFolded(key);
     const btn = el("button", "kx-fold");
     btn.type = "button";
     btn.dataset.testid = "fold";
@@ -870,8 +881,7 @@
     btn.appendChild(document.createTextNode(text));
     btn.appendChild(el("span", "kx-gn", `· ${n}`));
     btn.addEventListener("click", () => {
-      if (folded.has(key)) folded.delete(key); else folded.add(key);
-      store.set("folded", [...folded]);
+      toggleFold(key);
       if (lastData) render(lastData);
     });
     h.appendChild(btn);
@@ -905,12 +915,15 @@
   }
 
   /**
-   * The sessions as two groups, busy and idle, each with its heading and axis; the order within a group is
-   * the list's. A folded group keeps its heading and count and draws no rows. `project` only makes the rows' ids unique.
+   * The sessions as three groups, busy, idle and idle over an hour (the core's `abandoned`, folded at first),
+   * each with its heading and axis; the order within a group is the list's. A folded group keeps its heading and
+   * count and draws no rows. `project` only makes the rows' ids unique.
    */
   function groupsFor(sessions, project) {
     const frag = document.createDocumentFragment();
-    const parts = [["Working now", "zap", "busy", sessions.filter((s) => s.busy)], ["Idle", "moon", "idle", sessions.filter((s) => !s.busy)]];
+    const parts = [["Working now", "zap", "busy", sessions.filter((s) => s.busy)],
+      ["Idle", "moon", "idle", sessions.filter((s) => !s.busy && !s.abandoned)],
+      ["Idle over an hour", "clock", "abandoned", sessions.filter((s) => s.abandoned)]];
     for (const [text, iconName, key, all] of parts) {
       if (!all.length) continue;
       const list = sorted(all.filter(passes));
@@ -934,13 +947,12 @@
   const allSessions = (data) => (data.groups ? data.groups.flatMap((g) => g.sessions) : data.sessions) || [];
 
   /**
-   * The controls follow the view and the list: the select shows the sort, the two chips their state, one chip
+   * The controls follow the view and the list: the select shows the sort, the hot chip its state, one chip
    * per model in the list (pressed = shown; kept in place between renders so focus survives a click), "reset"
    * only when something is off default. A model no longer in the list is dropped from hiddenModels.
    */
   function renderControls(sessions) {
     sortEl.value = view.sort;
-    dimmedEl.setAttribute("aria-pressed", String(view.hideDimmed));
     hotEl.setAttribute("aria-pressed", String(view.hotOnly));
     const present = [...new Set(sessions.map(modelName))].sort((a, b) => a.localeCompare(b));
     const pruned = view.hiddenModels.filter((m) => present.includes(m));
@@ -1404,7 +1416,6 @@
   });
 
   sortEl.addEventListener("change", () => { view.sort = SORTS.includes(sortEl.value) ? sortEl.value : "last"; saveView(); });
-  dimmedEl.addEventListener("click", () => { view.hideDimmed = !view.hideDimmed; saveView(); });
   hotEl.addEventListener("click", () => { view.hotOnly = !view.hotOnly; saveView(); });
   resetEl.addEventListener("click", () => { view = { ...VIEW_DEFAULT, hiddenModels: [] }; saveView(); });
 
@@ -1469,6 +1480,9 @@
       const n = data.baselineSessions;
       startMedianEl.title = `Start cost: the median first turn of the ${n === 1 ? "session" : `${n} sessions`} listed here that began fresh (not after a compaction). It is the fixed load (CLAUDE.md, memory, skill and tool listings) plus the first message, so a long first prompt raises it`;
     }
+    const abandoned = Number.isFinite(data.abandonedCount) ? data.abandonedCount : 0;
+    abandonedEl.hidden = !abandoned;
+    abandonedEl.firstChild.textContent = String(abandoned);
     allEl.checked = !!data.all;
     errorsEl.textContent = "";
     errorsEl.hidden = !(data.errors && data.errors.length);
