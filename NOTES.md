@@ -78,6 +78,36 @@ Fable 5.1):
   (`deferred_tools_record`, `prompt_snapshot`, `batching_reminder_sent` and others) are bookkeeping.
 - The context fell between two turns once in 13 149 gaps.
 
+## Closed chat tabs (looked for a signal 2026-10-24, Claude Code 2.1.310, macOS)
+
+The VS Code extension spawns one `claude` process per chat tab (`--output-format stream-json --input-format
+stream-json`, a child of the extension host) and the process outlives its tab until "Developer: Reload Window"
+or VS Code quits. Compared with the owner saying which tabs were open: one closed tab (closed after its last turn
+at 15:19) against three open ones, all idle or busy in the same window. No signal tells them apart:
+
+- **Registry and `claude agents --json`:** the same fields for both; `claude agents --json` lists `pid`, `cwd`,
+  `kind`, `startedAt`, `sessionId`, `name` and `status` only. Nothing is written to the registry on close
+  (`updatedAt` equals `statusUpdatedAt`, the last status change). Each process also has a
+  `<pid>.<hash>.key` file in `sessions/`, written at start.
+- **Transcript:** nothing on close; the closed tab's file ends with the last turn's `stop_hook_summary`, as the
+  open ones do.
+- **Stdio:** the extension host holds the other end of stdin, stdout and stderr for every process, closed tab or
+  not. The extension's `closeChannel` ends the channel's input stream when a tab closes, but `lsof` on macOS does
+  not show whether a unix socket is half-closed, and the process does not exit.
+- **`messagingSocketPath`:** every process keeps listening on its socket.
+- **The extension's log** (`~/Library/Application Support/Code/logs/<start>/window<n>/exthost/Anthropic.claude-code/`)
+  wrote "Closing Claude on channel: <id>" in the logs up to 2026-10-22, but not once on 2026-10-24 although a tab
+  was closed, and the line names a channel, not a pid. Internal, VS Code-only, and not reliable.
+
+A tab VS Code restores after a reload has no process until it is opened; opening it on an old session spawns a
+new process (`resume:` in the log) whose registry `startedAt` is the new start, while the last turn is old.
+
+So the panel cannot know which tab is open. It folds a session that is not busy and had neither a turn nor its
+process start for an hour (`DIM_AFTER_MS`, the longer cache TTL) into "Idle over an hour", and counts them in the
+header; an empty session goes there by its start alone. Some of those are open tabs left alone, which is why the
+group is not called closed. Ending such a process from the panel is a separate question (destructive: it could
+end an open tab).
+
 ## Hosting the panel outside VS Code
 
 `panel.html` has a second adapter for when `acquireVsCodeApi` does not exist: it fetches
