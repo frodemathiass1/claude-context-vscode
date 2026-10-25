@@ -174,12 +174,14 @@ function parseArgs(argv, env = process.env, cwd = process.cwd()) {
 /**
  * Starts the server on 127.0.0.1. `folders` are "This workspace" (none: every live session, as in a VS Code window
  * without a folder); `port` null tries DEFAULT_PORT, then a free one; `alive` and `tickMs` are for the tests.
- * Resolves to { server, url, port, token, close, readers } (readers: the one per scope, for the tests).
+ * Resolves to { server, url, port, token, close, readers, watcher } (readers: the one per scope, and the watcher, for
+ * the tests).
  */
 async function startServer({ claudeDir, folders = [], port = null, alive, tickMs } = {}) {
   const token = crypto.randomBytes(24).toString("hex");
-  // one reader per scope: a read forgets the parsed state of the sessions outside its scope, so two tabs in
-  // different scopes sharing one would read every transcript from its first byte on every change
+  // one reader per scope, kept when no page is in it (at most two, holding the parsed state of live sessions, under
+  // 1 MB): the next page in that scope then reads only the new bytes, where a new reader parsed every transcript
+  // again (150–320 ms for "All projects", #68). Two, since detail() answers from the last read of its reader's scope.
   const readers = new Map();
   const readerFor = (all) => { if (!readers.has(all)) readers.set(all, new core.SessionReader(claudeDir, { alive })); return readers.get(all); };
   const clients = new Map(); // client id → { res, all }
@@ -202,12 +204,12 @@ async function startServer({ claudeDir, folders = [], port = null, alive, tickMs
   }
 
   /**
-   * Drops the reader and the folders of each scope no page is in now: the reader of "All projects" holds the parsed
-   * state of every live transcript, and would otherwise stay in memory after its last page closed or switched.
+   * Stops watching the folders of each scope no page is in now; its reader stays, and the next page in that scope
+   * reads the folders again with it and has them watched again.
    */
   function prune() {
     const scopes = new Set([...clients.values()].map((c) => c.all));
-    for (const all of [...readers.keys()]) if (!scopes.has(all)) { readers.delete(all); watched.delete(all); }
+    for (const all of [...watched.keys()]) if (!scopes.has(all)) watched.delete(all);
     watcher.watchAll([...new Set([...watched.values()].flat())]);
   }
 
@@ -288,7 +290,7 @@ async function startServer({ claudeDir, folders = [], port = null, alive, tickMs
   watcher.start();
   own = server.address().port;
   return {
-    server, url: `http://127.0.0.1:${own}/?token=${token}`, port: own, token, readers,
+    server, url: `http://127.0.0.1:${own}/?token=${token}`, port: own, token, readers, watcher,
     close: () => new Promise((resolve) => {
       watcher.stop();
       for (const c of clients.values()) c.res.end();

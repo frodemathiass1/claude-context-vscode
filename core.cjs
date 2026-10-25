@@ -49,6 +49,10 @@ function zone(tokens) {
 }
 
 const SESSION_ID = /^[\w-]+$/; // a UUID as Claude Code writes it; never a path
+// a cold read of an invented 38 MB transcript as one buffer, one string and one split held about 83 MB at its end,
+// in 1 MB chunks 44 MB (the lines alone are 42), and took 50 ms instead of 39 with ASCII text, about the same where
+// decoding other characters dominates (Node 22, 2026-10-25, #68); the largest of 412 transcripts here is 34.7 MB
+const READ_CHUNK = 1024 * 1024;
 
 /**
  * The registry of Claude sessions: one JSON file per process in Claude Code's sessions/ folder. Only
@@ -81,6 +85,9 @@ function readRegistry(dir, alive) {
  * truncated first line dropped. `end` is the offset after the last newline, so a line still being
  * written is read again next time. A `from` beyond the end means the file was rewritten shorter:
  * it is read from the start and `restarted` is true, so the caller drops its previous state.
+ * The bytes are read in chunks of READ_CHUNK and split at the newline byte, which never occurs inside a UTF-8
+ * character, so a character across two chunks is decoded whole; the part after a chunk's last newline is carried
+ * into the next. Only the bytes readSync reports are used: a file cut shorter during the read ends it early.
  */
 function readTail(file, { from, bytes } = {}) {
   let fd;
@@ -89,13 +96,26 @@ function readTail(file, { from, bytes } = {}) {
     const size = fs.fstatSync(fd).size;
     const restarted = Number.isFinite(from) && from > size;
     const start = restarted ? 0 : Number.isFinite(from) ? from : Math.max(0, size - (bytes || 0));
-    const buf = Buffer.alloc(size - start);
-    fs.readSync(fd, buf, 0, buf.length, start);
-    const lastNewline = buf.lastIndexOf(0x0a);
-    if (lastNewline < 0) return { lines: [], end: start, missing: false, restarted };
-    let text = buf.subarray(0, lastNewline + 1).toString("utf8");
-    if (start > 0 && !Number.isFinite(from)) text = text.slice(text.indexOf("\n") + 1); // cut mid-line
-    return { lines: text.split("\n").filter(Boolean), end: start + lastNewline + 1, missing: false, restarted };
+    let skip = start > 0 && !Number.isFinite(from); // the first line was cut mid-line
+    const buf = Buffer.allocUnsafe(Math.min(READ_CHUNK, size - start));
+    const lines = [];
+    let carry = []; // the bytes after the last newline so far, a line not yet ended
+    let pos = start, end = start;
+    while (pos < size) {
+      const n = fs.readSync(fd, buf, 0, Math.min(buf.length, size - pos), pos);
+      if (n <= 0) break;
+      const chunk = buf.subarray(0, n);
+      pos += n;
+      const first = chunk.indexOf(0x0a);
+      if (first < 0) { carry.push(Buffer.from(chunk)); continue; } // copied: buf is read into again
+      const last = chunk.lastIndexOf(0x0a);
+      const head = Buffer.concat([...carry, chunk.subarray(0, first)]).toString("utf8");
+      if (skip) skip = false; else if (head) lines.push(head);
+      if (last > first) for (const line of chunk.toString("utf8", first + 1, last).split("\n")) if (line) lines.push(line);
+      carry = last + 1 < n ? [Buffer.from(chunk.subarray(last + 1))] : [];
+      end = pos - (n - last - 1);
+    }
+    return { lines, end, missing: false, restarted };
   } finally { fs.closeSync(fd); }
 }
 
@@ -602,8 +622,10 @@ function randomNonce() {
 /**
  * Reads the registry and the transcripts incrementally: each transcript keeps its parsed state and byte
  * offset, so a refresh reads only the new bytes; `read({ full: true })` forgets that state first and reads
- * every transcript from its first byte (the panel's refresh button). It lives here and not in extension.js
- * (that file requires "vscode") so the tests can run it.
+ * every transcript from its first byte (the panel's refresh button). The state is kept while the session is in
+ * the registry, also when it is outside the scope of a read, so a switch back to "All projects" does not read
+ * the other projects' transcripts from byte 0 again (69 ms for 11 sessions of about 1 MB, #68). It lives here
+ * and not in extension.js (that file requires "vscode") so the tests can run it.
  * `alive` is injectable for tests; the default asks the OS whether the pid exists.
  */
 class SessionReader {
@@ -611,10 +633,10 @@ class SessionReader {
     this.sessionsDir = path.join(claudeDir, "sessions");
     this.projectsDir = path.join(claudeDir, "projects");
     this.alive = alive || isAlive;
-    this.cache = new Map(); // transcript file → { end, state }
+    this.cache = new Map(); // transcript file → { end, state, session }
     this.found = new Map(); // sessionId → project folder found by searching, when the slug folder is missing
     this.files = new Map(); // sessionId → transcript file of the last read, for detail()
-    this.metas = new Map(); // subagent meta file → { stamp, meta }
+    this.metas = new Map(); // subagent meta file → { stamp, meta, session }
     this.agents = new Map(); // sessionId → { entries, startedMs } of the last read, for detail()
   }
 
@@ -644,16 +666,20 @@ class SessionReader {
       const file = path.join(folder, `${s.sessionId}.jsonl`);
       live.add(file);
       this.files.set(s.sessionId, file);
-      try { transcripts[s.sessionId] = this.readTranscript(file); }
+      try { transcripts[s.sessionId] = this.readTranscript(file, { session: s.sessionId }); }
       catch (e) { this.cache.delete(file); errors.push(`Transcript not read: ${file} (${e.code || e.message})`); }
-      const agents = this.readSubagents(path.join(folder, s.sessionId), live);
+      const agents = this.readSubagents(path.join(folder, s.sessionId), s.sessionId, live);
       if (agents.watch) projectFolders.add(agents.watch);
       subagents[s.sessionId] = agents.entries;
       this.agents.set(s.sessionId, { entries: agents.entries, startedMs: starts.get(s.sessionId) ?? null });
     }
-    for (const file of this.cache.keys()) if (!live.has(file)) this.cache.delete(file);
-    for (const file of this.metas.keys()) if (!live.has(file)) this.metas.delete(file);
-    for (const id of this.found.keys()) if (!liveIds.has(id)) this.found.delete(id);
+    // a file this read did not touch is dropped when its session was read (a subagent removed, a transcript gone)
+    // or has left the registry; one of a session outside the scope keeps its state for the next read in scope
+    const registered = new Set(registry.sessions.map((s) => s.sessionId).filter(Boolean));
+    const stale = (file, session) => !live.has(file) && (liveIds.has(session) || !registered.has(session));
+    for (const [file, c] of this.cache) if (stale(file, c.session)) this.cache.delete(file);
+    for (const [file, m] of this.metas) if (stale(file, m.session)) this.metas.delete(file);
+    for (const id of this.found.keys()) if (!registered.has(id)) this.found.delete(id);
     const list = buildSessions({ registry: registry.sessions, transcripts, subagents, now: Date.now(), workspaceFolders, all });
     return { ...list, all, errors: [...new Set(errors)], generatedAt: new Date().toISOString(), projectFolders: [...projectFolders] };
   }
@@ -676,11 +702,11 @@ class SessionReader {
 
   /**
    * The subagents of one session, from `<sessionDir>/subagents/`: per `agent-<agentId>.jsonl` its transcript, parsed
-   * through the cache as the main one (`live` gets its files, so a removed one leaves the cache), the time of its last
-   * write, and its meta file. `watch` is the folder the watcher needs for a subagent's writes (fs.watch is not
+   * through the cache as the main one under `session` (`live` gets its files, so a removed one leaves the cache), the
+   * time of its last write, and its meta file. `watch` is the folder the watcher needs for a subagent's writes (fs.watch is not
    * recursive): subagents/, or the session folder until subagents/ exists in it, or null. No folder is no subagents.
    */
-  readSubagents(sessionDir, live) {
+  readSubagents(sessionDir, session, live) {
     const dir = path.join(sessionDir, "subagents");
     let names;
     try { names = fs.readdirSync(dir); } catch { return { entries: [], watch: fs.existsSync(sessionDir) ? sessionDir : null }; }
@@ -692,21 +718,21 @@ class SessionReader {
       live.add(file);
       live.add(metaFile);
       let state = null, writtenMs = null;
-      try { state = this.readTranscript(file, { sidechain: true }); writtenMs = fs.statSync(file).mtimeMs; }
+      try { state = this.readTranscript(file, { session, sidechain: true }); writtenMs = fs.statSync(file).mtimeMs; }
       catch { this.cache.delete(file); } // a subagent not read is shown as unknown, not as an error of the session
-      entries.push({ agentId: agent[1], meta: this.readMeta(metaFile), state, writtenMs });
+      entries.push({ agentId: agent[1], meta: this.readMeta(metaFile, session), state, writtenMs });
     }
     return { entries, watch: dir };
   }
 
   /** A subagent's meta file, read again only when its time or size changed (a call that ends adds `finished`). */
-  readMeta(file) {
+  readMeta(file, session) {
     let stamp = null;
     try { const st = fs.statSync(file); stamp = `${st.mtimeMs}:${st.size}`; } catch { /* missing: nulls */ }
     const known = this.metas.get(file);
     if (known && known.stamp === stamp) return known.meta;
     const meta = readSubagentMeta(file);
-    this.metas.set(file, { stamp, meta });
+    this.metas.set(file, { stamp, meta, session });
     return meta;
   }
 
@@ -728,12 +754,13 @@ class SessionReader {
     return null;
   }
 
-  readTranscript(file, options) {
+  /** One transcript through the cache; `session` is the session it belongs to, so read() knows when to drop it. */
+  readTranscript(file, { session = null, ...options } = {}) {
     const cached = this.cache.get(file);
     const tail = readTail(file, { from: cached ? cached.end : 0 });
     if (tail.missing) { this.cache.delete(file); return null; }
     const state = parseTranscript(tail.lines, cached && !tail.restarted ? cached.state : null, options);
-    this.cache.set(file, { end: tail.end, state });
+    this.cache.set(file, { end: tail.end, state, session });
     return state;
   }
 }
@@ -743,8 +770,9 @@ function isAlive(pid) {
 }
 
 /**
- * Watches Claude Code's folders and calls `onChange` after each change, debounced, and on a tick (which
- * refreshes "x min ago" and catches processes that died without removing their registry file). start()
+ * Watches Claude Code's folders and calls `onChange` at most `debounceMs` after the first change of a burst, then
+ * again for the changes that came while it waited, and on a tick (which refreshes "x min ago" and catches
+ * processes that died without removing their registry file). start()
  * watches sessions/ and projects/ (a new project folder appears there); the folders a read returns (the
  * project folders and the sessions' subagents/ folders) are added with watchAll(). Here and not in extension.js
  * so the tests can run it.
@@ -783,9 +811,14 @@ class SessionWatcher {
     } catch { /* the folder vanished between the check and the watch; the next read retries */ }
   }
 
+  /**
+   * The first change starts the timer and later ones join it: a timer restarted on every change would hold the
+   * list back for as long as busy sessions write less than debounceMs apart. A change while onChange runs, or
+   * after it, starts the next timer, so the last change of a burst is always read.
+   */
   schedule() {
-    clearTimeout(this.timer);
-    this.timer = setTimeout(() => this.onChange(), this.debounceMs);
+    if (this.timer) return;
+    this.timer = setTimeout(() => { this.timer = null; this.onChange(); }, this.debounceMs);
   }
 
   stop() {

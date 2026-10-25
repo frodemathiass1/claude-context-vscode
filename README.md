@@ -308,7 +308,7 @@ Claude Code keeps one small file per running process in `~/.claude/sessions/` an
 every session in `~/.claude/projects/<project>/<sessionId>.jsonl` (`~/.claude` is `%USERPROFILE%\.claude`
 on Windows; `CLAUDE_CONFIG_DIR` moves it), with each subagent's transcript and a small meta file in
 `<sessionId>/subagents/` beside it. The extension joins them, parses only the new bytes of a
-transcript on every change (`fs.watch` on the folders, debounced, plus a 30-second tick) and pushes the
+transcript on every change (`fs.watch` on the folders, read at most a quarter of a second after the first change, plus a 30-second tick) and pushes the
 list to the webview; it reads again at once when a workspace folder is added or removed, and reads nothing while
 the panel is hidden (shown again, one read catches up). In the browser, `server.cjs` does the same and pushes the list to the page with
 Server-Sent Events; the page sends its messages back as `POST` requests. The webview updates the rows, the
