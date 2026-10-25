@@ -27,9 +27,8 @@ Dark Modern theme; the panel follows whatever theme the editor has, and in a bro
 
 A long session gets worse well before it hits the window limit: past a certain size the model starts to lose track
 of what is in its context. Matt Pocock calls this the dumb zone: his smart zone lasts "~150k tokens on
-state-of-the-art models".
-The panel shows every live session's token count against those marks, where the context went since the session
-started, and when its prompt cache goes cold, so you can see when it is time to break a session and which one.
+state-of-the-art models". The panel shows every live session's token count against that mark and a second of its
+own at 200K, deeper into the dumb zone, where the context went since the session started, and when its prompt cache goes cold, so you can see when it is time to break a session and which one.
 
 > [!NOTE]
 > The panel reads Claude Code's own files on this machine. It never calls an API and sends nothing anywhere.
@@ -186,8 +185,7 @@ for example right after a process was ended.
 Across the bottom of the header, the zone scale: a strip as wide as the header that stands for 0–300K, the same
 scale as the row bars, each zone a band at its true width with its range written inside ("below 150K",
 "150K–200K", "above 200K"; "<150K", "150K+", ">200K" when a band is too narrow, and no text when even that does
-not fit), so the
-limits are in view before any row. Point at a band for what to do at the next phase boundary in that zone.
+not fit), so the limits are in view before any row. Point at a band for what to do at the next phase boundary in that zone.
 
 ### Groups
 

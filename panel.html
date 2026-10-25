@@ -604,7 +604,7 @@
     return Number.isFinite(session.coldInMs) && session.coldInMs <= soon ? "soon" : "warm";
   }
 
-  /** "150K and 200K", "125K, 150K and 200K": the limits as words for tooltips. */
+  /** "200K", "150K and 200K", "a, b and c": the limits as words for tooltips. */
   function listText(items) {
     return items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
   }

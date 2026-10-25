@@ -444,17 +444,19 @@ describe("panel: the detail view", () => {
       const field = p.$("detail-curve");
       const labels = [...field.querySelectorAll(".kx-d-axis")];
       return { narrow: field.dataset.axis, wide: field.dataset.axisWide, labels: labels.map((a) => a.textContent),
-        low: labels.filter((a) => a.classList.contains("kx-d-axis-low")).map((a) => a.textContent) };
+        low: labels.filter((a) => a.classList.contains("kx-d-axis-low")).map((a) => a.textContent),
+        // jsdom applies the style but not its media query, so this is the narrow field's rule
+        shown: labels.filter((a) => p.window.getComputedStyle(a).display !== "none").map((a) => a.textContent) };
     };
     p.send(list([session("a", { series: [30000, 120000, 250000] })]));
     p.row("a").click();
     // 0–300K: the limits are 50K apart, 25 px in the 150 px field
-    expect(axis()).toEqual({ narrow: "2", wide: "2", labels: ["150K", "200K", "300K"], low: ["150K"] });
+    expect(axis()).toEqual({ narrow: "2", wide: "2", labels: ["150K", "200K", "300K"], low: ["150K"], shown: ["150K", "200K", "300K"] });
     // 0–900K: 8 px apart in the 150 px field, so 150K is hidden there; 12 px in the 220 px one, so both stay
     p.send(list([session("a", { series: [30000, 400000, 900000] })]));
-    expect(axis()).toEqual({ narrow: "1", wide: "2", labels: ["150K", "200K", "900K"], low: ["150K"] });
+    expect(axis()).toEqual({ narrow: "1", wide: "2", labels: ["150K", "200K", "900K"], low: ["150K"], shown: ["200K", "900K"] });
     p.send(list([session("a", { series: [30000, 900000, 2000000] })]));
-    expect(axis()).toMatchObject({ narrow: "1", wide: "1", low: ["150K"] });
+    expect(axis()).toMatchObject({ narrow: "1", wide: "1", low: ["150K"], shown: ["200K", "2.0M"] });
   });
 
   it("the range shows a turn, with its growth from the turn before", () => {
