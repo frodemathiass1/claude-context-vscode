@@ -243,6 +243,10 @@
     border: 1px solid var(--kx-border-strong); color: var(--kx-muted); font-variant-numeric: tabular-nums;
   }
   .kx-ttl[data-ttl="5m"] { color: var(--kx-orange); border-color: currentColor; } /* a drop from 1h is the thing to notice */
+  /* the subagents mark: muted, in the zone's colour when the largest of them is orange or red */
+  .kx-agents[data-zone="orange"] { color: var(--kx-orange); font-weight: 600; }
+  .kx-agents[data-zone="red"] { color: var(--kx-red); font-weight: 600; }
+  .kx-agents[data-zone="orange"] svg, .kx-agents[data-zone="red"] svg { opacity: 1; }
   /* the axis line above each group: column names and the marks of the bar; only in the wide layout */
   .kx-axis { display: none; }
   /* the whole row opens the session's detail view */
@@ -358,6 +362,24 @@
   }
   .kx-d-copy:hover { color: var(--kx-fg); background: var(--kx-row-hover); }
   .kx-d-copy[data-done] { color: var(--kx-green); border-color: currentColor; }
+  /* the subagents: a table from 620 px; below it each subagent is two lines, its status, what it is and its bar
+     over the turns, output, model and last turn */
+  .kx-d-agents .kx-d-why { margin: 0 0 6px; }
+  .kx-d-agents table { width: 100%; border-collapse: collapse; font-size: 0.9em; font-variant-numeric: tabular-nums; }
+  .kx-d-agents thead { display: none; }
+  .kx-d-agents tr { display: grid; grid-template-columns: 6.5em auto minmax(0, 1fr) auto; /* a fixed first column, so every description starts at one place */ gap: 2px 10px; align-items: center; padding: 5px 0; border-bottom: 1px solid var(--kx-border); }
+  .kx-d-agents td { padding: 0; white-space: nowrap; }
+  .kx-d-a-who { grid-column: 2 / 4; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .kx-d-a-who b { font-weight: 600; }
+  .kx-d-a-who span { color: var(--kx-muted); }
+  .kx-d-a-ctx { width: 130px; }
+  .kx-d-a-ctx > div { display: flex; align-items: center; gap: 6px; }
+  .kx-d-a-ctx .kx-bar { flex: 1 1 auto; min-width: 50px; height: 8px; }
+  .kx-d-a-ctx .kx-num { font-size: 1em; min-width: 4.5ch; text-align: right; }
+  .kx-d-a-fact { color: var(--kx-muted); }
+  .kx-d-a-st { font-size: 0.86em; color: var(--kx-muted); }
+  .kx-d-a-st[data-status="running"] .kx-badge { font-size: 1em; }
+  .kx-d-a-st[data-status="unknown"] { font-style: italic; }
 
   @container (min-width: 620px) {
     .kx-session {
@@ -389,6 +411,14 @@
     .kx-d-facts tr { display: table-row; padding: 0; border: 0; }
     .kx-d-facts th, .kx-d-facts td { display: table-cell; padding: 3px 6px 3px 0; border-bottom: 1px solid var(--kx-border); }
     .kx-d-facts th { width: 42%; font-size: 1em; }
+    .kx-d-agents thead { display: table-header-group; }
+    .kx-d-agents tr { display: table-row; }
+    .kx-d-agents th, .kx-d-agents td { display: table-cell; padding: 4px 12px 4px 0; border-bottom: 1px solid var(--kx-border); text-align: left; vertical-align: middle; white-space: nowrap; }
+    .kx-d-agents th { font-weight: 500; font-size: 0.86em; color: var(--kx-muted); }
+    .kx-d-agents .kx-d-r { text-align: right; }
+    .kx-d-a-who { width: 100%; max-width: 0; } /* takes what the other columns leave, cut with an ellipsis */
+    .kx-d-a-ctx .kx-bar { flex: none; width: 120px; } /* a table cell gives a flexible bar no width: the description column takes it */
+    .kx-d-u { display: none; } /* "turns", "out": the column heads say it */
   }
   /* with five marks the labels need about 240 px; until the bar column is that wide (a container of about
      880 px), every second label drops to a second row so neighbours never overlap */
@@ -687,6 +717,7 @@
     back: ["m12 19-7-7 7-7", "M19 12H5"],
     play: ["M5 3v18l15-9z"],
     rows: ["M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z", "M21 9H3", "M21 15H3"],
+    bot: ["M12 8V4H8", "M6 8h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2z", "M2 14h2", "M20 14h2", "M15 13v2", "M9 13v2"],
     bell: ["M10.268 21a2 2 0 0 0 3.464 0", "M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"],
   };
   function icon(name) {
@@ -893,11 +924,35 @@
       if (output) meta.appendChild(output);
       add("clock", sinceText(session.sinceMs));
     }
+    const agents = subagentsMeta(session);
+    if (agents) meta.appendChild(agents);
     const cache = cacheFor(session);
     if (cache) meta.appendChild(cache);
     row.dataset.cache = cache ? cache.dataset.cache : "unknown";
     row.appendChild(meta);
     return row;
+  }
+
+  // why a subagent's count is not the session's (core.cjs parseTranscript: the report enters as the Agent call's result)
+  const AGENTS_WHY = "A subagent has a context window of its own; what returns to this session is its report, counted under \"Agent\".";
+  /** 'Explore "Find the CSS"': a subagent by its type and the description of its call, as far as they are known. */
+  const agentName = (a) => [a.type, a.description ? `"${a.description}"` : null].filter(Boolean).join(" ") || "a subagent";
+
+  /**
+   * "2 subagents · 1 running" (core.cjs subagentSummary), in the zone's colour when the largest of them is orange or
+   * red; the tooltip names the largest. Nothing for a session without subagents, so its row is no taller.
+   */
+  function subagentsMeta(session) {
+    const a = session.subagents;
+    if (!a || !(a.count > 0)) return null;
+    const span = el("span", "kx-agents");
+    span.dataset.testid = "subagents";
+    span.dataset.zone = ZONES.includes(a.zone) ? a.zone : "unknown";
+    span.appendChild(icon("bot"));
+    span.appendChild(document.createTextNode(plural(a.count, "subagent", "subagents") + (a.running ? ` · ${a.running} running` : "")));
+    const largest = a.largest ? `largest: ${agentName(a.largest)} at ${tokensText(a.largest.tokens)}, ${ZONE_NAME[a.zone] || "unknown"} zone` : "no count yet";
+    span.title = `Subagents: ${a.count}, ${a.running} running · ${largest} · ${AGENTS_WHY}`;
+    return span;
   }
 
   /**
@@ -1442,6 +1497,91 @@
     return wrap;
   }
 
+  const AGENT_STATUS = {
+    running: "running: no end recorded, and written since this session's process started",
+    finished: "finished: Claude Code recorded its end",
+    unknown: "unknown: no end recorded, and not written since this session's process started",
+  };
+
+  /** A subagent's context bar: the row's bar, without the start shade, on the same scale and with the same gaps. */
+  function agentBar(tokens) {
+    const bar = el("span", "kx-bar");
+    bar.setAttribute("aria-hidden", "true");
+    const fill = el("span", "kx-fill");
+    fill.style.setProperty("--p", pct(share(tokens)));
+    bar.appendChild(fill);
+    for (const g of LIMITS) {
+      const tick = el("span", "kx-tick");
+      tick.style.setProperty("--t", pct(g / SCALE));
+      bar.appendChild(tick);
+    }
+    if (Number.isFinite(tokens) && tokens > SCALE) bar.appendChild(el("span", "kx-over"));
+    return bar;
+  }
+
+  /**
+   * The session's subagents, one line each as the core orders them (core.cjs subagentRows: running first, then by
+   * last turn): status, type and description, its own context on the rows' scale and zones, turns, output, model and
+   * last turn, with one sentence on why its count is not the session's. Nothing for a session without subagents.
+   */
+  function detailAgents(session) {
+    const list = Array.isArray(session.subagentList) ? session.subagentList : [];
+    if (!list.length) return null;
+    const wrap = el("div", "kx-d-sec kx-d-agents");
+    wrap.dataset.testid = "detail-subagents";
+    const h = el("h2", "kx-group");
+    h.appendChild(icon("bot"));
+    h.appendChild(document.createTextNode("Subagents"));
+    h.appendChild(el("span", "kx-gn", `· ${list.length}`));
+    wrap.appendChild(h);
+    wrap.appendChild(el("p", "kx-d-why", AGENTS_WHY));
+    const table = el("table");
+    const head = el("tr");
+    for (const [text, cls] of [["Status"], ["Subagent"], ["Context"], ["Turns", "kx-d-r"], ["Output", "kx-d-r"], ["Model"], ["Last turn"]]) {
+      const th = el("th", cls || "", text);
+      th.scope = "col";
+      head.appendChild(th);
+    }
+    table.appendChild(el("thead")).appendChild(head);
+    const body = el("tbody");
+    for (const a of list) {
+      const tr = zoned(el("tr"), a.zone);
+      tr.dataset.testid = "subagent";
+      tr.dataset.status = a.status;
+      const status = el("td", "kx-d-a-st");
+      status.dataset.status = a.status;
+      if (a.status === "running") { const badge = el("span", "kx-badge"); badge.appendChild(icon("zap")); badge.appendChild(document.createTextNode("running")); status.appendChild(badge); }
+      else status.textContent = a.status;
+      status.title = AGENT_STATUS[a.status] || a.status;
+      tr.appendChild(status);
+      const who = el("td", "kx-d-a-who");
+      if (a.depth > 1) who.appendChild(document.createTextNode("↳ "));
+      who.appendChild(el("b", "", a.type || "subagent"));
+      if (a.description) who.appendChild(el("span", "", ` ${a.description}`));
+      who.title = `${agentName(a)}${a.depth > 1 ? ` · depth ${a.depth}, a subagent's subagent` : ""}`;
+      tr.appendChild(who);
+      const ctx = el("td", "kx-d-a-ctx");
+      const inner = el("div");
+      inner.appendChild(agentBar(a.tokens));
+      const n = el("span", "kx-num", Number.isFinite(a.tokens) ? tokensText(a.tokens) : "—");
+      n.dataset.testid = "subagent-tokens";
+      inner.appendChild(n);
+      ctx.appendChild(inner);
+      ctx.title = Number.isFinite(a.tokens) ? `${tokensText(a.tokens)} tokens in its own context, zone ${ZONE_NAME[a.zone] || "unknown"} · scale ${SCALE_TEXT}` : "no count yet";
+      tr.appendChild(ctx);
+      const fact = (text, unit, cls) => { const td = el("td", `kx-d-a-fact${cls ? ` ${cls}` : ""}`, text); if (unit) td.appendChild(el("span", "kx-d-u", unit)); tr.appendChild(td); };
+      fact(String(a.turns || 0), a.turns === 1 ? " turn" : " turns", "kx-d-r");
+      fact(Number.isFinite(a.outputTotal) ? tokensText(a.outputTotal) : "unknown", " out", "kx-d-r");
+      fact(a.modelShort || "unknown");
+      fact(a.lastTurn ? sinceText(a.sinceMs) : "no turn");
+      if (a.lastTurn) tr.lastChild.title = dayText(a.lastTurn);
+      body.appendChild(tr);
+    }
+    table.appendChild(body);
+    wrap.appendChild(table);
+    return wrap;
+  }
+
   function backButton() {
     const b = el("button", "kx-d-back");
     b.type = "button";
@@ -1494,7 +1634,7 @@
     return frag;
   }
 
-  /** The view of one session, top to bottom: top bar, title, meta line, the context box and named facts, curve and where the context went (side by side from 620 px), facts. */
+  /** The view of one session, top to bottom: top bar, title, meta line, the context box and named facts, curve and where the context went (side by side from 620 px), facts, subagents. */
   function detailFor(session) {
     const root = zoned(el("article"), session.zone);
     root.dataset.session = session.sessionId;
@@ -1539,6 +1679,8 @@
     pair.appendChild(detailGrowth(session));
     root.appendChild(pair);
     root.appendChild(detailFacts(session));
+    const agents = detailAgents(session);
+    if (agents) root.appendChild(agents);
     return root;
   }
 

@@ -225,6 +225,10 @@ One row per session:
   Claude Code chose, shown as a 1h or 5m pill; a drop to 5m is marked). A few minutes before that the text
   turns orange, and afterwards it says "cold". The tooltip has the deadline, how much of the last turn's
   context was read from cache and how much was written.
+- Only when the session has subagents: "3 subagents · 1 running". A subagent has a context window of its own,
+  so its tokens never count in the session's; the mark turns orange or red when the largest of them is in that
+  zone, and its tooltip names it ("largest: Explore "Find the slow query" at 236K, red zone"). A session that
+  waits on a running subagent shows that here, though the session itself looks quiet.
 
 The rows stack in the narrow sidebar and spread over four columns when the panel is 620 px or wider.
 
@@ -259,6 +263,12 @@ The detail view opens in the list's place:
   source, largest first, with one short line on how it is estimated (the whole of it in the tooltip).
 - Two tables: the prompt cache and output, and the session (what a fresh session here typically starts at,
   from the header's start median; working folder, process id and session id with a copy button).
+- When the session has subagents, a table of them: one line each, running first and then by last turn, with its
+  status, type and the description of its call, its own context on a small bar with the rows' scale and zones,
+  turns, output, model and last turn. One sentence says why it is separate: what returns to the session is the
+  subagent's report, counted under "Agent" in where the context went. "Running" means Claude Code has not
+  recorded its end and it was written since the session's process started; "finished", that the end is
+  recorded; "unknown", neither (a subagent cut off with an earlier process, as in a resumed session).
 
 The list carries the last 200 turns of each session; the detail view asks the host for all of them, and says
 "last 200 of 233 turns" only if the host cannot answer. The view follows the live list, says so if the
@@ -294,7 +304,8 @@ my-project-08"), muted, and says "no turns yet" with "—" for the count.
 
 Claude Code keeps one small file per running process in `~/.claude/sessions/` and the transcript of
 every session in `~/.claude/projects/<project>/<sessionId>.jsonl` (`~/.claude` is `%USERPROFILE%\.claude`
-on Windows; `CLAUDE_CONFIG_DIR` moves it). The extension joins the two, parses only the new bytes of a
+on Windows; `CLAUDE_CONFIG_DIR` moves it), with each subagent's transcript and a small meta file in
+`<sessionId>/subagents/` beside it. The extension joins them, parses only the new bytes of a
 transcript on every change (`fs.watch` on the folders, debounced, plus a 30-second tick) and pushes the
 list to the webview; it reads again at once when a workspace folder is added or removed, and reads nothing while
 the panel is hidden (shown again, one read catches up). In the browser, `server.cjs` does the same and pushes the list to the page with

@@ -983,6 +983,153 @@ describe("SessionReader", () => {
   });
 });
 
+describe("subagents", () => {
+  const { mkdtempSync, mkdirSync, cpSync, writeFileSync, appendFileSync, rmSync, utimesSync } = require("node:fs");
+  const SUB = path.join(FIX, "subagents");
+  const agentLines = (id) => readFileSync(path.join(SUB, "bbbb-2", "subagents", `agent-${id}.jsonl`), "utf8").split("\n");
+  const mainLines = () => readFileSync(path.join(SUB, "bbbb-2.jsonl"), "utf8").split("\n");
+  const MINE = "/Users/me/Dev/my-project";
+  const HOUR = 60 * 60 * 1000;
+
+  it("a subagent's own file is all sidechain: the main transcript's guard skips it, { sidechain: true } parses it", () => {
+    expect(K.parseTranscript(agentLines("a-done"))).toMatchObject({ tokens: null, turns: 0 });
+    expect(K.parseTranscript(agentLines("a-done"), null, { sidechain: true })).toMatchObject({ tokens: 212000, turns: 2, model: "claude-haiku-5-5", outputTotal: 1300 });
+  });
+
+  it("the main transcript records which subagents ended: an Agent result naming one, an Agent result without a name by its call, a task notification; a background launch is not an end", () => {
+    const t = K.parseTranscript(mainLines());
+    expect(t.tokens).toBe(45005);
+    expect([...t.agentEnds].sort()).toEqual(["a-done", "a-notified", "toolu_cut", "toolu_done"]);
+    expect(Object.keys(t)).not.toContain("agentEnds"); // hidden state, like the open tool calls
+    const lines = mainLines().filter(Boolean);
+    const continued = K.parseTranscript(lines.slice(4), K.parseTranscript(lines.slice(0, 4)));
+    expect([...continued.agentEnds].sort()).toEqual([...t.agentEnds].sort());
+  });
+
+  it("the meta file gives type, description, depth, parent, call and finished; a field of the wrong kind, a bad file or none give nulls", () => {
+    const dir = path.join(SUB, "bbbb-2", "subagents");
+    expect(K.readSubagentMeta(path.join(dir, "agent-a-deep.meta.json"))).toEqual({ agentType: "Explore", description: "Read the ORM docs", toolUseId: null, spawnDepth: 2, parentAgentId: "a-done", model: null, finished: true });
+    const nulls = { agentType: null, description: null, toolUseId: null, spawnDepth: null, parentAgentId: null, model: null, finished: null };
+    expect(K.readSubagentMeta(path.join(dir, "agent-a-oddmeta.meta.json"))).toEqual(nulls);
+    expect(K.readSubagentMeta(path.join(dir, "agent-a-badmeta.meta.json"))).toEqual(nulls);
+    expect(K.readSubagentMeta(path.join(dir, "agent-a-nometa.meta.json"))).toEqual(nulls);
+  });
+
+  it("status: finished when the meta file or the main transcript records the end, running when nothing does and it was written since the process started, else unknown", () => {
+    const ends = new Set(["a-told", "toolu_9"]);
+    const started = Date.parse("2026-10-25T10:00:00Z");
+    const s = (meta, writtenMs = started + 1000, agentId = "a-x", startedMs = started) => K.subagentStatus({ agentId, meta, writtenMs }, ends, startedMs);
+    expect(s({ finished: true })).toBe("finished");
+    expect(s({}, undefined, "a-told")).toBe("finished");
+    expect(s({ toolUseId: "toolu_9" })).toBe("finished");
+    expect(s({})).toBe("running");
+    expect(s(null, started)).toBe("running");
+    expect(s({}, started - 1000)).toBe("unknown"); // cut off with an earlier process
+    expect(s({}, null)).toBe("unknown");
+    expect(s({}, started + 1000, "a-x", null)).toBe("unknown");
+  });
+
+  it("rows: running first, then by last turn, newest first; the summary counts them and names the largest with its zone", () => {
+    const entry = (agentId, tokens, lastTurn, meta = {}) => ({ agentId, meta, writtenMs: 5, state: { tokens, lastTurn, turns: 1, model: "claude-haiku-5-5" } });
+    const rows = K.subagentRows([
+      entry("a1", 20000, "2026-10-25T10:00:01Z", { finished: true }), entry("a2", 210000, "2026-10-25T10:00:03Z", { agentType: "Explore", description: "Find it", finished: true }),
+      entry("a3", 90000, "2026-10-25T10:00:02Z"), entry("a4", null, null, { finished: true }),
+    ], { ends: [], startedMs: 1, now: Date.parse("2026-10-25T10:01:03Z") });
+    expect(rows.map((r) => [r.agentId, r.status, r.zone])).toEqual([["a3", "running", "green"], ["a2", "finished", "red"], ["a1", "finished", "green"], ["a4", "finished", null]]);
+    expect(rows[1]).toMatchObject({ type: "Explore", description: "Find it", modelShort: "Haiku 5.5", turns: 1, sinceMs: 60000 });
+    expect(K.subagentSummary(rows)).toEqual({ count: 4, running: 1, zone: "red", largest: { type: "Explore", description: "Find it", tokens: 210000 } });
+    expect(K.subagentSummary([])).toEqual({ count: 0, running: 0, zone: null, largest: null });
+  });
+
+  it("buildSessions without subagents gives every session an empty summary", () => {
+    const list = K.buildSessions({ registry: [{ pid: 1, sessionId: "s1", cwd: MINE, status: "idle" }], transcripts: { s1: K.parseTranscript(lines("with-title")) }, now: "2026-10-25T10:00:00Z" });
+    expect(list.sessions[0].subagents).toEqual({ count: 0, running: 0, zone: null, largest: null });
+  });
+
+  function rig({ startedAt = Date.now() - HOUR } = {}) {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "claude-context-agents-"));
+    mkdirSync(path.join(dir, "sessions"));
+    writeFileSync(path.join(dir, "sessions", "1303.json"), JSON.stringify({ pid: 1303, sessionId: "bbbb-2", cwd: MINE, status: "busy", startedAt }));
+    const folder = path.join(dir, "projects", K.projectSlug(MINE));
+    mkdirSync(folder, { recursive: true });
+    cpSync(SUB, folder, { recursive: true });
+    const agents = path.join(folder, "bbbb-2", "subagents");
+    return { dir, folder, agents, reader: new K.SessionReader(dir, { alive: (pid) => pid === 1303 }) };
+  }
+  const readIt = (reader) => reader.read({ workspaceFolders: [MINE], all: false });
+
+  it("SessionReader reads each session's subagents: their tokens are their own, the session's stay its own; the detail lists them in order", () => {
+    const { dir, agents, reader } = rig();
+    try {
+      const list = readIt(reader);
+      expect(list.errors).toEqual([]);
+      expect(list.sessions[0]).toMatchObject({ tokens: 45005, zone: "green" });
+      expect(list.sessions[0].subagents).toEqual({ count: 9, running: 4, zone: "red", largest: { type: "Explore", description: "Find the slow query", tokens: 212000 } });
+      const rows = reader.detail("bbbb-2").subagentList;
+      expect(rows.map((r) => [r.agentId, r.status])).toEqual([
+        ["a-running", "running"], ["a-nometa", "running"], ["a-oddmeta", "running"], ["a-badmeta", "running"],
+        ["a-done", "finished"], ["a-deep", "finished"], ["a-notified", "finished"], ["a-cut", "finished"], ["a-finished", "finished"],
+      ]);
+      expect(rows[0]).toMatchObject({ type: "general-purpose", description: "Run the tests", depth: 1, model: "claude-sonnet-5-5", tokens: 160000, zone: "orange", turns: 1, outputTotal: 300 });
+      expect(rows[5]).toMatchObject({ depth: 2, parentAgentId: "a-done" });
+      expect(rows.find((r) => r.agentId === "a-badmeta")).toMatchObject({ type: null, description: null, depth: null, tokens: 10000 });
+      expect(list.projectFolders).toContain(agents); // fs.watch is not recursive: a subagent's writes need its own folder watched
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it("a subagent written before its session's process started, with no end recorded, is unknown, not running", () => {
+    const { dir, agents, reader } = rig();
+    try {
+      const old = new Date(Date.now() - 2 * HOUR);
+      utimesSync(path.join(agents, "agent-a-running.jsonl"), old, old);
+      readIt(reader);
+      expect(reader.detail("bbbb-2").subagentList.find((r) => r.agentId === "a-running").status).toBe("unknown");
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it("the incremental read picks up a subagent's new turns, reading only the new bytes, and drops a removed subagent", () => {
+    const { dir, agents, reader } = rig();
+    try {
+      readIt(reader);
+      const file = path.join(agents, "agent-a-running.jsonl");
+      const end = reader.cache.get(file).end;
+      appendFileSync(file, JSON.stringify({ type: "assistant", isSidechain: true, agentId: "a-running", uuid: "x", timestamp: "2026-10-25T10:02:00.000Z",
+        message: { id: "msg_new", model: "claude-sonnet-5-5", role: "assistant", content: [], usage: { input_tokens: 5, cache_creation_input_tokens: 0, cache_read_input_tokens: 230000, output_tokens: 10 } } }) + "\n");
+      rmSync(path.join(agents, "agent-a-cut.jsonl"));
+      const list = readIt(reader);
+      expect(reader.cache.get(file).end).toBeGreaterThan(end);
+      expect(reader.detail("bbbb-2").subagentList[0]).toMatchObject({ agentId: "a-running", tokens: 230005, turns: 2, zone: "red" });
+      expect(list.sessions[0].subagents).toMatchObject({ count: 8, zone: "red", largest: { tokens: 230005 } });
+      expect(reader.cache.has(path.join(agents, "agent-a-cut.jsonl"))).toBe(false);
+      expect(reader.metas.has(path.join(agents, "agent-a-cut.meta.json"))).toBe(false);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it("a meta file that gains finished is read again, so the subagent turns finished", () => {
+    const { dir, agents, reader } = rig();
+    try {
+      readIt(reader);
+      writeFileSync(path.join(agents, "agent-a-running.meta.json"), JSON.stringify({ agentType: "general-purpose", description: "Run the tests", toolUseId: "toolu_bg", spawnDepth: 1, finished: true }));
+      expect(readIt(reader).sessions[0].subagents.running).toBe(3); // the three without a meta file of use are left
+      expect(reader.detail("bbbb-2").subagentList.find((r) => r.agentId === "a-running").status).toBe("finished");
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it("no subagents/ folder is no subagents: an empty summary, the session folder watched until subagents/ appears in it, nothing without one", () => {
+    const { dir, folder, reader } = rig();
+    try {
+      rmSync(path.join(folder, "bbbb-2", "subagents"), { recursive: true });
+      const list = readIt(reader);
+      expect(list.errors).toEqual([]);
+      expect(list.sessions[0].subagents).toEqual({ count: 0, running: 0, zone: null, largest: null });
+      expect(reader.detail("bbbb-2").subagentList).toEqual([]);
+      expect(list.projectFolders.sort()).toEqual([folder, path.join(folder, "bbbb-2")].sort());
+      rmSync(path.join(folder, "bbbb-2"), { recursive: true });
+      expect(readIt(reader).projectFolders).toEqual([folder]);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+});
+
 describe("SessionWatcher", () => {
   const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = require("node:fs");
   const os = require("node:os");
@@ -1033,6 +1180,14 @@ describe("demo (scripts/demo.cjs)", () => {
     expect(data.workspace.cacheCounts.cold).toBeGreaterThan(0);
     expect(data.workspace.hiddenCount).toBeGreaterThan(0); // "more in other projects"
     expect(data.all.groups.length).toBeGreaterThan(1);
+  });
+
+  it("the invented subagents show on their rows and in the detail, one of them red and one running", () => {
+    const withAgents = data.all.sessions.filter((x) => x.subagents.count > 0);
+    expect(withAgents.length).toBeGreaterThan(0);
+    expect(withAgents.some((x) => x.subagents.zone === "red" && x.subagents.running > 0)).toBe(true);
+    for (const x of withAgents) expect(data.details[x.sessionId].subagentList).toHaveLength(x.subagents.count);
+    expect(data.details[data.workspace.sessions[0].sessionId].subagentList.length).toBeGreaterThan(0); // the README's detail shot
   });
 
   it("every session has its detail, and nothing in the data is a real path or name or an error", () => {

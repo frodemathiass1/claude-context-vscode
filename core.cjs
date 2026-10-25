@@ -103,7 +103,8 @@ function readTail(file, { from, bytes } = {}) {
  * The last assistant entry with usage outside a sidechain (subagent) gives tokens, model and timestamp,
  * and the prompt cache's counters of that turn (`cacheRead`, `cacheCreated`). A subagent writes a file of its
  * own, so the sidechain filter is a guard: no main transcript on record mixes its entries in (NOTES.md,
- * "Subagents and isSidechain"). `cacheTtlMs` is the TTL of the last turn that created cache, read from
+ * "Subagents and isSidechain"). A subagent's own file is parsed with `{ sidechain: true }`: every message entry
+ * there is a sidechain one, so the guard is off. `cacheTtlMs` is the TTL of the last turn that created cache, read from
  * `usage.cache_creation` (ephemeral_1h_input_tokens or ephemeral_5m_input_tokens above zero); a turn that
  * created nothing says nothing, and it is null until seen.
  * A turn is one API call: Claude Code writes one entry per content block of a response, all sharing
@@ -128,10 +129,12 @@ function readTail(file, { from, bytes } = {}) {
  * "Where the context grows"). The open tool calls (id → name) and the characters since the last turn are
  * hidden state. The title is the last ai-title entry, else
  * the first user message (meta entries and tool results skipped) collapsed to one line, else the first local
- * command ("/context all": a system entry, subtype local_command, never its output). With `previous`, the
- * lines are parsed as the continuation of an already parsed transcript, so the host reads only the new bytes.
+ * command ("/context all": a system entry, subtype local_command, never its output). `agentEnds`, hidden state
+ * too, holds the agent ids and the Agent tool_use ids whose end this transcript recorded (subagentStatus). With
+ * `previous`, the lines are parsed as the continuation of an already parsed transcript, so the host reads only
+ * the new bytes.
  */
-function parseTranscript(lines, previous) {
+function parseTranscript(lines, previous, { sidechain = false } = {}) {
   const p = previous || {};
   let tokens = p.tokens ?? null, model = p.model ?? null, lastTurn = p.lastTurn ?? null;
   let cacheTtlMs = p.cacheTtlMs ?? null, cacheRead = p.cacheRead ?? null, cacheCreated = p.cacheCreated ?? null;
@@ -144,6 +147,7 @@ function parseTranscript(lines, previous) {
   let baseline = p.baseline ?? null, baselineAt = p.baselineAt ?? null, baselineCause = p.baselineCause ?? null, baselineId = p.baselineId ?? null;
   let growthBySource = { ...p.growthBySource }, pendingInput = { ...p.pendingInput };
   const toolNames = { ...p.toolNames };
+  const agentEnds = new Set(p.agentEnds);
   const enter = (source, chars) => { if (chars > 0) pendingInput[source] = (pendingInput[source] || 0) + chars; };
   const series = Array.isArray(p.series) ? p.series.slice() : [];
   const outputSeries = Array.isArray(p.outputSeries) ? p.outputSeries.slice() : [];
@@ -151,19 +155,25 @@ function parseTranscript(lines, previous) {
   const compactions = Array.isArray(p.compactions) ? p.compactions.map((c) => ({ ...c })) : [];
   for (const line of lines) {
     const entry = parseEntry(line);
-    if (!entry || entry.isSidechain) continue;
+    if (!entry || (entry.isSidechain && !sidechain)) continue;
     if (entry.type === "system" && entry.subtype === "compact_boundary") { pendingCompaction = compaction(entry.compactMetadata); continue; }
     if (entry.type === "system" && entry.subtype === "local_command") { if (!firstCommand && /<command-name>/.test(entry.content)) firstCommand = userText(entry.content); continue; }
     if (entry.type === "ai-title") { if (entry.aiTitle) title = String(entry.aiTitle); continue; }
+    if (entry.type === "queue-operation") { agentEnded(agentEnds, entry.content); continue; }
     if (entry.type === "attachment") { if (Array.isArray(entry.rendered)) for (const r of entry.rendered) enter("other", contentChars(r && r.content)); continue; }
     if (entry.type === "user") {
       const content = entry.message && entry.message.content;
       if (!firstUser && !entry.isMeta) firstUser = userText(content);
       const own = entry.isMeta ? "other" : "you";
-      if (!Array.isArray(content)) enter(own, contentChars(content));
+      const result = entry.toolUseResult && typeof entry.toolUseResult === "object" ? entry.toolUseResult : {};
+      const launched = result.status === "async_launched"; // a background agent's receipt, not its end
+      if (typeof result.agentId === "string" && typeof result.status === "string" && !launched) agentEnds.add(result.agentId);
+      if (!Array.isArray(content)) { enter(own, contentChars(content)); agentEnded(agentEnds, content); }
       else for (const b of content) {
-        if (b && b.type === "tool_result") { enter(toolNames[b.tool_use_id] || "other", contentChars(b.content)); delete toolNames[b.tool_use_id]; }
-        else enter(own, contentChars([b]));
+        if (b && b.type === "tool_result") {
+          if (AGENT_TOOLS.has(toolNames[b.tool_use_id]) && !launched) agentEnds.add(b.tool_use_id);
+          enter(toolNames[b.tool_use_id] || "other", contentChars(b.content)); delete toolNames[b.tool_use_id];
+        } else { enter(own, contentChars([b])); if (b && b.type === "text") agentEnded(agentEnds, b.text); }
       }
       continue;
     }
@@ -219,7 +229,21 @@ function parseTranscript(lines, previous) {
   Object.defineProperty(out, "baselineId", { value: baselineId, enumerable: false });
   Object.defineProperty(out, "pendingInput", { value: pendingInput, enumerable: false });
   Object.defineProperty(out, "toolNames", { value: toolNames, enumerable: false });
+  Object.defineProperty(out, "agentEnds", { value: [...agentEnds], enumerable: false });
   return out;
+}
+
+// The tool that starts a subagent: "Agent", "Task" before it was renamed. Its tool_result in the main transcript
+// is the subagent's report (a foreground call) or the receipt of its launch (a background one, status async_launched).
+const AGENT_TOOLS = new Set(["Agent", "Task"]);
+// What Claude Code tells the main session when a background agent stops: <task-id> is its agent id, <status>
+// completed, failed, killed or stopped (NOTES.md, "When a subagent ends"). The tool listings quote the tag too, without a task-id.
+const TASK_NOTIFICATION = /<task-notification>\s*<task-id>([\w-]+)<\/task-id>/g;
+
+/** Adds the agent ids of the task notifications in `text` to `ends`. */
+function agentEnded(ends, text) {
+  if (typeof text !== "string" || !text.includes("<task-notification>")) return;
+  for (const m of text.matchAll(TASK_NOTIFICATION)) ends.add(m[1]);
 }
 
 /**
@@ -331,6 +355,67 @@ function growthRows(growthBySource) {
   return list.map(([source, tokens]) => ({ source, tokens, share: tokens / sum }));
 }
 
+/**
+ * A subagent's meta file (`agent-<agentId>.meta.json`, NOTES.md "Subagents and isSidechain"): its type, the
+ * description of the Agent call and that call's `toolUseId`, its depth (1, or 2 for a subagent's subagent, which has
+ * `parentAgentId`), `model` (rare, and an alias such as "haiku") and `finished` (only ever true). A missing or bad
+ * file, or a field of the wrong kind, gives null.
+ */
+function readSubagentMeta(file) {
+  let m = null;
+  try { m = JSON.parse(fs.readFileSync(file, "utf8")); } catch { /* missing or not JSON: nulls */ }
+  if (!m || typeof m !== "object") m = {};
+  const text = (v) => (typeof v === "string" && v ? v : null);
+  return { agentType: text(m.agentType), description: text(m.description), toolUseId: text(m.toolUseId),
+    spawnDepth: Number.isInteger(m.spawnDepth) && m.spawnDepth > 0 ? m.spawnDepth : null, parentAgentId: text(m.parentAgentId),
+    model: text(m.model), finished: m.finished === true ? true : null };
+}
+
+/**
+ * Whether a subagent runs (NOTES.md, "When a subagent ends"). "finished" when its end is on record: `finished` in
+ * its meta file (since 2.1.301, written when a call ends or is stopped), or in the main transcript's `ends` (its
+ * agent id from the Agent call's result or a task notification, or the id of the Agent call itself). "running" when
+ * nothing records an end and its transcript was written since the session's process started: a subagent runs inside
+ * that process. "unknown" otherwise: one cut off with an earlier process (a resumed session), or no time to compare.
+ */
+function subagentStatus({ agentId, meta, writtenMs }, ends, startedMs) {
+  const m = meta || {};
+  if (m.finished === true || ends.has(agentId) || (m.toolUseId && ends.has(m.toolUseId))) return "finished";
+  return Number.isFinite(writtenMs) && Number.isFinite(startedMs) && writtenMs >= startedMs ? "running" : "unknown";
+}
+
+/**
+ * One row per subagent of a session, from what SessionReader.readSubagents read (`entries`): its type, description,
+ * depth, model, tokens and zone (its own window: a subagent's tokens never count in the session's), turns, output,
+ * last turn and the time since it at `now` (`sinceMs`), and status (subagentStatus, with the main transcript's `ends`
+ * and the process start `startedMs`). Running first, then by last turn, newest first, unknown last.
+ */
+function subagentRows(entries, { ends = [], startedMs = null, now = null } = {}) {
+  const ended = new Set(ends);
+  const rank = (r) => (r.status === "running" ? 0 : 1);
+  const lastOf = (r) => { const ms = r.lastTurn ? Date.parse(r.lastTurn) : NaN; return Number.isFinite(ms) ? ms : -Infinity; };
+  return (Array.isArray(entries) ? entries : []).map((e) => {
+    const m = e.meta || {}, t = e.state || {};
+    const tokens = numOrNull(t.tokens), model = t.model || m.model || null;
+    const lastMs = t.lastTurn ? Date.parse(t.lastTurn) : NaN;
+    return { agentId: e.agentId, type: m.agentType || null, description: m.description || null, depth: m.spawnDepth || null,
+      parentAgentId: m.parentAgentId || null, model, modelShort: modelShort(model), tokens, zone: zone(tokens), turns: t.turns || 0,
+      outputTotal: numOrNull(t.outputTotal), lastTurn: t.lastTurn || null,
+      sinceMs: Number.isFinite(lastMs) && Number.isFinite(now) ? Math.max(0, now - lastMs) : null, status: subagentStatus(e, ended, startedMs) };
+  }).sort((a, b) => (rank(a) - rank(b)) || (lastOf(b) - lastOf(a)) || String(a.agentId).localeCompare(String(b.agentId)));
+}
+
+/**
+ * What the list says about a session's subagents: how many, how many run, and the largest count with its zone (the
+ * highest zone among them) and its type and description; `largest` is null when no subagent has a count.
+ */
+function subagentSummary(rows) {
+  let largest = null;
+  for (const r of rows) if (Number.isFinite(r.tokens) && (!largest || r.tokens > largest.tokens)) largest = r;
+  return { count: rows.length, running: rows.filter((r) => r.status === "running").length, zone: largest ? largest.zone : null,
+    largest: largest ? { type: largest.type, description: largest.description, tokens: largest.tokens } : null };
+}
+
 function parseEntry(line) {
   if (!line || line[0] !== "{") return null;
   try { return JSON.parse(line); } catch { return null; }
@@ -389,8 +474,10 @@ function userText(content) {
  * workspace folders), counted from the registry alone, and `workspaceNames` the last folder name of each workspace
  * folder, so the panel can name the scope ("This workspace · my-project · 4 more in other projects"). `zones` is
  * ZONE_LIST, the zones with their limits, range texts and advice, for everything the panel draws them on.
+ * `subagents` (per session) is subagentSummary over what SessionReader read of its subagents (`subagents`, keyed by
+ * sessionId); SessionReader.detail gives the rows.
  */
-function buildSessions({ registry = [], transcripts = {}, now, workspaceFolders = [], all = false }) {
+function buildSessions({ registry = [], transcripts = {}, subagents = {}, now, workspaceFolders = [], all = false }) {
   const nowMs = typeof now === "number" ? now : Date.parse(now);
   const sessions = registry
     .filter((r) => all || workspaceFolders.length === 0 || workspaceFolders.some((f) => inFolder(r.cwd, f)))
@@ -425,6 +512,7 @@ function buildSessions({ registry = [], transcripts = {}, now, workspaceFolders 
         coldAt: Number.isFinite(coldMs) ? new Date(coldMs).toISOString() : null, coldInMs,
         cacheState: coldInMs === null ? null : coldInMs > 0 ? "warm" : "cold",
         busy, waiting, dimmed, abandoned: !busy && !waiting && quiet,
+        subagents: subagentSummary(subagentRows(subagents[r.sessionId], { ends: t.agentEnds, startedMs })),
         _lastMs: Number.isFinite(lastMs) ? lastMs : -Infinity,
       };
     })
@@ -512,10 +600,12 @@ class SessionReader {
     this.cache = new Map(); // transcript file → { end, state }
     this.found = new Map(); // sessionId → project folder found by searching, when the slug folder is missing
     this.files = new Map(); // sessionId → transcript file of the last read, for detail()
+    this.metas = new Map(); // subagent meta file → { stamp, meta }
+    this.agents = new Map(); // sessionId → { entries, startedMs } of the last read, for detail()
   }
 
   read({ workspaceFolders, all, full = false }) {
-    if (full) { this.cache.clear(); this.found.clear(); }
+    if (full) { this.cache.clear(); this.found.clear(); this.metas.clear(); }
     const errors = [];
     const registry = readRegistry(this.sessionsDir, this.alive);
     if (registry.error) errors.push(registry.error);
@@ -523,10 +613,12 @@ class SessionReader {
     // and their missing project folders are not this window's errors
     const inScope = buildSessions({ registry: registry.sessions, now: Date.now(), workspaceFolders, all }).sessions;
     const transcripts = {};
+    const subagents = {};
     const projectFolders = new Set();
     const live = new Set();
     const liveIds = new Set();
     this.files = new Map();
+    this.agents = new Map();
     for (const s of inScope) {
       if (!s.cwd || !s.sessionId) continue;
       liveIds.add(s.sessionId);
@@ -539,24 +631,68 @@ class SessionReader {
       this.files.set(s.sessionId, file);
       try { transcripts[s.sessionId] = this.readTranscript(file); }
       catch (e) { this.cache.delete(file); errors.push(`Transcript not read: ${file} (${e.code || e.message})`); }
+      const agents = this.readSubagents(path.join(folder, s.sessionId), live);
+      if (agents.watch) projectFolders.add(agents.watch);
+      subagents[s.sessionId] = agents.entries;
+      this.agents.set(s.sessionId, { entries: agents.entries, startedMs: s.startedAt ? Date.parse(s.startedAt) : null });
     }
     for (const file of this.cache.keys()) if (!live.has(file)) this.cache.delete(file);
+    for (const file of this.metas.keys()) if (!live.has(file)) this.metas.delete(file);
     for (const id of this.found.keys()) if (!liveIds.has(id)) this.found.delete(id);
-    const list = buildSessions({ registry: registry.sessions, transcripts, now: Date.now(), workspaceFolders, all });
+    const list = buildSessions({ registry: registry.sessions, transcripts, subagents, now: Date.now(), workspaceFolders, all });
     return { ...list, all, errors: [...new Set(errors)], generatedAt: new Date().toISOString(), projectFolders: [...projectFolders] };
   }
 
   /**
    * Every turn of one session, for the detail view: `turns`, and `series`, `outputSeries`, `thinkingSeries`,
-   * `compactions`, `dips` and `baselineAt` as in the list but not cut to SERIES_MAX. Taken from the state the
-   * last read parsed, without reading again, so it is the same transcript as the list the panel shows; null
-   * for a session that read did not parse (outside the scope, gone, or its transcript missing).
+   * `compactions`, `dips` and `baselineAt` as in the list but not cut to SERIES_MAX, and `subagentList`, a row per
+   * subagent (subagentRows). Taken from the state the last read parsed, without reading again, so it is the same
+   * transcript as the list the panel shows; null for a session that read did not parse (outside the scope, gone, or
+   * its transcript missing).
    */
   detail(sessionId) {
     const file = this.files.get(sessionId);
     const cached = file ? this.cache.get(file) : null;
     if (!cached || !cached.state) return null;
-    return { turns: cached.state.turns || 0, ...seriesFor(cached.state) };
+    const agents = this.agents.get(sessionId) || {};
+    return { turns: cached.state.turns || 0, ...seriesFor(cached.state),
+      subagentList: subagentRows(agents.entries, { ends: cached.state.agentEnds, startedMs: agents.startedMs, now: Date.now() }) };
+  }
+
+  /**
+   * The subagents of one session, from `<sessionDir>/subagents/`: per `agent-<agentId>.jsonl` its transcript, parsed
+   * through the cache as the main one (`live` gets its files, so a removed one leaves the cache), the time of its last
+   * write, and its meta file. `watch` is the folder the watcher needs for a subagent's writes (fs.watch is not
+   * recursive): subagents/, or the session folder until subagents/ exists in it, or null. No folder is no subagents.
+   */
+  readSubagents(sessionDir, live) {
+    const dir = path.join(sessionDir, "subagents");
+    let names;
+    try { names = fs.readdirSync(dir); } catch { return { entries: [], watch: fs.existsSync(sessionDir) ? sessionDir : null }; }
+    const entries = [];
+    for (const name of names.sort()) {
+      const agent = /^agent-([\w-]+)\.jsonl$/.exec(name);
+      if (!agent) continue;
+      const file = path.join(dir, name), metaFile = path.join(dir, `agent-${agent[1]}.meta.json`);
+      live.add(file);
+      live.add(metaFile);
+      let state = null, writtenMs = null;
+      try { state = this.readTranscript(file, { sidechain: true }); writtenMs = fs.statSync(file).mtimeMs; }
+      catch { this.cache.delete(file); } // a subagent not read is shown as unknown, not as an error of the session
+      entries.push({ agentId: agent[1], meta: this.readMeta(metaFile), state, writtenMs });
+    }
+    return { entries, watch: dir };
+  }
+
+  /** A subagent's meta file, read again only when its time or size changed (a call that ends adds `finished`). */
+  readMeta(file) {
+    let stamp = null;
+    try { const st = fs.statSync(file); stamp = `${st.mtimeMs}:${st.size}`; } catch { /* missing: nulls */ }
+    const known = this.metas.get(file);
+    if (known && known.stamp === stamp) return known.meta;
+    const meta = readSubagentMeta(file);
+    this.metas.set(file, { stamp, meta });
+    return meta;
   }
 
   /**
@@ -577,11 +713,11 @@ class SessionReader {
     return null;
   }
 
-  readTranscript(file) {
+  readTranscript(file, options) {
     const cached = this.cache.get(file);
     const tail = readTail(file, { from: cached ? cached.end : 0 });
     if (tail.missing) { this.cache.delete(file); return null; }
-    const state = parseTranscript(tail.lines, cached && !tail.restarted ? cached.state : null);
+    const state = parseTranscript(tail.lines, cached && !tail.restarted ? cached.state : null, options);
     this.cache.set(file, { end: tail.end, state });
     return state;
   }
@@ -594,8 +730,9 @@ function isAlive(pid) {
 /**
  * Watches Claude Code's folders and calls `onChange` after each change, debounced, and on a tick (which
  * refreshes "x min ago" and catches processes that died without removing their registry file). start()
- * watches sessions/ and projects/ (a new project folder appears there); the project folders a read
- * returns are added with watchAll(). Here and not in extension.js so the tests can run it.
+ * watches sessions/ and projects/ (a new project folder appears there); the folders a read returns (the
+ * project folders and the sessions' subagents/ folders) are added with watchAll(). Here and not in extension.js
+ * so the tests can run it.
  */
 class SessionWatcher {
   constructor(claudeDir, onChange, { debounceMs = 250, tickMs = 30000 } = {}) {
@@ -615,7 +752,7 @@ class SessionWatcher {
     this.tick = setInterval(() => this.onChange(), this.tickMs);
   }
 
-  /** Watches every folder listed and stops watching the project folders a read no longer lists (they left the scope). */
+  /** Watches every folder listed and stops watching the folders a read no longer lists (they left the scope). */
   watchAll(folders) {
     const keep = new Set([path.join(this.claudeDir, "sessions"), path.join(this.claudeDir, "projects"), ...folders]);
     for (const [folder, w] of this.watchers) if (!keep.has(folder)) { w.close(); this.watchers.delete(folder); }
@@ -645,4 +782,5 @@ class SessionWatcher {
   }
 }
 
-module.exports = { projectSlug, zone, tokensText, dips, readRegistry, readTail, parseTranscript, seriesFor, contextFacts, growthRows, buildSessions, inFolder, projectName, modelShort, claudeDir, pageCsp, randomNonce, SessionReader, SessionWatcher };
+module.exports = { projectSlug, zone, tokensText, dips, readRegistry, readTail, parseTranscript, seriesFor, contextFacts, growthRows,
+  readSubagentMeta, subagentStatus, subagentRows, subagentSummary, buildSessions, inFolder, projectName, modelShort, claudeDir, pageCsp, randomNonce, SessionReader, SessionWatcher };
