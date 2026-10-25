@@ -26,7 +26,8 @@ Dark Modern theme; the panel follows whatever theme the editor has, and in a bro
 ## Why
 
 A long session gets worse well before it hits the window limit: past a certain size the model starts to lose track
-of what is in its context. Matt Pocock calls this the dumb zone, which "commonly begins around 125K-150K tokens".
+of what is in its context. Matt Pocock calls this the dumb zone: his smart zone lasts "~150k tokens on
+state-of-the-art models", and the dumb zone "commonly begins around 125K-150K tokens".
 The panel shows every live session's token count against those marks, where the context went since the session
 started, and when its prompt cache goes cold, so you can see when it is time to break a session and which one.
 
@@ -143,7 +144,7 @@ side of the window, or right-click it → **Move To** → **Secondary Side Bar**
 
 In the sidebar the panel is a list of the sessions in this window's workspace, grouped by what they are doing:
 working now, waiting for you, idle, and idle over an hour (folded). Each row has the count in its zone colour, a
-context bar with marks at 100K, 125K and 150K, an estimate of where the context went, a sparkline of tokens per
+context bar with marks at 125K, 150K and 200K, an estimate of where the context went, a sparkline of tokens per
 turn, and the state of the prompt cache. **All projects** shows the whole machine instead, grouped by project,
 and from 620 px wide the rows spread over four columns, as in the image at the top.
 
@@ -160,10 +161,16 @@ next phase boundary, the whole curve with every compaction, where the context we
 
 ### Zones
 
-Every session is in a zone by its token count: green below 100K, yellow below 125K, orange up to 150K, red
+Every session is in a zone by its token count: green below 125K, yellow below 150K, orange up to 200K, red
 above. The zones are absolute token counts, not a share of the model's window: they follow Matt Pocock's
-smart zone and dumb zone, where the dumb zone "commonly begins around 125K-150K tokens". They warn about
-quality, not about the window limit. The header draws them, so the limits are in view before any row.
+smart zone and dumb zone as he gives them in 2026. Yellow is the band where, in his dictionary, the dumb zone
+"commonly begins around 125K-150K tokens"; orange starts where his smart zone, "~150k tokens on
+state-of-the-art models", is spent. Red above 200K is the panel's own line: he gives no figure for how deep the
+dumb zone goes, and he and the published measurements describe a gradual decline, not a cliff. The zones warn
+about quality, not about the window limit. The header draws them, so the limits are in view before any row.
+
+The bars and curves run 0–300K, past the red line, so the red band has room on the scale and few sessions run
+off the end; a count above 300K fills its bar, with a hatched end.
 
 ### Header
 
@@ -174,9 +181,9 @@ At the right end, the compact switch and the refresh button: refresh reads the r
 again from the first byte, and says "updated 12:04:31" when done. Click it when you doubt what the list shows,
 for example right after a process was ended.
 
-Across the bottom of the header, the zone scale: a strip as wide as the header that stands for 0–200K, the same
-scale as the row bars, each zone a band at its true width with its range written inside ("below 100K",
-"100K–125K" …; "<100K", "100K+" … when a band is too narrow, and no text when even that does not fit), so the
+Across the bottom of the header, the zone scale: a strip as wide as the header that stands for 0–300K, the same
+scale as the row bars, each zone a band at its true width with its range written inside ("below 125K",
+"125K–150K" …; "<125K", "125K+" … when a band is too narrow, and no text when even that does not fit), so the
 limits are in view before any row. Point at a band for what to do at the next phase boundary in that zone.
 
 ### Groups
@@ -200,7 +207,7 @@ the panel remembers which are folded.
 One row per session:
 
 - The title, and the count in the zone colour with the zone's name under it.
-- A context bar scaled 0–200K with marks at 100K, 125K and 150K; its tooltip says what to do at the next
+- A context bar scaled 0–300K with marks at 125K, 150K and 200K; its tooltip says what to do at the next
   phase boundary in the yellow, orange and red zones. Its first part, in a muted shade, is the start of the
   session: the first turn, which holds the fixed load (CLAUDE.md, memory, skill and tool listings) and the
   first message ("start 29K · conversation 87K"; after a compaction it starts again at the first turn after it).
@@ -236,10 +243,10 @@ a filter is on, and "reset" puts the view back. The view is remembered like the 
 The detail view opens in the list's place:
 
 - The title, project, model and effort, turns, start and last turn.
-- A box edged in the zone colour that says what the number is ("Context 138K · orange zone"), that the zones
-  warn about quality at 100K, 125K and 150K and not about the window limit, and, in yellow, orange and red,
+- A box edged in the zone colour that says what the number is ("Context 169K · orange zone"), that the zones
+  warn about quality at 125K, 150K and 200K and not about the window limit, and, in yellow, orange and red,
   what to do at the next phase boundary ("Break at the first phase boundary; continue only if the next phase
-  fits under 150K."). Under it the named facts: "Session started at 29K" (or "This segment started at 169K"
+  needs this one verbatim."). Under it the named facts: "Session started at 29K" (or "This segment started at 44K"
   after a compaction) and "Compactions 1" when there was one.
 - A large curve of tokens per turn over the whole session, with the four zone bands, every compaction labelled
   with its trigger and counts, and the segment's start. Under it, in a field half its height on the same

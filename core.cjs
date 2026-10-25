@@ -9,9 +9,13 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
-// Quality warnings, not the window limit: absolute token counts calibrated on Matt Pocock's smart/dumb zone
-// (the dumb zone "commonly begins around 125K-150K tokens"); the orange band is that range.
-const YELLOW_FROM = 100000, ORANGE_FROM = 125000, RED_ABOVE = 150000;
+// Quality warnings, not the window limit: absolute token counts from Matt Pocock's smart/dumb zone, checked against
+// his primary sources on 2026-10-25. Yellow is his dictionary's band, where the dumb zone "commonly begins around
+// 125K-150K tokens" (dictionary/Smart zone.md, since 2026-06-05); orange starts where his smart zone, "~150k tokens
+// on state-of-the-art models" (mattpocock/skills, ask-matt/SKILL.md and PHASE-BOUNDARIES.md, 2026-08-05), is spent.
+// 200K is the panel's own line: he gives no figure for how deep the dumb zone goes, and measurements find a gradient,
+// not a cliff (Chroma, "Context Rot", July 2025; Anthropic on context engineering, September 2025).
+const YELLOW_FROM = 125000, ORANGE_FROM = 150000, RED_ABOVE = 200000;
 // A session without a turn for an hour is dimmed. One that is neither busy nor waiting and had neither a turn nor its
 // process start for an hour is abandoned, and the panel folds it away: a closed VS Code chat tab keeps its process (NOTES.md,
 // "Closed chat tabs") and nothing tells it from an open tab, so a quiet hour is the only sign there is. The start
@@ -36,7 +40,7 @@ function projectSlug(cwd) {
   return String(cwd).replace(/[^A-Za-z0-9]/g, "-");
 }
 
-/** Zone for a token count: green below 100K, yellow below 125K, orange up to and including 150K, red above, null when unknown. */
+/** Zone for a token count: green below 125K, yellow below 150K, orange up to and including 200K, red above, null when unknown. */
 function zone(tokens) {
   if (!Number.isFinite(tokens)) return null;
   return tokens < YELLOW_FROM ? "green" : tokens < ORANGE_FROM ? "yellow" : tokens <= RED_ABOVE ? "orange" : "red";
@@ -281,9 +285,11 @@ function tokensText(tokens) {
 
 // What to do at the next phase boundary, per zone (Matt Pocock's PHASE-BOUNDARIES.md, not in this repo): the detail view shows it under the
 // count, the list's bar and the header's zone band in their tooltips. Green has none: a session there is in the smart zone.
+// Orange starts where the smart zone is spent, so only his first question is left: does the next phase need this one
+// as a primary source.
 const ZONE_ADVICE = Object.freeze({
   yellow: "Plan to break at the next phase boundary.",
-  orange: `Break at the first phase boundary; continue only if the next phase fits under ${tokensText(RED_ABOVE)}.`,
+  orange: "Break at the first phase boundary; continue only if the next phase needs this one verbatim.",
   red: "Do not start a new phase: /clear, /handoff, a subagent, or /compact.",
 });
 

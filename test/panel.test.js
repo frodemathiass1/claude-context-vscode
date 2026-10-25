@@ -86,8 +86,8 @@ describe("panel: the list", () => {
     const p = panel();
     expect(p.posted).toEqual([{ type: "ready" }]);
     p.send(list([
-      session("d", { tokens: 110000, ago: MIN }), session("c", { tokens: 160000, ago: 2 * MIN }),
-      session("b", { tokens: 130000, status: "waiting" }), session("a", { tokens: 50000, status: "busy" }),
+      session("d", { tokens: 140000, ago: MIN }), session("c", { tokens: 230000, ago: 2 * MIN }),
+      session("b", { tokens: 170000, status: "waiting" }), session("a", { tokens: 50000, status: "busy" }),
     ]));
     expect(p.$("count").textContent).toBe("4");
     expect(["green", "yellow", "orange", "red"].map((z) => p.$(`zone-${z}`).textContent)).toEqual(["1", "1", "1", "1"]);
@@ -123,7 +123,7 @@ describe("panel: the list", () => {
 
   it("orange and red only hides the other idle sessions, never a busy or waiting one, and reset brings them back", () => {
     const p = panel();
-    p.send(list([session("g", { tokens: 20000 }), session("o", { tokens: 130000 }), session("r", { tokens: 160000 }),
+    p.send(list([session("g", { tokens: 20000 }), session("o", { tokens: 170000 }), session("r", { tokens: 230000 }),
       session("b", { tokens: 20000, status: "busy" }), session("w", { tokens: 20000, status: "waiting" })]));
     expect(p.$("reset").hidden).toBe(true);
     p.$("filter-hot").click();
@@ -199,16 +199,17 @@ describe("panel: the list", () => {
 });
 
 describe("panel: the zone scale", () => {
-  it("draws the zones at their true widths on 0–200K with each range inside, and says what applies in each", () => {
+  it("draws the zones at their true widths on 0–300K with each range inside, and says what applies in each", () => {
     const p = panel();
     p.send(list([session("a")]));
     const bands = ["green", "yellow", "orange", "red"].map((z) => p.$(`band-${z}`));
-    expect(bands.map((b) => b.style.getPropertyValue("--w"))).toEqual(["50", "12.5", "12.5", "25"]);
-    expect(bands.map((b) => b.querySelector(".kx-zlong").textContent)).toEqual(["below 100K", "100K–125K", "125K–150K", "above 150K"]);
-    expect(bands.map((b) => b.querySelector(".kx-zshort").textContent)).toEqual(["<100K", "100K+", "125K+", ">150K"]);
-    expect(p.$("band-green").title).toBe("green zone: below 100K");
-    expect(p.$("band-yellow").title).toBe("yellow zone: 100K–125K · Plan to break at the next phase boundary.");
-    expect(p.$("band-red").title).toMatch(/^red zone: above 150K · Do not start a new phase/);
+    expect(bands.map((b) => b.style.getPropertyValue("--w"))).toEqual(["41.67", "8.33", "16.67", "33.33"]);
+    expect(bands.map((b) => b.querySelector(".kx-zlong").textContent)).toEqual(["below 125K", "125K–150K", "150K–200K", "above 200K"]);
+    expect(bands.map((b) => b.querySelector(".kx-zshort").textContent)).toEqual(["<125K", "125K+", "150K+", ">200K"]);
+    expect(p.$("band-green").title).toBe("green zone: below 125K");
+    expect(p.$("band-yellow").title).toBe("yellow zone: 125K–150K · Plan to break at the next phase boundary.");
+    expect(p.$("band-orange").title).toBe("orange zone: 150K–200K · Break at the first phase boundary; continue only if the next phase needs this one verbatim.");
+    expect(p.$("band-red").title).toMatch(/^red zone: above 200K · Do not start a new phase/);
   });
 
   it("is the same with no sessions, and one image to assistive technology, its label naming the limits", () => {
@@ -217,12 +218,12 @@ describe("panel: the zone scale", () => {
     expect(p.$$("band-green")).toHaveLength(1);
     expect(p.$("zone-scale").getAttribute("role")).toBe("img");
     expect(p.$("zone-scale").getAttribute("aria-label")).toBe(
-      "Zones on a 0–200K scale: green below 100K, yellow 100K–125K, orange 125K–150K and red above 150K");
+      "Zones on a 0–300K scale: green below 125K, yellow 125K–150K, orange 150K–200K and red above 200K");
   });
 
   it("keeps the count per zone beside the session count, for the scope", () => {
     const p = panel();
-    const mine = session("a", { tokens: 39000 }), other = session("b", { tokens: 130000, cwd: OTHER });
+    const mine = session("a", { tokens: 39000 }), other = session("b", { tokens: 170000, cwd: OTHER });
     p.send(list([mine, other], { workspaceFolders: [MINE] }));
     expect(["green", "orange"].map((z) => p.$(`zone-${z}`).textContent)).toEqual(["1", "0"]);
     p.send(list([mine, other], { workspaceFolders: [MINE], all: true }));
@@ -233,12 +234,21 @@ describe("panel: the zone scale", () => {
     const p = panel();
     const ticks = () => [...p.row("a").querySelectorAll(".kx-tick")].map((t) => t.style.getPropertyValue("--t"));
     p.send(list([session("a")]));
-    expect(ticks()).toEqual(["50", "62.5", "75"]);
+    expect(ticks()).toEqual(["41.67", "50", "66.67"]);
     const built = list([session("a")]);
-    const bounds = [[0, 80000], [80000, 120000], [120000, 160000], [160000, null]];
+    const bounds = [[0, 90000], [90000, 150000], [150000, 210000], [210000, null]];
     p.send({ ...built, zones: built.zones.map((z, i) => ({ ...z, from: bounds[i][0], to: bounds[i][1] })) });
-    expect(["green", "yellow", "orange", "red"].map((z) => p.$(`band-${z}`).style.getPropertyValue("--w"))).toEqual(["40", "20", "20", "20"]);
-    expect(ticks()).toEqual(["40", "60", "80"]);
+    expect(["green", "yellow", "orange", "red"].map((z) => p.$(`band-${z}`).style.getPropertyValue("--w"))).toEqual(["30", "20", "20", "30"]);
+    expect(ticks()).toEqual(["30", "50", "70"]);
+  });
+
+  it("runs the row bar 0–300K with marks at 125K, 150K and 200K: only a count above 300K gets the hatched end", () => {
+    const p = panel();
+    p.send(list([session("a", { tokens: 250000 }), session("b", { tokens: 300000 }), session("c", { tokens: 320000 })]));
+    const bar = (id) => p.row(id).querySelector('[data-testid="bar"]');
+    expect(bar("a").title).toMatch(/· scale 0–300K, marks at 125K, 150K and 200K/);
+    expect(["a", "b", "c"].map((id) => bar(id).querySelector(".kx-over") !== null)).toEqual([false, false, true]);
+    expect(["a", "b", "c"].map((id) => bar(id).getAttribute("aria-label"))).toEqual(["83 % of the 300K scale", "100 % of the 300K scale", "over the 300K scale"]);
   });
 
   it("before any zones, draws no limits and names none, in the rows and the detail view", () => {
@@ -258,8 +268,8 @@ describe("panel: the zone scale", () => {
     p.send(list([session("a")]));
     const built = list([session("a")]);
     p.send({ ...built, zones: [built.zones[1], built.zones[0], ...built.zones.slice(2)] });
-    p.send({ ...built, zones: built.zones.map((z, i) => (i === 3 ? { ...z, from: 250000 } : z)) });
-    expect(p.$("band-red").style.getPropertyValue("--w")).toBe("25");
+    p.send({ ...built, zones: built.zones.map((z, i) => (i === 3 ? { ...z, from: 350000 } : z)) });
+    expect(p.$("band-red").style.getPropertyValue("--w")).toBe("33.33");
   });
 
   it("builds the bands once for the same zones, so a band's tooltip survives the next list; a list without zones keeps them", () => {

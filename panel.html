@@ -67,7 +67,7 @@
   .kx-toggle[aria-pressed="true"] { color: var(--kx-fg); background: var(--kx-row-hover); border-color: var(--kx-border-strong); }
   .kx-refresh[aria-busy="true"] svg { animation: kx-spin 0.8s linear infinite; } /* spins until the next list arrives */
   @keyframes kx-spin { to { transform: rotate(360deg); } }
-  /* The zone scale: a thick strip across the header, the row bar's 0–200K with each zone as a band at its true width
+  /* The zone scale: a thick strip across the header, the row bar's 0–300K with each zone as a band at its true width
      and its range written inside, so the limits are in view before any row. Tinted, with the text in the zone colour,
      so it reads in light and dark themes. */
   .kx-zscale { flex: 1 1 100%; display: flex; gap: 2px; height: 22px; }
@@ -194,7 +194,7 @@
   /* a title the transcript did not give: "new session" and the registry's name, muted so it is not read as a message */
   .kx-title[data-fallback], .kx-d-head h1[data-fallback] { color: var(--kx-muted); font-weight: 500; }
   .kx-zone-txt { font-size: 0.78em; line-height: 1; color: var(--kx-muted); }
-  /* the context bar: a track scaled 0–200K, the fill in the zone's fill colour, a gap at every limit */
+  /* the context bar: a track scaled 0–300K, the fill in the zone's fill colour, a gap at every limit */
   .kx-bar-col { grid-area: bar; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
   .kx-bar { position: relative; height: 10px; border-radius: 5px; background: var(--kx-track); overflow: hidden; }
   .kx-fill {
@@ -315,7 +315,7 @@
   .kx-d-sw-out { opacity: 0.35; }
   .kx-d-sw-think { opacity: 0.8; }
   .kx-d-tip .kx-d-tip-o { color: var(--kx-muted); }
-  /* the header: "Context 138K · orange zone", what the zones measure and the advice, edged and tinted in the zone colour */
+  /* the header: "Context 169K · orange zone", what the zones measure and the advice, edged and tinted in the zone colour */
   .kx-d-ctx {
     margin: 0 0 10px; padding: 8px 10px; border-left: 3px solid var(--kx-zone-fill, var(--kx-muted)); border-radius: 0 4px 4px 0;
     background: color-mix(in srgb, var(--kx-zone-fill, var(--kx-muted)) 8%, transparent);
@@ -543,7 +543,9 @@
   const ZONES = ["green", "yellow", "orange", "red"];
   const ZONE_NAME = Object.fromEntries(ZONES.map((z) => [z, z]));
   let LIMITS = [], ZONE_LIST = [], MARKS_TEXT = ""; // until the first list with zones: no limits drawn, no marks named
-  const SCALE = 200000;
+  // past red's 200K, so the red band is on the strip and few sessions run off the bar: of the owner's 395 sessions in
+  // the 60 days to 2026-10-25 (peak context, counts only), 18 % went above 200K and 7 % above 300K (#58)
+  const SCALE = 300000;
   // The prompt cache (core.cjs: cacheTtlMs, coldInMs, hitShare). The core decides warm or cold; "soon" is the
   // panel's marker for a warm cache within SOON_MS of its deadline (or half the TTL, so a 5-minute cache is
   // not "soon" from its first minute). The panel only shows the state; it never sends a turn.
@@ -601,7 +603,7 @@
     return Number.isFinite(session.coldInMs) && session.coldInMs <= soon ? "soon" : "warm";
   }
 
-  /** "100K and 150K", "100K, 125K and 150K": the limits as words for tooltips. */
+  /** "125K and 200K", "125K, 150K and 200K": the limits as words for tooltips. */
   function listText(items) {
     return items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
   }
@@ -1118,7 +1120,7 @@
     for (const i of dips) svg.appendChild(svgEl("line", { class: "kx-dip", "data-turn": first + i, x1: num(x(i)), x2: num(x(i)), y1: 0, y2: D_H, "vector-effect": "non-scaling-stroke" }));
     for (const c of compactions) svg.appendChild(svgEl("line", { class: "kx-compact", "data-turn": first + c.at, x1: num(x(c.at)), x2: num(x(c.at)), y1: 0, y2: D_H, "vector-effect": "non-scaling-stroke" }));
     field.appendChild(svg);
-    // the axis labels: the limits and the top of the scale; when the scale runs far above 200K the limits sit
+    // the axis labels: the limits and the top of the scale; when the scale runs far above 300K the limits sit
     // close together, so the middle one goes first and then the lowest, and they never overlap. How many fit
     // is decided for both field heights; the style shows data-axis below 620 px and data-axis-wide above
     const room = LIMITS.length ? (y(LIMITS[0]) - y(LIMITS[LIMITS.length - 1])) / D_H : 1;
@@ -1406,7 +1408,7 @@
   }
 
   /**
-   * The context box: "Context 138K · orange zone", what the zones measure (for a known zone) and the zone's advice
+   * The context box: "Context 169K · orange zone", what the zones measure (for a known zone) and the zone's advice
    * (yellow, orange and red), then the named facts under it; the core gives the advice and the facts (contextFacts).
    */
   function contextBlock(session) {
