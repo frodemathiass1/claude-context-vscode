@@ -929,6 +929,26 @@ describe("panel: what the core decides for it", () => {
   });
 });
 
+describe("panel: the text sizes", () => {
+  // The style as the host serves it, comments out: every font-size is one of a few tokens on :root (#85), so two texts
+  // of one rank cannot drift apart and a new element takes a step of the scale, not a value of its own.
+  const style = () => panel().doc.querySelector("style").textContent.replace(/\/\*[\s\S]*?\*\//g, "");
+  it("come from a scale of at most six tokens, each a factor of the editor's font size", () => {
+    const steps = [...style().matchAll(/(--kx-text-[\w-]+)\s*:\s*([^;]+);/g)];
+    expect(steps.length).toBeGreaterThanOrEqual(4);
+    expect(steps.length).toBeLessThanOrEqual(6);
+    for (const [, , value] of steps) expect(value.trim()).toMatch(/^(var\(--kx-font-size\)|calc\(var\(--kx-font-size\) \* [\d.]+\))$/);
+  });
+  it("leave no literal font-size outside the tokens", () => {
+    const css = style(), defined = new Set([...css.matchAll(/(--kx-text-[\w-]+)\s*:/g)].map((m) => m[1]));
+    const used = [...css.matchAll(/(?<![\w-])font-size\s*:\s*([^;}]+)/g)].map((m) => m[1].trim());
+    expect(used.length).toBeGreaterThan(30);
+    for (const value of used) expect(defined).toContain(value.match(/^var\((--kx-text-[\w-]+)\)$/)?.[1]);
+    // the shorthand may only take the parent's font, never set a size of its own
+    for (const [, value] of css.matchAll(/(?<![\w-])font\s*:\s*([^;}]+)/g)) expect(value.trim()).toBe("inherit");
+  });
+});
+
 describe("panel: what the host may send", () => {
   it("a payload with missing or wrongly typed fields renders without throwing", () => {
     const p = panel();
