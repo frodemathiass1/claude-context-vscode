@@ -7,8 +7,8 @@ Code's files, read `NOTES.md`. This file holds what neither says.
 ## The code
 
 No runtime dependencies, no build step, and it stays that way: VS Code loads the repo folder as it is, and Node
-runs the server as it is. The code is in `src/`, one flat folder; the
-root holds the docs and config, so the repo folder is what VS Code installs.
+runs the server as it is. The code is in `src/`, one flat folder; the root holds the docs and config, so the
+repo folder is what VS Code installs.
 
 A rule that both hosts, or the core and the panel, need has **one copy**.
 
