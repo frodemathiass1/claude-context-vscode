@@ -976,6 +976,19 @@ describe("SessionReader", () => {
     return { dir, folder, file: path.join(folder, "aaaa-1.jsonl") };
   }
 
+  it("the error lines come in the list's order (busy, waiting, then pid), not the registry files' order", () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "claude-context-"));
+    try {
+      mkdirSync(path.join(dir, "sessions"));
+      for (const [pid, status] of [[100, "idle"], [20, "idle"], [7, "idle"], [300, "busy"], [50, "waiting"]]) {
+        writeFileSync(path.join(dir, "sessions", `${pid}.json`), JSON.stringify({ pid, sessionId: `p${pid}`, cwd: `/Users/me/Dev/p${pid}`, status }));
+      }
+      const r = new K.SessionReader(dir, { alive: () => true }).read({ workspaceFolders: [], all: true });
+      const missing = (pid) => `Project folder not found: ${path.join(dir, "projects", K.projectSlug(`/Users/me/Dev/p${pid}`))}`;
+      expect(r.errors).toEqual([300, 50, 7, 20, 100].map(missing));
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
   it("reads the registry (live processes only) and the transcript, and takes only the new bytes next time", () => {
     const { dir, file, folder } = rig();
     try {

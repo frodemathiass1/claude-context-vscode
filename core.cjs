@@ -83,8 +83,9 @@ function readRegistry(dir, alive) {
 
 /**
  * Whole lines from a transcript, from byte offset `from` (the start of a line: 0, or the `end` of the read before).
- * `end` is the offset after the last newline, so a line still being written is read again next time. A `from` beyond the end means the file was rewritten shorter:
- * it is read from the start and `restarted` is true, so the caller drops its previous state.
+ * `end` is the offset after the last newline, so a line still being written is read again next time. A `from`
+ * beyond the end means the file was rewritten shorter: it is read from the start and `restarted` is true, so the
+ * caller drops its previous state.
  * The bytes are read in chunks of READ_CHUNK and split at the newline byte, which never occurs inside a UTF-8
  * character, so a character across two chunks is decoded whole; the part after a chunk's last newline is carried
  * into the next. Only the bytes readSync reports are used: a file cut shorter during the read ends it early.
@@ -699,7 +700,10 @@ class SessionReader {
     if (registry.error) errors.push(registry.error);
     // only the sessions in scope are read: outside the window they would be filtered away anyway,
     // and their missing project folders are not this window's errors
-    const scoped = registry.sessions.filter((r) => inScope(r.cwd, { workspaceFolders, all }));
+    // in the list's order before a transcript is read (busy, waiting, then pid, as buildSessions sorts), so the error
+    // lines keep their order whatever order readdir gives the registry files in
+    const rank = (r) => (r.status === "busy" ? 0 : r.status === "waiting" ? 1 : 2);
+    const scoped = registry.sessions.filter((r) => inScope(r.cwd, { workspaceFolders, all })).sort((a, b) => (rank(a) - rank(b)) || (a.pid - b.pid));
     const transcripts = {};
     const subagents = {};
     const projectFolders = new Set();
