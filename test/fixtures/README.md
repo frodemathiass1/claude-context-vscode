@@ -10,3 +10,7 @@ rule in `parseTranscript` (see the test names in `../core.test.js`).
 
 `ttl-drop.jsonl` is three turns whose `cache_creation` goes 1-hour, then 5-minute, then nothing: the TTL
 the core reports drops to 5m and stays there.
+
+`sidechain-last.jsonl` mixes subagent entries (`isSidechain: true`) into the main transcript. Claude Code
+2.1.259–2.1.310 writes them to a file of their own instead (`NOTES.md`, "Subagents and `isSidechain`"), so
+the fixture tests the guard, not a shape seen on record.

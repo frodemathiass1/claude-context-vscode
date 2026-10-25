@@ -133,3 +133,24 @@ process start for an hour (`DIM_AFTER_MS`, the longer cache TTL) into "Idle over
 header; an empty session goes there by its start alone. Some of those are open tabs left alone, which is why the
 group is not called closed. Ending such a process from the panel is a separate question (destructive: it could
 end an open tab).
+
+## Subagents and `isSidechain` (measured 2026-10-25, Claude Code 2.1.259–2.1.310, macOS)
+
+- **The main transcript** (`<sessionId>.jsonl`): 413 files from 2026-09-10 to 2026-10-25, not one entry with
+  `isSidechain: true`. Every message entry carries `isSidechain: false`; the entries without the field are
+  bookkeeping (`ai-title`, `api-request`, `api-request-blob`, `queue-operation`, `last-prompt`,
+  `bridge-session`, `file-history-snapshot` and the like), none with `usage`.
+- **A subagent's transcript** is its own file, `<sessionId>/subagents/agent-<agentId>.jsonl` (279 files under 197
+  sessions). Every message entry carries `isSidechain: true`, the parent's `sessionId` and an `agentId`; only
+  the `api-request*` entries lack the field. Its assistant entries have the same `message.usage` as the main
+  session's: a subagent has a context window of its own (the two measured ended near 70K tokens).
+- **Next to it, `agent-<agentId>.meta.json`**, with the fields on how many of the 279 files: `agentType` 279,
+  `requestShape` 279, `requestNonInteractive` 279, `spawnDepth` 274 (1, or 2 for a subagent's subagent, which
+  then has `parentAgentId`, 4), `description` 88, `toolUseId` 88, `isBuiltIn` 52, `finished` 26,
+  `launchedWithDefaults` 19, `spawnMode` 13, `model` 1. `finished` is first seen in 2.1.301, and from then on 26 of 103 files have it (11
+  of 42 in 2.1.310), so a file without it is not known to be running.
+
+So the core reads `<sessionId>.jsonl` only and never counts a subagent's tokens, which is right: what a subagent
+adds to the main context is its report, a `tool_result` of the Agent call, which `growthBySource` counts under
+"Agent". The sidechain filter in `parseTranscript` is a guard: no main transcript on this machine mixes sidechain
+entries in.
