@@ -253,6 +253,14 @@ The detail view opens in the list's place:
   next phase boundary ("Break at the next phase boundary; continue only if the next phase needs this one
   verbatim."). Under it the named facts: "Session started at 29K" (or "This segment started at 44K"
   after a compaction) and "Compactions 1" when there was one.
+- When the session has subagents, a table of them right under the box, so it shows without scrolling: one line
+  each, running first and then by last turn, with its status, type and the description of its call, its own
+  context on a small bar with the rows' scale and zones, turns, output, model and last turn. One sentence says why it is separate: what returns to the session is the
+  subagent's report, counted under "Agent" in where the context went. "Running" means Claude Code has not
+  recorded its end and it was written since the session's process started; "finished", that the end is
+  recorded; "unknown", neither (a subagent cut off with an earlier process, as in a resumed session). A
+  background subagent that wakes again after its end stays "finished" for those turns, since its first end is
+  already on record.
 - A large curve of tokens per turn over the whole session, with the three zone bands, the limits labelled on its
   axis (only 200K when a long session stretches the scale so far that 150K would overlap it), every compaction
   labelled with its trigger and counts, and the segment's start. Under it, in a field half its height on the same
@@ -263,14 +271,6 @@ The detail view opens in the list's place:
   source, largest first, with one short line on how it is estimated (the whole of it in the tooltip).
 - Two tables: the prompt cache and output, and the session (what a fresh session here typically starts at,
   from the header's start median; working folder, process id and session id with a copy button).
-- When the session has subagents, a table of them: one line each, running first and then by last turn, with its
-  status, type and the description of its call, its own context on a small bar with the rows' scale and zones,
-  turns, output, model and last turn. One sentence says why it is separate: what returns to the session is the
-  subagent's report, counted under "Agent" in where the context went. "Running" means Claude Code has not
-  recorded its end and it was written since the session's process started; "finished", that the end is
-  recorded; "unknown", neither (a subagent cut off with an earlier process, as in a resumed session). A
-  background subagent that wakes again after its end stays "finished" for those turns, since its first end is
-  already on record.
 
 The list carries the last 200 turns of each session; the detail view asks the host for all of them, and says
 "last 200 of 233 turns" only if the host cannot answer. The view follows the live list, says so if the

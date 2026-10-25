@@ -562,7 +562,7 @@ describe("panel: subagents", () => {
     expect(p.row("a").dataset.zone).toBe("green"); // the session's own zone: a subagent's count is not the session's
   });
 
-  it("the detail view lists them under the facts in the core's order, running first, with their zones, and says why they are separate", () => {
+  it("the detail view lists them under the context box, above the curve, in the core's order, running first, with their zones, and says why they are separate", () => {
     const a = { ...session("a"), agents: agents([["x1", 40000, { ago: 9 * MIN }], ["x2", 230000, { ago: 2 * MIN }], ["x3", 160000, { finished: false, ago: 20 * MIN }], ["x4", null, { ago: 30 * MIN }]]) };
     const p = panel();
     p.send(list([a]));
@@ -570,7 +570,8 @@ describe("panel: subagents", () => {
     expect(p.$("detail-subagents")).toBeNull(); // the rows come with the detail answer
     p.send(detailOf(a));
     const section = p.$("detail-subagents");
-    expect(section.previousElementSibling).toBe(p.$("detail-facts"));
+    expect(section.previousElementSibling).toBe(p.$("detail-named")); // the context box, then its named facts
+    expect(section.nextElementSibling.contains(p.$("detail-curve"))).toBe(true);
     expect(section.textContent).toMatch(/A subagent has a context window of its own; what returns to this session is its report, counted under "Agent"\./);
     const rows = p.$$("subagent");
     expect(rows.map((r) => [r.querySelector(".kx-d-a-who").textContent, r.dataset.status, r.dataset.zone])).toEqual([

@@ -1634,7 +1634,7 @@
     return frag;
   }
 
-  /** The view of one session, top to bottom: top bar, title, meta line, the context box and named facts, curve and where the context went (side by side from 620 px), facts, subagents. */
+  /** The view of one session, top to bottom: top bar, title, meta line, the context box and named facts, the subagents, curve and where the context went (side by side from 620 px), facts. */
   function detailFor(session) {
     const root = zoned(el("article"), session.zone);
     root.dataset.session = session.sessionId;
@@ -1674,13 +1674,14 @@
     if (session.turns) add("clock", sinceText(session.sinceMs));
     root.appendChild(meta);
     root.appendChild(contextBlock(session));
+    // the subagents' own windows belong with the session's: under the context box, not below the fold (owner, 2026-10-25)
+    const agents = detailAgents(session);
+    if (agents) root.appendChild(agents);
     const pair = el("div", "kx-d-pair");
     pair.appendChild(detailCurve(session));
     pair.appendChild(detailGrowth(session));
     root.appendChild(pair);
     root.appendChild(detailFacts(session));
-    const agents = detailAgents(session);
-    if (agents) root.appendChild(agents);
     return root;
   }
 
