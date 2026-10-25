@@ -508,10 +508,9 @@ function userText(content) {
  * "untitled session" with the registry's name after " · " ("new session · my-project-08"), and `titleFallback` is
  * true for those two. `baselineMedian` is the median baseline of the listed sessions whose segment is a start
  * (after a compaction the baseline holds the summary too), null when there are none, so a CLAUDE.md that grew
- * shows as a higher start for every new session. The per-turn
- * fields are kept to the last SERIES_MAX turns (seriesFor; SessionReader.detail gives all of them), and `firstTurn` is
- * the turn number of the first point of `series`;
- * `compactionCount` counts the whole session's. `growth` is growthBySource as rows (growthRows); `advice`, `facts`
+ * shows as a higher start for every new session. The per-turn fields are kept to the last SERIES_MAX turns
+ * (seriesFor; SessionReader.detail gives all of them), and `firstTurn` is the turn number of the first point of
+ * `series`; `compactionCount` counts the whole session's. `growth` is growthBySource as rows (growthRows); `advice`, `facts`
  * and `typicalStart` are what the detail view says under its header (contextFacts, with the list's baselineMedian).
  * `abandoned` is a session that is neither busy nor waiting and whose last turn and process start are both more than
  * DIM_AFTER_MS ago (an empty session by its start alone);
@@ -761,8 +760,8 @@ class SessionReader {
 
   /**
    * Every turn of one session, for the detail view: `turns`, and `series`, `firstTurn`, `outputSeries`,
-   * `thinkingSeries`, `compactions`, `dips` and `baselineAt` as in the list but not cut to SERIES_MAX, and `subagentList`, a row per
-   * subagent (subagentRows). Taken from the state the last read parsed, without reading again, so it is the same
+   * `thinkingSeries`, `compactions`, `dips` and `baselineAt` as in the list but not cut to SERIES_MAX, and
+   * `subagentList`, a row per subagent (subagentRows). Taken from the state the last read parsed, without reading again, so it is the same
    * transcript as the list the panel shows; null for a session that read did not parse (outside the scope, gone, or
    * its transcript missing).
    */

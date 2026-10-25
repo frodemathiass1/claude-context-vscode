@@ -921,6 +921,8 @@ describe("panel: what the host may send", () => {
     p.row("x").click();
     expect(p.$("detail-title").textContent).toBe(""); // the core composes the title (titleText), and this payload has none
     p.send({ type: "detail", sessionId: "x", detail: "no" });
+    p.send({ type: "detail", sessionId: "x", detail: { turns: 5, series: [1, 2, 3], firstTurn: "3", compactions: [{ at: 1, trigger: "auto" }] } });
+    expect(p.$("detail-curve").querySelector('[data-testid="detail-compaction"]').title).toMatch(/^turn 2: /); // a firstTurn that is not a number counts from 1, never "31"
     p.send({ type: "detail" });
     p.send({ type: "sessions", count: 1, all: true, groups: [null, { project: "p", sessions: null }, { sessions: [{ sessionId: "y" }] }] });
     p.send(null);
