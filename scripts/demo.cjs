@@ -26,16 +26,23 @@ const WORKSPACE = "/Users/me/Dev/tide-tables";
 // compaction plus one; `out` is the share of the growth that is the model's own output, `tools` how the rest
 // is split (a "you" share is the user's messages); `last` and `started` are minutes before now. Together they
 // cover every group, every zone, a compaction, a warm, an almost cold and a cold cache, a drop to 5m, and four models.
+// `subagents` are the session's, each running from `from` to `to` tokens over its turns: one in red, one running.
 const SESSIONS = [
   { title: "Add a harbour picker to the forecast page", cwd: WORKSPACE, status: "busy", model: "claude-opus-5-5", effort: "xhigh",
     segments: [{ turns: 92, from: 29400, to: 247000 }, { turns: 48, from: 44100, to: 168600 }], out: 0.4,
-    tools: { Bash: 5, Read: 3, Edit: 2, Grep: 1, you: 1 }, last: 0.2, started: 190 },
+    tools: { Bash: 5, Read: 3, Edit: 2, Grep: 1, you: 1 }, last: 0.2, started: 190,
+    subagents: [
+      { type: "general-purpose", description: "Run the forecast tests", model: "claude-sonnet-5-5", turns: 9, from: 21000, to: 158000, last: 0.3, running: true },
+      { type: "Explore", description: "Find where the forecast picks its harbour", model: "claude-haiku-5-5", turns: 24, from: 18000, to: 236000, last: 40 },
+      { type: "Plan", description: "Plan the picker's states", model: "claude-opus-5-5", turns: 6, from: 19000, to: 64000, last: 95 },
+    ] },
   { title: "Move the station importer to the new tide API", cwd: WORKSPACE, status: "waiting", model: "claude-sonnet-5-5", effort: "high",
     segments: [{ turns: 64, from: 27100, to: 141800 }], out: 0.35, tools: { Bash: 4, Read: 4, WebFetch: 2, you: 1 }, last: 1.5, started: 75 },
   { title: "Why the moon phase lags by a day", cwd: WORKSPACE, status: "idle", model: "claude-opus-5-5", effort: "high",
     segments: [{ turns: 38, from: 30200, to: 71300 }], out: 0.45, tools: { Read: 4, Grep: 2, WebSearch: 2, you: 2 }, last: 13, started: 60 },
   { title: "Tests for the high-water rounding", cwd: WORKSPACE, status: "idle", model: "claude-fable-5-1", effort: "xhigh",
-    segments: [{ turns: 232, from: 31000, to: 236400 }], out: 0.5, tools: { Bash: 6, Read: 3, Edit: 3, you: 1 }, last: 57, started: 240 },
+    segments: [{ turns: 232, from: 31000, to: 236400 }], out: 0.5, tools: { Bash: 6, Read: 3, Edit: 3, you: 1 }, last: 57, started: 240,
+    subagents: [{ type: "Explore", description: "Find every rounding of a tide height", model: "claude-haiku-5-5", turns: 11, from: 17000, to: 48000, last: 150 }] },
   { title: "Rename the units setting", cwd: WORKSPACE, status: "idle", model: "claude-haiku-5-5", effort: null,
     segments: [{ turns: 14, from: 24300, to: 33800 }], out: 0.3, tools: { Edit: 3, Grep: 2, you: 1 }, last: 9, started: 35, ttl5mFrom: 11 },
   { title: "Draft the release notes for 0.9", cwd: WORKSPACE, status: "idle", model: "claude-opus-5-5", effort: "medium",
@@ -123,7 +130,29 @@ function transcript(spec, index, now) {
   return lines.map((l) => JSON.stringify(l));
 }
 
-/** Writes the registry and the transcripts of SESSIONS into `claudeDir` as Claude Code lays them out. */
+/**
+ * One invented subagent, as Claude Code lays it out in `<sessionId>/subagents/`: its transcript, every entry a sidechain
+ * one, and its meta file, with `finished` unless it runs (it is written now, after its session's process started).
+ */
+function writeSubagent(dir, spec, index, sessionId, now) {
+  const rand = random(100 + index);
+  const agentId = `a${String(index + 1).padStart(16, "0")}`;
+  const last = now - spec.last * MIN, first = last - spec.turns * 0.5 * MIN;
+  const at = (i) => new Date(first + ((last - first) * i) / Math.max(1, spec.turns - 1)).toISOString();
+  const lines = [{ type: "user", isSidechain: true, agentId, sessionId, uuid: `${agentId}-0`, timestamp: at(0), message: { role: "user", content: `${spec.description}.` } }];
+  for (let i = 0; i < spec.turns; i++) {
+    const tokens = Math.round(spec.from + ((spec.to - spec.from) * i) / Math.max(1, spec.turns - 1));
+    lines.push({ type: "assistant", isSidechain: true, agentId, sessionId, uuid: `${agentId}-${i + 1}`, timestamp: at(i),
+      message: { id: `msg_${agentId}_${i}`, model: spec.model, role: "assistant", content: [{ type: "text", text: "." }],
+        usage: { input_tokens: 4, cache_creation_input_tokens: 800, cache_read_input_tokens: tokens - 804, output_tokens: Math.round(200 + rand() * 900) } } });
+  }
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, `agent-${agentId}.jsonl`), lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+  fs.writeFileSync(path.join(dir, `agent-${agentId}.meta.json`), JSON.stringify({ agentType: spec.type, description: spec.description, spawnDepth: 1,
+    ...(spec.running ? {} : { finished: true }) }));
+}
+
+/** Writes the registry, the transcripts and the subagents of SESSIONS into `claudeDir` as Claude Code lays them out. */
 function writeClaudeDir(claudeDir, now) {
   fs.mkdirSync(path.join(claudeDir, "sessions"), { recursive: true });
   SESSIONS.forEach((spec, i) => {
@@ -136,6 +165,7 @@ function writeClaudeDir(claudeDir, now) {
     fs.writeFileSync(path.join(claudeDir, "sessions", `${pid}.json`), JSON.stringify({ pid, sessionId, cwd: spec.cwd, startedAt,
       version: "2.1.310", kind: "interactive", entrypoint: "claude-vscode", name, nameSource: "derived", updatedAt: startedAt, status: spec.status }));
     if (spec.segments) fs.writeFileSync(path.join(project, `${sessionId}.jsonl`), transcript(spec, i, now).join("\n") + "\n");
+    (spec.subagents || []).forEach((agent, j) => writeSubagent(path.join(project, sessionId, "subagents"), agent, i * 10 + j, sessionId, now));
   });
   return { workspaceFolders: [WORKSPACE] };
 }

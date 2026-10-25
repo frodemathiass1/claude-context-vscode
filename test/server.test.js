@@ -1,7 +1,7 @@
 // test/server.test.js — the browser host (server.cjs): the panel served on 127.0.0.1 behind a token, the messages
 // over POST /message and Server-Sent Events, the scope, and the browser stand-in it shares with scripts/demo.cjs.
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
-import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, cpSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import http from "node:http";
@@ -191,6 +191,26 @@ describe("server.cjs", () => {
       await p.post({ type: "refresh" });
       expect((await p.next("sessions")).full).toBe(true); // the panel's refresh receipt
     } finally { p.close(); await srv.close(); }
+  });
+
+  it("subagents: the list carries each session's summary and the detail its rows, as SessionReader gives them", async () => {
+    const own = mkdtempSync(path.join(os.tmpdir(), "claude-context-server-agents-"));
+    mkdirSync(path.join(own, "sessions"));
+    writeFileSync(path.join(own, "sessions", "1.json"), JSON.stringify({ pid: 1, sessionId: "bbbb-2", cwd: MINE, status: "busy" }));
+    cpSync(`${FIX}subagents`, path.join(own, "projects", K.projectSlug(MINE)), { recursive: true });
+    const srv = await S.startServer({ claudeDir: own, folders: [MINE], port: 0, alive, tickMs: 3600000 });
+    const p = await page(srv);
+    try {
+      await p.post({ type: "ready" });
+      const reader = new K.SessionReader(own, { alive });
+      const list = await p.next("sessions");
+      expect(list).toEqual({ type: "sessions", ...reader.read({ workspaceFolders: [MINE], all: false }), full: false });
+      expect(list.sessions[0].subagents).toMatchObject({ count: 9, zone: "red" });
+      await p.post({ type: "detail", sessionId: "bbbb-2" });
+      const detail = await p.next("detail");
+      expect(detail.detail).toEqual(reader.detail("bbbb-2"));
+      expect(detail.detail.subagentList).toHaveLength(9);
+    } finally { p.close(); await srv.close(); rmSync(own, { recursive: true, force: true }); }
   });
 
   it("with no folder given every live session is listed; with a folder given only the sessions started inside it", async () => {

@@ -152,7 +152,44 @@ end an open tab).
   2.1.301, and from then on 26 of 103 files have it (11 of 42 in 2.1.310), so a file without it is not known to
   be running.
 
-So the core reads `<sessionId>.jsonl` only and never counts a subagent's tokens, which is right: what a subagent
-adds to the main context is its report, a `tool_result` of the Agent call, which `growthBySource` counts under
-"Agent". The sidechain filter in `parseTranscript` is a guard: no main transcript on this machine mixes sidechain
-entries in.
+So a session's count comes from `<sessionId>.jsonl` only and never includes a subagent's tokens, which is right:
+what a subagent adds to the main context is its report, a `tool_result` of the Agent call, which `growthBySource`
+counts under "Agent". The sidechain filter in `parseTranscript` is a guard: no main transcript on this machine
+mixes sidechain entries in. The subagents' own files are read beside it, each with its own count (#66).
+
+## When a subagent ends (measured 2026-10-25, Claude Code 2.1.310, macOS)
+
+Over the 285 subagents on this machine (meta files from 2.1.259 to 2.1.310), and two background Agent calls
+watched live in 2.1.310:
+
+- **`finished` in the meta file** is written when the subagent's loop ends, by foreground and background calls
+  alike: 29 of the 30 Agent calls since 2.1.301 have it; the 30th (2.1.301, last written 2026-10-21) has no end
+  recorded anywhere and was cut off with its process. On record, all 7 foreground calls since 2.1.301 have it
+  (this harness starts every Agent call in the background, so no foreground one was watched). The two live calls
+  had no `finished` while they ran and got it when they ended, the meta file rewritten in the same second as the
+  last entry. Forks (a forked slash command or skill: its result's `toolUseResult` has `commandName`) never write
+  it: 0 of 79. A stopped call writes it too (1 on record, with a `stopped` notification).
+- **The main transcript records the end** of 279 of the 285: an Agent `tool_result` whose `toolUseResult` names
+  the subagent (`agentId`) with `status` `completed` (23, a foreground call's report) or `forked` (189, a fork's
+  result, written after the fork's last entry); or a `<task-notification>` whose `<task-id>` is the agent id, in a
+  `queue-operation` entry's `content`, sometimes also in a user entry (background calls; `<status>` over all task
+  notifications, background shell commands included: `completed` 722, `failed` 51, `killed` 13, `stopped` 10).
+  A background call's own `tool_result` is a receipt, `toolUseResult.status` `async_launched` (65), not its end.
+  The 6 without a record are 5 from 2.1.282 and the one from 2.1.301 above, none written for days.
+- **A background call that ends with work of its own still running** (a shell command it started in the
+  background) gets `finished: true` and a `completed` notification at once, and the notice says it may resume
+  when that work reports. It did, 14 minutes later: a user entry woke it, it wrote three entries in two seconds
+  (ending with its `SubagentHandback` call), and a second `completed` notification followed. Its meta file had
+  `finished` before it woke and after; whether it was dropped for those two seconds was not seen (the file's last
+  write is the end of the run). The first notification is in the main transcript either way, so the core shows
+  such a subagent as finished while it runs again.
+- **The subagent's own transcript does not mark its end:** 22 of the 29 with `finished` end with a user entry (a
+  tool result, such as the `SubagentHandback` call a subagent ends with in 2.1.310, or a stop mid-tool), and
+  `api-request` entries follow the last turn; the meta file was written before the transcript's last write in 20
+  of the 29.
+- **Meta fields seen now** beside those above: `model` on a call that names one, as an alias (`haiku`).
+
+So the core calls a subagent "finished" when `finished` is in its meta file or the main transcript records its
+end (the agent id from a result or a task notification, or the Agent call's id from a `tool_result` that is not a
+launch receipt), "running" when neither does and its transcript was written since the session's process started
+(a subagent runs inside that process), and "unknown" otherwise.

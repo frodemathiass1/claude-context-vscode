@@ -2,7 +2,7 @@
 // extension host has: the messages it answers, and how it follows the workspace folders, the setting and the view.
 // The reader and the watcher are the real ones from core.cjs, on a Claude folder made from the fixtures.
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, cpSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import Module from "node:module";
@@ -121,6 +121,24 @@ describe("extension.js: the messages", () => {
     const before = h.view.posted.length;
     for (const msg of [null, "ready", { type: "detail", sessionId: 7 }, { type: "unknown" }]) h.send(msg);
     expect(h.view.posted).toHaveLength(before);
+  });
+
+  it("subagents: the list carries each session's summary and the detail its rows as SessionReader gives them, and their folder is watched", () => {
+    vi.useFakeTimers({ toFake: ["Date"] }); // the detail's sinceMs is the same as the reader's below
+    vi.setSystemTime(new Date("2026-10-25T12:00:00Z"));
+    const dir = claudeDir([]);
+    const folder = path.join(dir, "projects", K.projectSlug(MINE));
+    writeFileSync(path.join(dir, "sessions", "0.json"), JSON.stringify({ pid: process.pid, sessionId: "bbbb-2", cwd: MINE, status: "busy" }));
+    cpSync(`${FIX}subagents`, folder, { recursive: true });
+    const h = activate({ dir });
+    const reader = new K.SessionReader(dir, { alive: () => true });
+    const expected = reader.read({ workspaceFolders: [MINE], all: false });
+    expect(h.last().sessions).toEqual(expected.sessions);
+    expect(h.last().sessions[0].subagents).toMatchObject({ count: 9, zone: "red" });
+    h.send({ type: "detail", sessionId: "bbbb-2" });
+    expect(h.view.posted.at(-1).detail).toEqual(reader.detail("bbbb-2"));
+    expect(h.view.posted.at(-1).detail.subagentList).toHaveLength(9);
+    expect([...h.provider.watcher.watchers.keys()]).toContain(path.join(folder, "bbbb-2", "subagents"));
   });
 });
 

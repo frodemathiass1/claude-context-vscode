@@ -77,7 +77,8 @@ function session(sessionId, { tokens = 50000, status = "idle", model = "claude-o
 /** The `sessions` message a host posts for these sessions (SessionReader.read's payload). */
 function list(sessions, { all = false, full = false, errors = [], workspaceFolders = [] } = {}) {
   const transcripts = Object.fromEntries(sessions.map((s) => [s.registry.sessionId, s.transcript]));
-  const built = K.buildSessions({ registry: sessions.map((s) => s.registry), transcripts, now: NOW, workspaceFolders, all });
+  const subagents = Object.fromEntries(sessions.map((s) => [s.registry.sessionId, s.agents || []]));
+  const built = K.buildSessions({ registry: sessions.map((s) => s.registry), transcripts, subagents, now: NOW, workspaceFolders, all });
   return { type: "sessions", ...built, all, full, errors, generatedAt: new Date(NOW).toISOString(), projectFolders: [] };
 }
 
@@ -522,6 +523,74 @@ describe("panel: the refresh button", () => {
     expect(p.$("refreshed").hidden).toBe(false);
     vi.advanceTimersByTime(4000);
     expect(p.$("refreshed").hidden).toBe(true);
+  });
+});
+
+/**
+ * A session's subagents as SessionReader reads them (core.cjs readSubagents): per subagent its meta file, its parsed
+ * transcript and its last write. Ends are recorded by `finished` only; one without it was written a minute ago, so it runs.
+ */
+function agents(list) {
+  return list.map(([agentId, tokens, { finished = true, ago = 5 * MIN, type = "Explore", description = `Task ${agentId}` } = {}]) => ({
+    agentId, writtenMs: NOW - MIN,
+    meta: { agentType: type, description, spawnDepth: 1, finished: finished || null },
+    state: { tokens, turns: 4, model: "claude-haiku-5-5", outputTotal: 2000, lastTurn: new Date(NOW - ago).toISOString() },
+  }));
+}
+/** The detail answer for one session (SessionReader.detail), with its subagents' rows. */
+const detailOf = (s) => ({ type: "detail", sessionId: s.registry.sessionId,
+  detail: { turns: s.transcript.turns, ...K.seriesFor(s.transcript), subagentList: K.subagentRows(s.agents, { ends: [], startedMs: s.registry.startedAt, now: NOW }) } });
+
+describe("panel: subagents", () => {
+  it("a row shows the mark only with subagents, with the running count, in the colour of the highest zone when it is orange or red", () => {
+    const p = panel();
+    p.send(list([
+      { ...session("a"), agents: agents([["x1", 40000], ["x2", 230000, { description: "Find the slow query" }], ["x3", 90000, { finished: false }]]) },
+      { ...session("b", { ago: 2 * MIN }), agents: agents([["y1", 160000, { finished: false }]]) },
+      { ...session("c", { ago: 3 * MIN }), agents: agents([["z1", 30000]]) },
+      session("d", { ago: 4 * MIN }),
+    ]));
+    const mark = (id) => p.row(id).querySelector('[data-testid="subagents"]');
+    expect(mark("a").textContent).toBe("3 subagents · 1 running");
+    expect(mark("a").dataset.zone).toBe("red");
+    expect(mark("a").title).toMatch(/^Subagents: 3, 1 running · largest: Explore "Find the slow query" at 230K, red zone · A subagent has a context window of its own/);
+    expect(mark("b").textContent).toBe("1 subagent · 1 running");
+    expect(mark("b").dataset.zone).toBe("orange");
+    expect(mark("c").textContent).toBe("1 subagent");
+    expect(mark("c").dataset.zone).toBe("green");
+    expect(mark("d")).toBeNull();
+    expect(p.row("a").dataset.zone).toBe("green"); // the session's own zone: a subagent's count is not the session's
+  });
+
+  it("the detail view lists them under the context box, above the curve, in the core's order, running first, with their zones, and says why they are separate", () => {
+    const a = { ...session("a"), agents: agents([["x1", 40000, { ago: 9 * MIN }], ["x2", 230000, { ago: 2 * MIN }], ["x3", 160000, { finished: false, ago: 20 * MIN }], ["x4", null, { ago: 30 * MIN }]]) };
+    const p = panel();
+    p.send(list([a]));
+    p.row("a").click();
+    expect(p.$("detail-subagents")).toBeNull(); // the rows come with the detail answer
+    p.send(detailOf(a));
+    const section = p.$("detail-subagents");
+    expect(section.previousElementSibling).toBe(p.$("detail-named")); // the context box, then its named facts
+    expect(section.nextElementSibling.contains(p.$("detail-curve"))).toBe(true);
+    expect(section.textContent).toMatch(/A subagent has a context window of its own; what returns to this session is its report, counted under "Agent"\./);
+    const rows = p.$$("subagent");
+    expect(rows.map((r) => [r.querySelector(".kx-d-a-who").textContent, r.dataset.status, r.dataset.zone])).toEqual([
+      ["Explore Task x3", "running", "orange"], ["Explore Task x2", "finished", "red"], ["Explore Task x1", "finished", "green"], ["Explore Task x4", "finished", "unknown"],
+    ]);
+    expect(rows.map((r) => r.querySelector('[data-testid="subagent-tokens"]').textContent)).toEqual(["160K", "230K", "40K", "—"]);
+    expect(rows[1].querySelector(".kx-fill").style.getPropertyValue("--p")).toBe(String(Math.round((230000 / 300000) * 10000) / 100));
+    expect(rows[0].textContent).toMatch(/running.*4 turns.*2K out.*Haiku 5\.5.*20 min ago/);
+  });
+
+  it("a session without subagents has no mark and no subagents section", () => {
+    const a = session("a");
+    const p = panel();
+    p.send(list([a]));
+    expect(p.$("subagents")).toBeNull();
+    p.row("a").click();
+    p.send(detailOf({ ...a, agents: [] }));
+    expect(p.$("detail-facts")).not.toBeNull();
+    expect(p.$("detail-subagents")).toBeNull();
   });
 });
 

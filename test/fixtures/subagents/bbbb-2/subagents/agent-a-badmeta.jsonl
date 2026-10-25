@@ -1,0 +1,2 @@
+{"type":"user","isSidechain":true,"agentId":"a-badmeta","sessionId":"bbbb-2","uuid":"a-badmeta-u","timestamp":"2026-10-25T10:00:14.000Z","message":{"role":"user","content":"the task"}}
+{"type":"assistant","isSidechain":true,"agentId":"a-badmeta","sessionId":"bbbb-2","uuid":"a-badmeta-0","timestamp":"2026-10-25T10:00:15.000Z","message":{"id":"msg_a-badmeta_0","model":"claude-haiku-5-5","role":"assistant","content":[{"type":"text","text":"."}],"usage":{"input_tokens":5,"cache_creation_input_tokens":1000,"cache_read_input_tokens":8995,"output_tokens":100}}}
