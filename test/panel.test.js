@@ -788,6 +788,21 @@ describe("panel: the detail view", () => {
     expect(p.$("detail-tip").textContent).toMatch(/^turn 2 · 50K · \+30K from turn 1/);
     expect(p.$("detail-turn-value").textContent).toBe("2 / 3");
   });
+
+  it("the row's curve and the detail's have the same limit, compaction and dip lines", () => {
+    // a compaction at index 3, and a drop at index 6 without one
+    const a = session("a", { series: [20000, 60000, 90000, 30000, 50000, 80000, 40000, 60000], compactions: [{ at: 3, trigger: "manual", preTokens: 90000, postTokens: 30000 }] });
+    const p = panel();
+    p.send(list([a]));
+    const lines = (svg) => ["kx-limit", "kx-compact", "kx-dip"].map((c) => [...svg.querySelectorAll(`.${c}`)].map((l) => [l.dataset.limit, l.dataset.trigger, l.getAttribute("x1")]));
+    const row = lines(p.row("a").querySelector('[data-testid="curve"]'));
+    expect(row.map((l) => l.length)).toEqual([2, 1, 1]);
+    expect(row[1][0][1]).toBe("manual");
+    p.row("a").click();
+    p.send(detailOf(a));
+    expect(lines(p.$("detail-curve").querySelector("svg"))).toEqual(row); // both viewBoxes are 100 wide
+    expect([...p.$("detail-curve").querySelectorAll(".kx-compact, .kx-dip")].map((l) => l.dataset.turn)).toEqual(["7", "4"]); // turn numbers, from 1
+  });
 });
 
 describe("panel: what the core decides for it", () => {
