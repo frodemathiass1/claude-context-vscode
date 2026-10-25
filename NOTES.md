@@ -178,7 +178,9 @@ watched live in 2.1.310:
   The 6 without a record are 5 from 2.1.282 and the one from 2.1.301 above, none written for days.
 - **A background call that ends with work of its own still running** (a shell command it started in the
   background) gets `finished: true` and a `completed` notification at once, and the notice says it may resume
-  when that work reports. Watched for 12 minutes after the command ended, it did not resume or write again.
+  when that work reports. It did, 14 minutes later: a user entry woke it, it wrote three entries in two seconds
+  (ending with its `SubagentHandback` call), and a second `completed` notification followed. `finished` stayed in
+  its meta file the whole time, so the core shows such a subagent as finished while it runs again.
 - **The subagent's own transcript does not mark its end:** 22 of the 29 with `finished` end with a user entry (a
   tool result, such as the `SubagentHandback` call a subagent ends with in 2.1.310, or a stop mid-tool), and
   `api-request` entries follow the last turn; the meta file was written before the transcript's last write in 20
