@@ -28,14 +28,14 @@ const WORKSPACE = "/Users/me/Dev/tide-tables";
 // cover every group, every zone, a compaction, a warm, an almost cold and a cold cache, a drop to 5m, and four models.
 const SESSIONS = [
   { title: "Add a harbour picker to the forecast page", cwd: WORKSPACE, status: "busy", model: "claude-opus-5-5", effort: "xhigh",
-    segments: [{ turns: 92, from: 29400, to: 163000 }, { turns: 48, from: 44100, to: 138600 }], out: 0.4,
+    segments: [{ turns: 92, from: 29400, to: 247000 }, { turns: 48, from: 44100, to: 168600 }], out: 0.4,
     tools: { Bash: 5, Read: 3, Edit: 2, Grep: 1, you: 1 }, last: 0.2, started: 190 },
   { title: "Move the station importer to the new tide API", cwd: WORKSPACE, status: "waiting", model: "claude-sonnet-5-5", effort: "high",
-    segments: [{ turns: 64, from: 27100, to: 112400 }], out: 0.35, tools: { Bash: 4, Read: 4, WebFetch: 2, you: 1 }, last: 1.5, started: 75 },
+    segments: [{ turns: 64, from: 27100, to: 141800 }], out: 0.35, tools: { Bash: 4, Read: 4, WebFetch: 2, you: 1 }, last: 1.5, started: 75 },
   { title: "Why the moon phase lags by a day", cwd: WORKSPACE, status: "idle", model: "claude-opus-5-5", effort: "high",
     segments: [{ turns: 38, from: 30200, to: 71300 }], out: 0.45, tools: { Read: 4, Grep: 2, WebSearch: 2, you: 2 }, last: 13, started: 60 },
   { title: "Tests for the high-water rounding", cwd: WORKSPACE, status: "idle", model: "claude-fable-5-1", effort: "xhigh",
-    segments: [{ turns: 232, from: 31000, to: 171200 }], out: 0.5, tools: { Bash: 6, Read: 3, Edit: 3, you: 1 }, last: 57, started: 240 },
+    segments: [{ turns: 232, from: 31000, to: 236400 }], out: 0.5, tools: { Bash: 6, Read: 3, Edit: 3, you: 1 }, last: 57, started: 240 },
   { title: "Rename the units setting", cwd: WORKSPACE, status: "idle", model: "claude-haiku-5-5", effort: null,
     segments: [{ turns: 14, from: 24300, to: 33800 }], out: 0.3, tools: { Edit: 3, Grep: 2, you: 1 }, last: 9, started: 35, ttl5mFrom: 11 },
   { title: "Draft the release notes for 0.9", cwd: WORKSPACE, status: "idle", model: "claude-opus-5-5", effort: "medium",
