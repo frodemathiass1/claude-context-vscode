@@ -601,10 +601,17 @@ describe("buildSessions", () => {
     expect(K.buildSessions({ registry, transcripts, now: NOW, workspaceFolders: ["c:\\Develop\\elsewhere"], all: false })).toMatchObject({ count: 0, hiddenCount: 5, workspaceNames: ["elsewhere"] });
   });
 
-  it("zoneAdvice carries the advice for every zone but green, the same the sessions get, also for an empty list", () => {
-    const { zoneAdvice } = K.buildSessions({ registry: [], now: NOW });
-    expect(Object.keys(zoneAdvice)).toEqual(["yellow", "orange", "red"]);
-    expect(zoneAdvice.orange).toBe(K.contextFacts({ zone: "orange" }).advice);
+  it("zones lists the zones in order with the limits zone() uses, their range texts and advice, frozen, also for an empty list", () => {
+    const { zones } = K.buildSessions({ registry: [], now: NOW });
+    expect(zones.map(({ zone, from, to, range, short }) => [zone, from, to, range, short])).toEqual([
+      ["green", 0, 100000, "below 100K", "<100K"], ["yellow", 100000, 125000, "100K–125K", "100K+"],
+      ["orange", 125000, 150000, "125K–150K", "125K+"], ["red", 150000, null, "above 150K", ">150K"],
+    ]);
+    // just inside each end: orange includes 150K itself, so red starts above its `from`
+    for (const z of zones) expect([K.zone(z.from + 1), K.zone(z.to === null ? 1e7 : z.to - 1)]).toEqual([z.zone, z.zone]);
+    expect(zones[0].advice).toBeNull();
+    expect(zones[2].advice).toBe(K.contextFacts({ zone: "orange" }).advice);
+    expect(Object.isFrozen(zones) && zones.every(Object.isFrozen)).toBe(true);
   });
 
   it("per session: zone, short model name, time since the last turn, dimming after one hour and busy", () => {

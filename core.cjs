@@ -281,11 +281,21 @@ function tokensText(tokens) {
 
 // What to do at the next phase boundary, per zone (Matt Pocock's PHASE-BOUNDARIES.md, not in this repo): the detail view shows it under the
 // count, the list's bar and the header's zone band in their tooltips. Green has none: a session there is in the smart zone.
-const ZONE_ADVICE = {
+const ZONE_ADVICE = Object.freeze({
   yellow: "Plan to break at the next phase boundary.",
   orange: `Break at the first phase boundary; continue only if the next phase fits under ${tokensText(RED_ABOVE)}.`,
   red: "Do not start a new phase: /clear, /handoff, a subagent, or /compact.",
-};
+});
+
+// The zones as the panel draws them, sent with every list so the panel keeps no copy of the limits: in order, each
+// with its bounds (`to` is null for red, which has none), its range as text, long and short (for a narrow band in the
+// header), and its advice. Orange includes RED_ABOVE itself (zone()); the texts leave that out.
+const ZONE_LIST = Object.freeze([
+  ["green", 0, YELLOW_FROM, `below ${tokensText(YELLOW_FROM)}`, `<${tokensText(YELLOW_FROM)}`],
+  ["yellow", YELLOW_FROM, ORANGE_FROM, `${tokensText(YELLOW_FROM)}–${tokensText(ORANGE_FROM)}`, `${tokensText(YELLOW_FROM)}+`],
+  ["orange", ORANGE_FROM, RED_ABOVE, `${tokensText(ORANGE_FROM)}–${tokensText(RED_ABOVE)}`, `${tokensText(ORANGE_FROM)}+`],
+  ["red", RED_ABOVE, null, `above ${tokensText(RED_ABOVE)}`, `>${tokensText(RED_ABOVE)}`],
+].map(([name, from, to, range, short]) => Object.freeze({ zone: name, from, to, range, short, advice: ZONE_ADVICE[name] || null })));
 
 /**
  * What the detail view says under its header, which carries the count and the zone: `advice`, the zone's advice
@@ -369,8 +379,8 @@ function userText(content) {
  * DIM_AFTER_MS ago (an empty session by its start alone);
  * `abandonedCount` counts them. `hiddenCount` is how many live sessions the scope leaves out (0 with `all` or without
  * workspace folders), counted from the registry alone, and `workspaceNames` the last folder name of each workspace
- * folder, so the panel can name the scope ("This workspace · my-project · 4 more in other projects"). `zoneAdvice` is
- * ZONE_ADVICE, for the header's zone scale to say what applies in each zone.
+ * folder, so the panel can name the scope ("This workspace · my-project · 4 more in other projects"). `zones` is
+ * ZONE_LIST, the zones with their limits, range texts and advice, for everything the panel draws them on.
  */
 function buildSessions({ registry = [], transcripts = {}, now, workspaceFolders = [], all = false }) {
   const nowMs = typeof now === "number" ? now : Date.parse(now);
@@ -428,7 +438,7 @@ function buildSessions({ registry = [], transcripts = {}, now, workspaceFolders 
   for (const s of sessions) Object.assign(s, contextFacts(s, baselineMedian));
   return { sessions, groups, count: sessions.length, zoneCounts, cacheCounts, baselineMedian, baselineSessions: starts.length,
     abandonedCount: sessions.filter((s) => s.abandoned).length, hiddenCount: registry.length - sessions.length,
-    workspaceNames: workspaceFolders.map(projectName).filter(Boolean), zoneAdvice: ZONE_ADVICE };
+    workspaceNames: workspaceFolders.map(projectName).filter(Boolean), zones: ZONE_LIST };
 }
 
 /**

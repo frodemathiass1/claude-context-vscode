@@ -225,6 +225,46 @@ describe("panel: the zone scale", () => {
     p.send(list([mine, other], { workspaceFolders: [MINE], all: true }));
     expect(["green", "orange"].map((z) => p.$(`zone-${z}`).textContent)).toEqual(["1", "1"]);
   });
+
+  it("takes the limits from the core's zones: other limits move the bands and the rows' marks", () => {
+    const p = panel();
+    const ticks = () => [...p.row("a").querySelectorAll(".kx-tick")].map((t) => t.style.getPropertyValue("--t"));
+    p.send(list([session("a")]));
+    expect(ticks()).toEqual(["50", "62.5", "75"]);
+    const built = list([session("a")]);
+    const bounds = [[0, 80000], [80000, 120000], [120000, 160000], [160000, null]];
+    p.send({ ...built, zones: built.zones.map((z, i) => ({ ...z, from: bounds[i][0], to: bounds[i][1] })) });
+    expect(["green", "yellow", "orange", "red"].map((z) => p.$(`band-${z}`).style.getPropertyValue("--w"))).toEqual(["40", "20", "20", "20"]);
+    expect(ticks()).toEqual(["40", "60", "80"]);
+  });
+
+  it("builds the bands once for the same zones, so a band's tooltip survives the next list; a list without zones keeps them", () => {
+    const p = panel();
+    p.send(list([session("a")]));
+    const band = p.$("band-yellow");
+    p.send(list([session("a", { tokens: 120000 })]));
+    expect(p.$("band-yellow")).toBe(band);
+    p.send({ ...list([session("a")]), zones: undefined });
+    expect(p.$("band-yellow")).toBe(band);
+    expect(p.row("a").querySelectorAll(".kx-tick")).toHaveLength(3);
+  });
+
+  it("shows a band's long range when it fits, else the short one, else none, never a clipped label", () => {
+    const p = panel();
+    p.send(list([session("a")]));
+    // jsdom has no layout: each band is given a width, and its content the width of the text it shows
+    const widths = { green: [160, 80, 40], yellow: [20, 68, 34], orange: [20, 68, 24] };
+    for (const [z, [client, long, short]] of Object.entries(widths)) {
+      const band = p.$(`band-${z}`);
+      Object.defineProperty(band, "clientWidth", { value: client, configurable: true });
+      Object.defineProperty(band, "scrollWidth", { get: () => ({ long, short, none: 0 })[band.dataset.fit] });
+    }
+    p.send(list([session("a")]));
+    expect(["green", "yellow", "orange"].map((z) => p.$(`band-${z}`).dataset.fit)).toEqual(["long", "none", "none"]);
+    Object.defineProperty(p.$("band-yellow"), "clientWidth", { value: 40 });
+    p.send(list([session("a")]));
+    expect(p.$("band-yellow").dataset.fit).toBe("short");
+  });
 });
 
 describe("panel: the scope", () => {

@@ -70,23 +70,22 @@
   /* The zone scale: a thick strip across the header, the row bar's 0–200K with each zone as a band at its true width
      and its range written inside, so the limits are in view before any row. Tinted, with the text in the zone colour,
      so it reads in light and dark themes. */
-  .kx-zscale { flex: 1 1 100%; container-type: inline-size; display: flex; gap: 2px; height: 22px; }
+  .kx-zscale { flex: 1 1 100%; display: flex; gap: 2px; height: 22px; }
   .kx-zband {
-    flex: var(--w) 1 0; min-width: 0; overflow: hidden; display: flex; align-items: center; justify-content: center;
+    flex: var(--w) 1 0; min-width: 0; overflow: hidden; display: flex; align-items: center; justify-content: center; padding: 0 4px;
     background: color-mix(in srgb, var(--kx-zone-fill, var(--kx-muted)) 24%, var(--kx-bg)); color: var(--kx-zone-text, var(--kx-muted));
     font-size: 0.8em; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap;
   }
   .kx-zband:first-child { border-radius: 4px 0 0 4px; }
   .kx-zband:last-child { border-radius: 0 4px 4px 0; }
-  /* the yellow and orange bands are 12.5 % of the strip and "100K–125K" needs about 66 px: the long ranges from
-     about 560 px, "100K+" (about 34 px) below, a smaller size under about 280 px */
-  .kx-zshort { display: none; }
-  @container (max-width: 559px) { .kx-zlong { display: none; } .kx-zshort { display: inline; } }
-  @container (max-width: 279px) { .kx-zband { font-size: 0.7em; } }
+  /* which range text the band has room for (fitBands measures it): the long one, the short one, or none; a clipped
+     label could read as another number ("125K+" cut to "25K") */
+  .kx-zband .kx-zshort, .kx-zband[data-fit="short"] .kx-zlong, .kx-zband[data-fit="none"] span { display: none; }
+  .kx-zband[data-fit="short"] .kx-zshort { display: inline; }
   /* the count per zone, beside the session count */
-  .kx-meter-leg { display: inline-flex; flex-wrap: wrap; font-size: 0.82em; font-variant-numeric: tabular-nums; color: var(--kx-muted); white-space: nowrap; }
-  .kx-meter-leg span + span::before { content: "·"; margin: 0 6px; }
-  .kx-meter-leg b { font-weight: 600; color: var(--kx-zone-text, inherit); }
+  .kx-zone-counts { display: inline-flex; flex-wrap: wrap; font-size: 0.82em; font-variant-numeric: tabular-nums; color: var(--kx-muted); white-space: nowrap; }
+  .kx-zone-counts span + span::before { content: "·"; margin: 0 6px; }
+  .kx-zone-counts b { font-weight: 600; color: var(--kx-zone-text, inherit); }
   /* the prompt-cache counters: warm and cold, beside the zone counts */
   .kx-cache-counts { font-size: 0.82em; font-variant-numeric: tabular-nums; color: var(--kx-muted); white-space: nowrap; display: inline-flex; align-items: center; }
   .kx-cache-counts b { font-weight: 600; color: var(--kx-fg); }
@@ -406,7 +405,7 @@
 <header>
   <h1><span class="kx-n" data-testid="count" aria-live="polite">0</span> live Claude sessions</h1>
   <span class="kx-showing" data-testid="showing" hidden></span>
-  <span class="kx-meter-leg" data-testid="zones"></span>
+  <span class="kx-zone-counts" data-testid="zones"></span>
   <span class="kx-start-median" data-testid="start-median" hidden><b></b> start</span>
   <span class="kx-abandoned" data-testid="abandoned-count" hidden title="A closed VS Code chat tab keeps its process running until Developer: Reload Window or VS Code quits, and the panel cannot tell a closed tab from an open one, so some of these are probably closed tabs"><b></b> idle over an hour</span>
   <span class="kx-cache-counts" data-testid="cache-counts" title="Prompt cache: how many of the listed sessions have a warm cache now, and how many went cold"><span><b data-testid="cache-warm">0</b> warm</span><span><b data-testid="cache-cold">0</b> cold</span></span>
@@ -454,7 +453,7 @@
   const errorsEl = document.querySelector('[data-testid="errors"]');
   const listEl = document.querySelector('[data-testid="list"]');
   const zoneScaleEl = document.querySelector('[data-testid="zone-scale"]');
-  const meterLegEl = document.querySelector(".kx-meter-leg");
+  const zoneCountsEl = document.querySelector(".kx-zone-counts");
   const cacheWarmEl = document.querySelector('[data-testid="cache-warm"]');
   const cacheColdEl = document.querySelector('[data-testid="cache-cold"]');
   const startMedianEl = document.querySelector('[data-testid="start-median"]');
@@ -534,14 +533,15 @@
       .map((x) => x.s);
   }
 
-  // ── The zones and the scale, as data. The core decides a session's zone (core.cjs zone()); this list
-  // orders the zones in the zone scale and its legend, names them, and picks the colour pair --kx-<zone> (text)
-  // and --kx-<zone>-fill (fills) defined in the style above. LIMITS are the boundaries drawn as dashed lines
-  // on the curve, gaps on the context bar and labels on the axis; SCALE is the full width of the bar.
-  // A new zone is one entry here, one limit there and one colour pair in the style. ─────────────────
+  // ── The zones and the scale, as data. The core decides a session's zone (core.cjs zone()) and sends the zones
+  // with every list (core.cjs ZONE_LIST): their limits, range texts and advice. This list orders the zones in the
+  // counts, names them, and picks the colour pair --kx-<zone> (text) and --kx-<zone>-fill (fills) defined in the
+  // style above. LIMITS, taken from the core's zones (applyZones), are the boundaries drawn as dashed lines on the
+  // curve, gaps on the context bar and labels on the axis; SCALE is the full width of the bar and the strip.
+  // A new zone is one entry here, one in the core and one colour pair in the style. ─────────────────
   const ZONES = ["green", "yellow", "orange", "red"];
   const ZONE_NAME = Object.fromEntries(ZONES.map((z) => [z, z]));
-  const LIMITS = [100000, 125000, 150000];
+  let LIMITS = [];
   const SCALE = 200000;
   // The prompt cache (core.cjs: cacheTtlMs, coldInMs, hitShare). The core decides warm or cold; "soon" is the
   // panel's marker for a warm cache within SOON_MS of its deadline (or half the TTL, so a 5-minute cache is
@@ -604,7 +604,7 @@
   function listText(items) {
     return items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
   }
-  const MARKS_TEXT = listText(LIMITS.map(tokensText));
+  const marksText = () => listText(LIMITS.map(tokensText));
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
   /** "24 Oct 00:06": a day and a time for the facts table; "unknown" without a date. */
@@ -710,7 +710,7 @@
     });
     const title = svgEl("title", {});
     const marks = compactions.map((c) => ` · turn ${c.at + 1}: ${compactionText(c)}`).join("");
-    title.textContent = `${label} · dashed lines at ${MARKS_TEXT}${marks}${dips.length ? " · dotted marks: drops without a compaction entry" : ""}`;
+    title.textContent = `${label} · dashed lines at ${marksText()}${marks}${dips.length ? " · dotted marks: drops without a compaction entry" : ""}`;
     svg.appendChild(title);
     for (const g of LIMITS) svg.appendChild(svgEl("line", { class: "kx-limit", "data-limit": g, x1: 0, x2: CURVE_W, y1: num(y(g)), y2: num(y(g)), "vector-effect": "non-scaling-stroke" }));
     const points = series.map((v, i) => `${num(x(i))},${num(y(v))}`).join(" L");
@@ -797,7 +797,7 @@
     const known = Number.isFinite(session.tokens);
     const advice = session.advice ? ` · ${session.advice}` : ""; // the zone's advice, from the core (core.cjs contextFacts)
     const split = baselineText(session);
-    bar.title = known ? `${tokensText(session.tokens)} tokens in the context${split ? `: ${split}` : ""} · scale ${SCALE_TEXT}, marks at ${MARKS_TEXT}${advice}` : "no count yet";
+    bar.title = known ? `${tokensText(session.tokens)} tokens in the context${split ? `: ${split}` : ""} · scale ${SCALE_TEXT}, marks at ${marksText()}${advice}` : "no count yet";
     bar.setAttribute("aria-label", !known ? "no count" : session.tokens > SCALE ? `over the ${tokensText(SCALE)} scale` : `${Math.round(share(session.tokens) * 100)} % of the ${tokensText(SCALE)} scale`);
     const fill = el("span", "kx-fill" + (session.busy ? " kx-busy" : ""));
     fill.style.setProperty("--p", pct(share(session.tokens)));
@@ -1426,7 +1426,7 @@
     h.appendChild(el("span", "kx-d-zn", known ? `· ${ZONE_NAME[session.zone]} zone` : session.turns ? "· no count yet" : "· no turns yet"));
     box.appendChild(h);
     // the zones are quality warnings, not the window limit (core.cjs, the comment at YELLOW_FROM)
-    if (known) box.appendChild(el("p", "kx-d-why", `Zones warn about quality at ${MARKS_TEXT}, not about the window limit.`));
+    if (known) box.appendChild(el("p", "kx-d-why", `Zones warn about quality at ${marksText()}, not about the window limit.`));
     if (session.advice) {
       const advice = el("p", "kx-d-advice", session.advice);
       advice.dataset.testid = "detail-advice";
@@ -1599,35 +1599,46 @@
     return `${n === 1 ? "the 1 session" : `the ${n} sessions`} ${where}`;
   }
 
-  /** Where a zone runs, from LIMITS: "below 100K", "100K–125K", "above 150K"; `short` for a narrow band: "<100K", "100K+", ">150K". */
-  function zoneRange(i, short) {
-    const last = LIMITS.length;
-    if (i === 0) return short ? `<${tokensText(LIMITS[0])}` : `below ${tokensText(LIMITS[0])}`;
-    if (i >= last) return short ? `>${tokensText(LIMITS[last - 1])}` : `above ${tokensText(LIMITS[last - 1])}`;
-    return short ? `${tokensText(LIMITS[i - 1])}+` : `${tokensText(LIMITS[i - 1])}–${tokensText(LIMITS[i])}`;
+  /**
+   * The core's zones, from a list: they set LIMITS and build the header's strip, each zone a band at its true width
+   * on 0–SCALE with its range inside and its advice in the tooltip. Only when they change, so the band under the
+   * pointer keeps its tooltip while lists come in; a list without zones keeps the last ones.
+   */
+  let zonesKey = null;
+  function applyZones(zones) {
+    if (!Array.isArray(zones) || !zones.length || !zones.every((z) => z && Number.isFinite(z.from))) return;
+    const key = JSON.stringify(zones);
+    if (key === zonesKey) return;
+    zonesKey = key;
+    LIMITS = zones.slice(1).map((z) => z.from);
+    zoneScaleEl.textContent = "";
+    zoneScaleEl.setAttribute("aria-label", `Zones on a ${SCALE_TEXT} scale: ${listText(zones.map((z) => `${ZONE_NAME[z.zone] || z.zone} ${z.range}`))}`);
+    for (const z of zones) {
+      const band = zoned(el("span", "kx-zband"), z.zone);
+      band.dataset.testid = `band-${z.zone}`;
+      band.style.setProperty("--w", pct(((Number.isFinite(z.to) ? z.to : SCALE) - z.from) / SCALE));
+      band.title = `${ZONE_NAME[z.zone] || z.zone} zone: ${z.range}${z.advice ? ` · ${z.advice}` : ""}`;
+      band.appendChild(el("span", "kx-zlong", z.range));
+      band.appendChild(el("span", "kx-zshort", z.short));
+      zoneScaleEl.appendChild(band);
+    }
   }
 
-  /**
-   * The header's zone scale, the bands from 0 to SCALE split at LIMITS with each zone's range inside (the same
-   * on every list, but drawn from ZONES and LIMITS, so a new limit moves it), and the count per zone beside the
-   * session count. A band's tooltip says what applies there (the core's zoneAdvice).
-   */
-  function renderMeter(zoneCounts, data) {
+  /** Per band, the longest range text that fits, measured as drawn, so the editor's font size counts: long, short, or none. */
+  function fitBands() {
+    for (const band of zoneScaleEl.children) {
+      for (const fit of ["long", "short", "none"]) {
+        band.dataset.fit = fit;
+        if (fit === "none" || band.scrollWidth <= band.clientWidth) break;
+      }
+    }
+  }
+  if (typeof ResizeObserver === "function") new ResizeObserver(fitBands).observe(zoneScaleEl);
+
+  /** The count per zone beside the session count, for the listed sessions (the scope, before the view's filters). */
+  function renderZoneCounts(zoneCounts, data) {
     const counts = ZONES.map((z) => [z, Number.isFinite(zoneCounts[z]) ? zoneCounts[z] : 0]);
-    const advice = data.zoneAdvice || {};
-    zoneScaleEl.textContent = "";
-    meterLegEl.textContent = "";
-    zoneScaleEl.setAttribute("aria-label", `Zones on a ${SCALE_TEXT} scale: ${listText(ZONES.map((z, i) => `${ZONE_NAME[z]} ${zoneRange(i)}`))}`);
-    const edges = [0, ...LIMITS, SCALE];
-    ZONES.forEach((z, i) => {
-      const band = zoned(el("span", "kx-zband"), z);
-      band.dataset.testid = `band-${z}`;
-      band.style.setProperty("--w", pct((edges[i + 1] - edges[i]) / SCALE));
-      band.title = `${ZONE_NAME[z]} zone: ${zoneRange(i)}${advice[z] ? ` · ${advice[z]}` : ""}`;
-      band.appendChild(el("span", "kx-zlong", zoneRange(i)));
-      band.appendChild(el("span", "kx-zshort", zoneRange(i, true)));
-      zoneScaleEl.appendChild(band);
-    });
+    zoneCountsEl.textContent = "";
     for (const [z, n] of counts) {
       const item = zoned(el("span"), z);
       const b = el("b", "", String(n));
@@ -1635,7 +1646,7 @@
       item.appendChild(b);
       item.appendChild(document.createTextNode(` ${ZONE_NAME[z]}`));
       item.title = `${n} of ${sessionsWhere(data.count || 0, data)} ${n === 1 ? "is" : "are"} in the ${ZONE_NAME[z]} zone`;
-      meterLegEl.appendChild(item);
+      zoneCountsEl.appendChild(item);
     }
   }
 
@@ -1660,11 +1671,13 @@
 
   function render(data) {
     lastData = data;
+    applyZones(data.zones); // first: the rows, the curves and the detail view draw the limits
     refreshDone(data);
     drawDetail();
     requestDetail(); // the new list's turns, all of them, for the open session
     countEl.textContent = String(data.count || 0);
-    renderMeter(data.zoneCounts || {}, data);
+    renderZoneCounts(data.zoneCounts || {}, data);
+    fitBands(); // also here: a list can come with a new font size or before the first resize
     renderScope(data);
     cacheCountsEl.title = `Prompt cache: how many of ${sessionsWhere(data.count || 0, data)} have a warm cache now, and how many went cold`;
     const cacheCounts = data.cacheCounts || {};
