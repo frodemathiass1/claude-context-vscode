@@ -504,9 +504,9 @@ function userText(content) {
  * part of them, null before the first turn (`lastThinking` 0 when unknown beside a known output). `titleText` is
  * the title as shown: the transcript's, else "new session" (no turns yet: a tab opened and not written to) or
  * "untitled session" with the registry's name after " · " ("new session · my-project-08"), and `titleFallback` is
- * true for those two. `baselineMedian` is the median baseline
- * of the listed sessions whose segment is a start (after a compaction the baseline holds the summary too), null
- * when there are none, so a CLAUDE.md that grew shows as a higher start for every new session. The per-turn
+ * true for those two. `baselineMedian` is the median baseline of the listed sessions whose segment is a start
+ * (after a compaction the baseline holds the summary too), null when there are none, so a CLAUDE.md that grew
+ * shows as a higher start for every new session. The per-turn
  * fields are kept to the last SERIES_MAX turns (seriesFor; SessionReader.detail gives all of them);
  * `compactionCount` counts the whole session's. `growth` is growthBySource as rows (growthRows); `advice`, `facts`
  * and `typicalStart` are what the detail view says under its header (contextFacts, with the list's baselineMedian).

@@ -938,7 +938,6 @@ describe("buildSessions", () => {
     const r = K.buildSessions({ registry: Object.keys(cases).map((id, i) => reg(i + 1, id, MINE, "idle")), transcripts: cases, now: NOW, workspaceFolders: [MINE] });
     const by = Object.fromEntries(r.sessions.map((s) => [s.sessionId, [s.thinkingShare, s.lastOutput, s.lastThinking]]));
     expect(by).toEqual({ some: [0.25, 400, 100], none: [null, 0, 0], unknownThinking: [null, 500, 0], noTurns: [null, null, null] });
-    expect(r.sessions.find((s) => s.sessionId === "without")).toBeUndefined();
     const without = K.buildSessions({ registry: [reg(1, "x", MINE, "idle")], transcripts: {}, now: NOW, workspaceFolders: [MINE] }).sessions[0];
     expect(without).toMatchObject({ outputTotal: null, thinkingShare: null, lastOutput: null, lastThinking: null });
   });
