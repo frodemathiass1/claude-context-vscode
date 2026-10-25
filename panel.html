@@ -205,12 +205,13 @@
   /* the segment's fixed load (its first turn) as a muted shade at the start of the fill; the rest is the conversation */
   .kx-base { position: absolute; inset: 0 auto 0 0; width: calc(var(--b) * 1%); background: color-mix(in srgb, var(--kx-zone-fill, var(--kx-muted)) 45%, var(--kx-bg)); }
   /* a slow sheen moves over the fill while the session is busy */
+  /* moved by transform, not background-position, so it runs on the compositor instead of repainting the bar every frame */
   .kx-fill.kx-busy::after {
-    content: ""; position: absolute; inset: 0;
-    background: linear-gradient(90deg, transparent 0, rgba(255, 255, 255, 0.35) 50%, transparent 100%) no-repeat;
-    background-size: 120px 100%; animation: kx-sheen 1.8s linear infinite;
+    content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 120px;
+    background: linear-gradient(90deg, transparent 0, rgba(255, 255, 255, 0.35) 50%, transparent 100%);
+    animation: kx-sheen 1.8s linear infinite;
   }
-  @keyframes kx-sheen { from { background-position: -120px 0; } to { background-position: 120px 0; } }
+  @keyframes kx-sheen { from { transform: translateX(-120px); } to { transform: translateX(120px); } }
   .kx-tick { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--kx-bg); left: calc(var(--t) * 1%); }
   .kx-over { position: absolute; right: 0; top: 0; bottom: 0; width: 14px; background: repeating-linear-gradient(135deg, transparent 0 3px, var(--kx-bg) 3px 5px); }
   /* under the bar: the top sources of the conversation's growth, an estimate */
@@ -591,9 +592,13 @@
     return `${how}${counts}${took ? ` (${took})` : ""}`;
   }
 
+  // made once: toLocaleTimeString builds a formatter per call, about 111 µs against 1.5 µs for a kept one (measured
+  // 2026-10-25, #67), and a list formats a time for every warm row
+  const CLOCK = new Intl.DateTimeFormat([], { hour: "2-digit", minute: "2-digit" });
+  const DAY = new Intl.DateTimeFormat([], { day: "2-digit", month: "short" });
   function clockText(iso) {
     const d = new Date(iso);
-    return Number.isFinite(d.getTime()) ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+    return Number.isFinite(d.getTime()) ? CLOCK.format(d) : "";
   }
 
   /** "warm", "soon" (warm, within SOON_MS or half the TTL of the deadline) or "cold"; null without a TTL. */
@@ -613,7 +618,7 @@
   /** "24 Oct 00:06": a day and a time for the facts table; "unknown" without a date. */
   function dayText(iso) {
     const d = new Date(iso);
-    return Number.isFinite(d.getTime()) ? `${d.toLocaleDateString([], { day: "2-digit", month: "short" })} ${clockText(iso)}` : "unknown";
+    return Number.isFinite(d.getTime()) ? `${DAY.format(d)} ${clockText(iso)}` : "unknown";
   }
 
   /**
@@ -896,6 +901,17 @@
   }
 
   /**
+   * What a row shows, as one string: the zones and the session, with the two fields that change on every list
+   * (sinceMs, coldInMs) as the texts they give. A row whose key is the live row's is not built again (render's
+   * rowOf); building and diffing every row took about 27 ms per list of 30 sessions in Chrome, keeping the unchanged
+   * ones about 2 ms (2026-10-25, #67). A new text in a row that depends on the time goes in here.
+   */
+  function rowKey(session) {
+    const cold = Number.isFinite(session.coldInMs) ? [leftText(session.coldInMs), cacheState(session)] : null;
+    return `${zonesKey}|${JSON.stringify({ ...session, sinceMs: sinceText(session.sinceMs), coldInMs: cold })}`;
+  }
+
+  /**
    * The prompt cache of a session: "warm · 47 min" or "cold" with the TTL as a pill; the tooltip has the
    * deadline, the hit share of the last turn (read from cache / context) and the tokens written. Nothing
    * without a TTL (a transcript from before Claude Code wrote usage.cache_creation).
@@ -979,9 +995,9 @@
   /**
    * The sessions as four groups, busy, waiting for the user, idle and idle over an hour (the core's `abandoned`, folded at first),
    * each with its heading and axis; the order within a group is the list's. A folded group keeps its heading and
-   * count and draws no rows. `project` only makes the rows' ids unique.
+   * count and draws no rows. `project` only makes the rows' ids unique; `rowOf` gives a session's row.
    */
-  function groupsFor(sessions, project) {
+  function groupsFor(sessions, project, rowOf) {
     const frag = document.createDocumentFragment();
     const parts = [["Working now", "zap", "busy", sessions.filter((s) => s.busy)],
       ["Waiting for you", "bell", "waiting", sessions.filter((s) => s.waiting)],
@@ -1001,7 +1017,7 @@
         rows.appendChild(el("p", "kx-hidden-all", `all ${all.length} hidden by the filters`));
       } else {
         rows.appendChild(axisLine());
-        for (const s of list) rows.appendChild(rowFor(s));
+        for (const s of list) rows.appendChild(rowOf(s));
       }
       frag.appendChild(rows);
     }
@@ -1038,7 +1054,7 @@
         });
       }
       chip.setAttribute("aria-pressed", String(!view.hiddenModels.includes(name)));
-      chip.title = `${view.hiddenModels.includes(name) ? "Show" : "Hide"} the ${name} sessions`;
+      setTitle(chip, `${view.hiddenModels.includes(name) ? "Show" : "Hide"} the ${name} sessions`);
       // keep the chips in the sorted order without rebuilding them: `before` walks the existing chips
       if (chip === before) before = before.nextSibling; else modelsEl.insertBefore(chip, before);
     }
@@ -1047,9 +1063,10 @@
   }
 
   // ── Detail view of one session: replaces the header, the controls and the list in the same webview. The
-  // open session is kept in the webview state. Every list draws it again, so the curve grows with the session;
-  // the turn in the tooltip, the focus and a copy receipt survive that redraw. The list has the last 200 turns of a session; on open and after every
-  // list the panel asks the host for all of them (core.cjs SessionReader.detail), and draws again with those. ──
+  // open session is kept in the webview state. Every list draws it again, patched in place like the list, so the
+  // curve grows with the session; the turn in the tooltip, the focus, a copy receipt and an open tooltip survive that
+  // draw. The list has the last 200 turns of a session; on open and after every list the panel asks the host for all
+  // of them (core.cjs SessionReader.detail), and the answer draws it. ──
   const D_W = 100, D_H = 100; // the large curve's viewBox, stretched to its field like the sparkline's
   const D_FIELD_H = { narrow: 150, wide: 220 }; // the field's height in the style (.kx-d-field), below and above 620 px
   const D_OUT_H = 100, D_OUT_TOP = 94; // the output field's viewBox height, and the tallest bar's, so it does not touch the edge
@@ -1058,7 +1075,7 @@
   let openId = null; // the sessionId shown, null while the list is shown
   let turnShown = null; // the turn number in the curve's tooltip, null when none is shown
   let focusBack = false; // the back button takes the focus on the next draw (a session was just opened)
-  let redrawing = false; // the detail is being replaced: a blur from that is not the user's
+  let curve = null; // the numbers of the drawn curve, for the pointer and the range (showTurn); null without one
   let listScroll = 0; // the list's scroll position, restored on the way back
   const copied = {}; // copy button key → { until, text } while its receipt shows
   let detailAnswer = null; // the host's last answer for the open session, { sessionId, detail }: every turn of it
@@ -1100,6 +1117,7 @@
     const field = el("div", "kx-d-field");
     field.dataset.testid = "detail-curve";
     wrap.appendChild(field);
+    curve = null;
     if (series.length < 2) { field.appendChild(el("p", "kx-message", session.turns ? "one turn, no curve yet" : "no turns yet")); return wrap; }
     const top = Math.max(SCALE, ...series);
     const x = (i) => (i / (series.length - 1)) * D_W;
@@ -1161,7 +1179,8 @@
     const thinking = Array.isArray(session.thinkingSeries) ? session.thinkingSeries.slice(-series.length) : [];
     const largest = Math.max(0, ...output), offset = series.length - output.length, slot = D_W / series.length;
     const thinkingAt = (o) => Math.min(thinking[o] || 0, output[o] || 0);
-    let ofield = null, ocol = null;
+    curve = { series, first, last, x, compactions, output, offset, slot, thinkingAt };
+    let ofield = null;
     if (largest) {
       ofield = el("div", "kx-d-ofield");
       ofield.dataset.testid = "detail-output";
@@ -1175,8 +1194,7 @@
       const axis = el("span", "kx-d-axis", tokensText(largest));
       axis.setAttribute("aria-hidden", "true");
       ofield.appendChild(axis);
-      ocol = el("div", "kx-d-ocol");
-      ofield.appendChild(ocol);
+      ofield.appendChild(el("div", "kx-d-ocol"));
     }
     const row = el("div", "kx-d-turn-row");
     const lab = el("label", "", "Turn");
@@ -1193,61 +1211,7 @@
     row.appendChild(lab);
     row.appendChild(range);
     row.appendChild(val);
-    // one turn in both fields: the hairline and the tooltip in the curve, the column in the output field; the
-    // range's aria-valuetext says the same as the tooltip
-    function show(i) {
-      const v = series[i], prev = i > 0 ? series[i - 1] : null;
-      const delta = prev === null ? "" : ` · ${v >= prev ? "+" : "−"}${tokensText(Math.abs(v - prev))} from turn ${first + i - 1}`;
-      const comp = compactions.find((c) => c.at === i);
-      const spoken = [`turn ${first + i}`, tokensText(v) + delta];
-      tip.textContent = "";
-      tip.appendChild(document.createTextNode(`turn ${first + i} · `));
-      tip.appendChild(el("b", "", tokensText(v)));
-      tip.appendChild(document.createTextNode(delta));
-      const o = i - offset;
-      if (ofield && o >= 0) {
-        const line = el("span", "kx-d-tip-o");
-        line.appendChild(document.createTextNode("output "));
-        line.appendChild(el("b", "", tokensText(output[o] || 0)));
-        line.appendChild(document.createTextNode(" · thinking "));
-        line.appendChild(el("b", "", tokensText(thinkingAt(o))));
-        tip.appendChild(el("br"));
-        tip.appendChild(line);
-        spoken.push(`output ${tokensText(output[o] || 0)}, thinking ${tokensText(thinkingAt(o))}`);
-      }
-      if (comp) { tip.appendChild(el("br")); tip.appendChild(document.createTextNode(compactionText(comp))); spoken.push(compactionText(comp)); }
-      const left = x(i) / D_W;
-      hair.style.left = `${pct(left)}%`;
-      tip.style.left = left < 0.6 ? `calc(${pct(left)}% + 8px)` : "auto";
-      tip.style.right = left < 0.6 ? "auto" : `calc(${pct(1 - left)}% + 8px)`;
-      field.classList.add("kx-d-hover");
-      if (ofield) {
-        ocol.style.left = `${pct((i * slot) / D_W)}%`;
-        ocol.style.width = `${pct(slot / D_W)}%`;
-        ofield.classList.add("kx-d-hover");
-      }
-      turnShown = first + i;
-      range.value = String(turnShown);
-      range.setAttribute("aria-valuetext", spoken.join(" · "));
-      val.textContent = `${turnShown} / ${last}`;
-    }
-    function hide() {
-      if (redrawing) return;
-      field.classList.remove("kx-d-hover");
-      if (ofield) ofield.classList.remove("kx-d-hover");
-      turnShown = null;
-    }
-    const at = (turn) => Math.max(0, Math.min(series.length - 1, turn - first));
-    const pointer = (target, index) => {
-      target.addEventListener("mousemove", (e) => { const r = target.getBoundingClientRect(); show(at(first + index((e.clientX - r.left) / r.width))); });
-      target.addEventListener("mouseleave", hide);
-    };
-    pointer(field, (share) => Math.round(share * (series.length - 1))); // the curve's points sit at the ends of the field
-    range.addEventListener("input", () => show(at(Number(range.value))));
-    range.addEventListener("focus", () => show(at(Number(range.value))));
-    range.addEventListener("blur", hide);
     if (ofield) {
-      pointer(ofield, (share) => Math.floor(share * series.length)); // a bar fills its slot
       wrap.appendChild(ofield);
       const legend = el("div", "kx-d-lbl");
       legend.title = `Output tokens per turn and the thinking part of them, scaled to the largest turn (${tokensText(largest)}), not to the curve: what the model writes is read back as input on the next turn`;
@@ -1258,9 +1222,80 @@
       wrap.appendChild(legend);
     }
     wrap.appendChild(row);
-    if (turnShown !== null && turnShown >= first && turnShown <= last) show(turnShown - first); else turnShown = null;
+    if (turnShown !== null && turnShown >= first && turnShown <= last) showTurn(wrap, turnShown - first); else turnShown = null;
     return wrap;
   }
+
+  /**
+   * One turn (index `i` of the drawn curve) in both fields under `root`, the detail view or one being built: the
+   * hairline and the tooltip in the curve, the column in the output field; the range's aria-valuetext says the same
+   * as the tooltip. The elements are looked up, not kept, since a draw patches its tree into the live one.
+   */
+  function showTurn(root, i) {
+    const { series, first, last, x, compactions, output, offset, slot, thinkingAt } = curve;
+    const q = (id) => root.querySelector(`[data-testid="${id}"]`);
+    const field = q("detail-curve"), tip = q("detail-tip"), ofield = q("detail-output"), range = q("detail-turn"), val = q("detail-turn-value");
+    const v = series[i], prev = i > 0 ? series[i - 1] : null;
+    const delta = prev === null ? "" : ` · ${v >= prev ? "+" : "−"}${tokensText(Math.abs(v - prev))} from turn ${first + i - 1}`;
+    const comp = compactions.find((c) => c.at === i);
+    const spoken = [`turn ${first + i}`, tokensText(v) + delta];
+    tip.textContent = "";
+    tip.appendChild(document.createTextNode(`turn ${first + i} · `));
+    tip.appendChild(el("b", "", tokensText(v)));
+    tip.appendChild(document.createTextNode(delta));
+    const o = i - offset;
+    if (ofield && o >= 0) {
+      const line = el("span", "kx-d-tip-o");
+      line.appendChild(document.createTextNode("output "));
+      line.appendChild(el("b", "", tokensText(output[o] || 0)));
+      line.appendChild(document.createTextNode(" · thinking "));
+      line.appendChild(el("b", "", tokensText(thinkingAt(o))));
+      tip.appendChild(el("br"));
+      tip.appendChild(line);
+      spoken.push(`output ${tokensText(output[o] || 0)}, thinking ${tokensText(thinkingAt(o))}`);
+    }
+    if (comp) { tip.appendChild(el("br")); tip.appendChild(document.createTextNode(compactionText(comp))); spoken.push(compactionText(comp)); }
+    const left = x(i) / D_W;
+    field.querySelector(".kx-d-hair").style.left = `${pct(left)}%`;
+    tip.style.left = left < 0.6 ? `calc(${pct(left)}% + 8px)` : "auto";
+    tip.style.right = left < 0.6 ? "auto" : `calc(${pct(1 - left)}% + 8px)`;
+    field.classList.add("kx-d-hover");
+    if (ofield) {
+      const ocol = ofield.querySelector(".kx-d-ocol");
+      ocol.style.left = `${pct((i * slot) / D_W)}%`;
+      ocol.style.width = `${pct(slot / D_W)}%`;
+      ofield.classList.add("kx-d-hover");
+    }
+    turnShown = first + i;
+    range.value = String(turnShown);
+    range.setAttribute("aria-valuetext", spoken.join(" · "));
+    val.textContent = `${turnShown} / ${last}`;
+  }
+  function hideTurn() {
+    for (const f of detailEl.querySelectorAll(FIELDS)) f.classList.remove("kx-d-hover");
+    turnShown = null;
+  }
+  const FIELDS = '[data-testid="detail-curve"], [data-testid="detail-output"]', RANGE = '[data-testid="detail-turn"]';
+  const turnAt = (turn) => Math.max(0, Math.min(curve.series.length - 1, turn - curve.first));
+  // the pointer, the range and the buttons are handled once on the view, as the list's clicks are: a patched tree
+  // keeps its old nodes, so listeners of their own would be closures over an earlier draw
+  detailEl.addEventListener("mousemove", (e) => {
+    const field = curve && e.target.closest(FIELDS);
+    if (!field) return;
+    const r = field.getBoundingClientRect(), share = (e.clientX - r.left) / r.width, n = curve.series.length;
+    // the curve's points sit at the ends of its field; a bar fills its slot
+    showTurn(detailEl, turnAt(curve.first + (field.dataset.testid === "detail-output" ? Math.floor(share * n) : Math.round(share * (n - 1)))));
+  });
+  // mouseleave, focus and blur do not bubble, nor does an input event sent without `bubbles`: caught on the way down
+  detailEl.addEventListener("mouseleave", (e) => { if (e.target.matches(FIELDS)) hideTurn(); }, true);
+  detailEl.addEventListener("input", (e) => { if (curve && e.target.matches(RANGE)) showTurn(detailEl, turnAt(Number(e.target.value))); }, true);
+  detailEl.addEventListener("focus", (e) => { if (curve && e.target.matches(RANGE)) showTurn(detailEl, turnAt(Number(e.target.value))); }, true);
+  detailEl.addEventListener("blur", (e) => { if (e.target.matches(RANGE)) hideTurn(); }, true);
+  detailEl.addEventListener("click", (e) => {
+    if (e.target.closest('[data-testid="detail-back"]')) { setOpen(null); return; }
+    const copy = e.target.closest(".kx-d-copy");
+    if (copy) copyFrom(copy);
+  });
 
   /** Copies `text`: the clipboard API, else a hidden textarea and execCommand. True when either worked. */
   async function copyText(text) {
@@ -1278,34 +1313,44 @@
     return ok;
   }
 
-  /** A value in code with a "copy" button that says "copied" for two seconds; `key` names it across redraws. */
+  /** The button's text, "copy" or a receipt; the accessible name carries the receipt too, since it replaces the text for a screen reader. */
+  function copyLabel(button, state) {
+    const text = button.dataset.value;
+    button.textContent = state;
+    button.setAttribute("aria-label", state === "copy" ? `Copy ${text}` : `${state}: ${text}`);
+  }
+
+  /** A value in code with a "copy" button that says "copied" for two seconds; `key` names it across draws. A click is handled on the view (copyFrom). */
   function copyable(key, text) {
     const span = el("span");
     span.appendChild(el("code", "", text));
     const b = el("button", "kx-d-copy");
     b.type = "button";
     b.dataset.testid = `copy-${key}`;
-    // the accessible name carries the receipt too, since it replaces the button's text for a screen reader
-    const label = (button, state) => { button.textContent = state; button.setAttribute("aria-label", state === "copy" ? `Copy ${text}` : `${state}: ${text}`); };
+    b.dataset.copy = key;
+    b.dataset.value = text;
     const receipt = copied[key] && copied[key].until > Date.now() ? copied[key] : null;
-    label(b, receipt ? receipt.text : "copy");
+    copyLabel(b, receipt ? receipt.text : "copy");
     if (receipt && receipt.text === "copied") b.dataset.done = "";
-    b.addEventListener("click", async () => {
-      const ok = await copyText(text);
-      copied[key] = { until: Date.now() + COPIED_MS, text: ok ? "copied" : "copy failed" };
-      const now = detailEl.querySelector(`[data-testid="copy-${key}"]`) || b; // a redraw may have replaced the button
-      label(now, copied[key].text);
-      if (ok) now.dataset.done = ""; else delete now.dataset.done;
-      if (document.activeElement === document.body) now.focus({ preventScroll: true }); // the textarea way took the focus
-      setTimeout(() => {
-        if (copied[key] && copied[key].until > Date.now()) return; // a later click owns the receipt
-        delete copied[key];
-        const current = detailEl.querySelector(`[data-testid="copy-${key}"]`);
-        if (current) { label(current, "copy"); delete current.dataset.done; }
-      }, COPIED_MS);
-    });
     span.appendChild(b);
     return span;
+  }
+
+  async function copyFrom(button) {
+    const key = button.dataset.copy;
+    const ok = await copyText(button.dataset.value);
+    copied[key] = { until: Date.now() + COPIED_MS, text: ok ? "copied" : "copy failed" };
+    const shown = () => detailEl.querySelector(`[data-testid="copy-${key}"]`); // a draw may have replaced the button
+    const now = shown() || button;
+    copyLabel(now, copied[key].text);
+    if (ok) now.dataset.done = ""; else delete now.dataset.done;
+    if (document.activeElement === document.body) now.focus({ preventScroll: true }); // the textarea way took the focus
+    setTimeout(() => {
+      if (copied[key] && copied[key].until > Date.now()) return; // a later click owns the receipt
+      delete copied[key];
+      const current = shown();
+      if (current) { copyLabel(current, "copy"); delete current.dataset.done; }
+    }, COPIED_MS);
   }
 
   /**
@@ -1402,8 +1447,7 @@
     b.type = "button";
     b.dataset.testid = "detail-back";
     b.appendChild(icon("back"));
-    b.appendChild(document.createTextNode("Sessions"));
-    b.addEventListener("click", () => setOpen(null));
+    b.appendChild(document.createTextNode("Sessions")); // a click is handled on the view
     return b;
   }
 
@@ -1500,34 +1544,36 @@
 
   /**
    * The open session drawn from the last list, with every turn from the host's detail when it has come, or
-   * "gone" when the registry no longer has it.
+   * "gone" when the registry no longer has it. Built afresh and patched into the live view, as the list is, so the
+   * element under the pointer keeps its tooltip and the focus stays where it is.
    */
   function drawDetail() {
     if (!openId || !lastData) return; // without a list yet, the first one draws it
     const listed = allSessions(lastData).find((s) => s.sessionId === openId);
     const session = listed && detailAnswer && detailAnswer.sessionId === openId ? { ...listed, ...detailAnswer.detail } : listed;
-    const active = document.activeElement;
-    const focused = !focusBack && active && detailEl.contains(active) ? active.dataset.testid : null;
-    redrawing = true;
-    detailEl.textContent = "";
-    redrawing = false;
-    if (session) detailEl.appendChild(detailFor(session));
+    const active = detailEl.contains(document.activeElement) ? document.activeElement : null;
+    let next;
+    if (session) next = detailFor(session);
     else {
       turnShown = null;
-      const gone = el("div");
-      gone.appendChild(backButton());
+      curve = null;
+      next = el("div");
+      next.dataset.key = "gone";
+      next.appendChild(backButton());
       const p = el("p", "kx-message", "That session is gone from the registry.");
       p.dataset.testid = "detail-gone";
-      gone.appendChild(p);
-      detailEl.appendChild(gone);
+      next.appendChild(p);
     }
-    const target = focusBack ? detailEl.querySelector('[data-testid="detail-back"]') : focused ? detailEl.querySelector(`[data-testid="${focused}"]`) : null;
+    patchChildren(detailEl, [next], keyedIn(detailEl), []);
+    // a node that could not be kept (one that changed its kind) took the focus with it: its successor gets it
+    const lost = active && !active.isConnected && active.dataset.testid ? detailEl.querySelector(`[data-testid="${active.dataset.testid}"]`) : null;
+    const target = focusBack ? detailEl.querySelector('[data-testid="detail-back"]') : lost;
     focusBack = false;
     if (target) target.focus({ preventScroll: true });
   }
 
   const scroller = () => document.scrollingElement || document.documentElement;
-  /** The list or the detail on screen; the list keeps being drawn behind the detail, so it is current on the way back. */
+  /** The list or the detail on screen; the list is not drawn behind the detail, and is drawn on the way back (setOpen). */
   function showMode() {
     for (const e of [headerEl, controlsEl, listEl]) e.hidden = !!openId;
     detailEl.hidden = !openId;
@@ -1552,6 +1598,7 @@
       requestDetail();
       return;
     }
+    if (lastData) render(lastData); // the list rested while the detail was open
     scroller().scrollTop = listScroll;
     const row = closing && [...listEl.querySelectorAll(".kx-session[tabindex]")].find((r) => r.dataset.session === closing);
     if (row) row.focus({ preventScroll: true });
@@ -1590,12 +1637,12 @@
     scopeAllEl.setAttribute("aria-pressed", String(all));
     scopeNameEl.hidden = all || !names;
     if (names) {
-      scopeNameEl.textContent = names.length ? names.join(", ") : "no folder";
-      scopeNameEl.title = names.length ? `The sessions started inside ${names.length === 1 ? "the workspace folder" : "the workspace folders"} ${names.join(", ")}`
-        : "No workspace folder, so every live session on the machine is listed";
+      setText(scopeNameEl, names.length ? names.join(", ") : "no folder");
+      setTitle(scopeNameEl, names.length ? `The sessions started inside ${names.length === 1 ? "the workspace folder" : "the workspace folders"} ${names.join(", ")}`
+        : "No workspace folder, so every live session on the machine is listed");
     }
     scopeMoreEl.hidden = all || !hidden;
-    scopeMoreEl.textContent = `${hidden} more in other projects`;
+    setText(scopeMoreEl, `${hidden} more in other projects`);
   }
 
   /** Where the listed sessions are, for the counters' tooltips: "the 6 sessions in this workspace". */
@@ -1675,7 +1722,9 @@
   // within a second or two (#59). Every list is still built afresh by the functions above, and patch() then makes
   // the live tree match it: a node that stays is kept, and only what changed in it is set. Rows are keyed by their
   // session, headings and row containers by data-key, across the whole list, so a row that changes group is moved,
-  // not rebuilt; other nodes are matched in place by their tag. ──
+  // not rebuilt; other nodes are matched in place by their tag. A row that would come out the same is not built at
+  // all (rowKey), and the detail view is patched the same way. ──
+  let rowKeys = new Map(); // sessionId → rowKey of its live row
   const keyOf = (n) => {
     if (n.nodeType !== 1) return null;
     const session = n.getAttribute("data-session"), key = n.getAttribute("data-key");
@@ -1688,11 +1737,16 @@
     for (const e of root.querySelectorAll("[data-session], [data-key]")) { const k = keyOf(e); if (k && !keyed.has(k)) keyed.set(k, e); }
     return keyed;
   }
-  /** `live` takes `next`'s attributes, inline style (through the CSSOM: the CSP blocks style attributes) and children. */
+  /**
+   * `live` takes `next`'s attributes, inline style (through the CSSOM: the CSP blocks style attributes), an input's
+   * value (a property, not an attribute) and children. A `next` marked data-kept is an unchanged row: `live` stays.
+   */
   function patch(live, next, keyed, moved) {
     if (live.nodeType !== 1) { if (live.nodeValue !== next.nodeValue) live.nodeValue = next.nodeValue; return; }
+    if (next.hasAttribute("data-kept")) return;
     for (const { name, value } of [...next.attributes]) if (name !== "style" && live.getAttribute(name) !== value) live.setAttribute(name, value);
     for (const { name } of [...live.attributes]) if (name !== "style" && !next.hasAttribute(name)) live.removeAttribute(name);
+    if (next.tagName === "INPUT" && live.value !== next.value) live.value = next.value;
     const props = new Set(Array.from({ length: next.style.length }, (_, i) => next.style[i]));
     for (const prop of props) if (live.style.getPropertyValue(prop) !== next.style.getPropertyValue(prop)) live.style.setProperty(prop, next.style.getPropertyValue(prop));
     for (const prop of Array.from({ length: live.style.length }, (_, i) => live.style[i])) if (!props.has(prop)) live.style.removeProperty(prop);
@@ -1750,7 +1804,9 @@
     lastData = data;
     applyZones(data.zones); // first: the rows, the curves and the detail view draw the limits
     refreshDone(data);
-    drawDetail();
+    // with an answer for the open session, the next answer draws it, with the new list (onDetail): drawing now too
+    // would show the new count with the old curve for a moment. A session gone from the list is said at once
+    if (!detailAnswer || !allSessions(data).some((s) => s.sessionId === openId)) drawDetail();
     requestDetail(); // the new list's turns, all of them, for the open session
     setText(countEl, String(data.count || 0));
     renderZoneCounts(data.zoneCounts || {}, data);
@@ -1776,6 +1832,22 @@
     const shown = everyone.filter(passes).length;
     showingEl.hidden = shown === everyone.length;
     setText(showingEl, `showing ${shown} of ${everyone.length}`);
+    // the list is hidden behind the detail view: closing it draws the last list (setOpen)
+    if (openId) return;
+    // a row that would show what the live one shows is a placeholder, which patch() leaves as it is (rowKey)
+    const live = new Set([...listEl.querySelectorAll(".kx-session")].map((row) => row.dataset.session));
+    const keys = new Map();
+    const rowOf = (s) => {
+      if (!s.sessionId) return rowFor(s);
+      const key = rowKey(s);
+      const same = live.has(s.sessionId) && rowKeys.get(s.sessionId) === key;
+      keys.set(s.sessionId, key);
+      if (!same) return rowFor(s);
+      const kept = el("article");
+      kept.dataset.session = s.sessionId;
+      kept.dataset.kept = "";
+      return kept;
+    };
     const next = document.createDocumentFragment();
     if (!data.count) next.appendChild(el("p", "kx-message", "No live Claude sessions"));
     else if (data.groups) {
@@ -1786,12 +1858,13 @@
         next.appendChild(heading);
         const rows = rowsFor(heading, `project:${project}`);
         if (!rows) continue;
-        rows.appendChild(groupsFor(g.sessions, project));
+        rows.appendChild(groupsFor(g.sessions, project, rowOf));
         next.appendChild(rows);
       }
     } else {
-      next.appendChild(groupsFor(data.sessions));
+      next.appendChild(groupsFor(data.sessions, undefined, rowOf));
     }
+    rowKeys = keys;
     // a bar kept in place moves from its previous width by the style's transition; a moved row was taken out of
     // the document for a moment and lost its previous style, so its fill starts at the old width and moves after
     // a forced layout
