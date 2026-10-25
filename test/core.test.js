@@ -525,6 +525,10 @@ describe("readTail", () => {
       const offset = buf.indexOf("\n", MB - 1000) + 1;
       expect(K.readTail(big, { from: offset })).toEqual(once(offset, false));
       expect(K.readTail(big, { bytes: 3 * MB })).toEqual(once(buf.length - 3 * MB, true));
+      // readSync may give fewer bytes than asked: only those are used, and the next read starts after them
+      const fs = require("node:fs"), readSync = fs.readSync;
+      const short = vi.spyOn(fs, "readSync").mockImplementation((fd, b, off, len, at) => readSync(fd, b, off, Math.min(len, 1000), at));
+      try { expect(K.readTail(big, { from: 0 })).toEqual(once(0, false)); } finally { short.mockRestore(); }
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });
@@ -972,6 +976,13 @@ describe("SessionReader", () => {
       expect(reader.cache.get(otherFile).end).toBe(Buffer.byteLength(all.join("\n") + "\n"));
       // a marked state survives the switch back: read from the stored offset, not from byte 0
       reader.cache.get(otherFile).state.tokens = 1;
+      // the same holds for what else the reader remembers of a session: its meta files and a folder found by searching
+      const otherMeta = path.join(otherFolder, "elsewhere", "subagents", "agent-x.meta.json");
+      reader.metas.set(otherMeta, { stamp: null, meta: {}, session: "elsewhere" });
+      reader.found.set("elsewhere", otherFolder);
+      reader.read({ workspaceFolders: [MINE], all: false });
+      expect(reader.metas.has(otherMeta)).toBe(true);
+      expect(reader.found.has("elsewhere")).toBe(true);
       const back = reader.read({ workspaceFolders: [MINE], all: true });
       expect(back.sessions.find((s) => s.sessionId === "elsewhere").tokens).toBe(1);
       appendFileSync(otherFile, turn(3, 150000) + "\n");
@@ -981,6 +992,8 @@ describe("SessionReader", () => {
       reader.read({ workspaceFolders: [MINE], all: false });
       expect(reader.cache.has(otherFile)).toBe(false);
       expect([...reader.cache.values()].map((c) => c.session)).toEqual(["aaaa-1"]);
+      expect(reader.metas.has(otherMeta)).toBe(false);
+      expect(reader.found.has("elsewhere")).toBe(false);
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
