@@ -84,20 +84,15 @@
   .kx-zband .kx-zshort, .kx-zband[data-fit="short"] .kx-zlong, .kx-zband[data-fit="none"] span { display: none; }
   .kx-zband[data-fit="short"] .kx-zshort { display: inline; }
   .kx-zband span { padding: 0 4px; } /* on the label, not the band: a padded band would no longer be its zone's true width */
-  /* the count per zone, beside the session count */
-  .kx-zone-counts { display: inline-flex; flex-wrap: wrap; font-size: 0.82em; font-variant-numeric: tabular-nums; color: var(--kx-muted); white-space: nowrap; }
-  .kx-zone-counts span + span::before { content: "·"; margin: 0 6px; }
-  .kx-zone-counts b { font-weight: 600; color: var(--kx-zone-text, inherit); }
-  /* the prompt-cache counters: warm and cold, beside the zone counts */
-  .kx-cache-counts { font-size: 0.82em; font-variant-numeric: tabular-nums; color: var(--kx-muted); white-space: nowrap; display: inline-flex; align-items: center; }
-  .kx-cache-counts b { font-weight: 600; color: var(--kx-fg); }
-  .kx-cache-counts span + span::before { content: "·"; margin: 0 6px; }
-  /* the median start cost of the sessions that began fresh, beside the cache counters */
-  .kx-start-median { font-size: 0.82em; font-variant-numeric: tabular-nums; color: var(--kx-muted); white-space: nowrap; }
-  .kx-start-median b { font-weight: 600; color: var(--kx-fg); }
-  /* how many sessions sit in the folded "Idle over an hour" group: processes left running, most likely closed tabs */
-  .kx-abandoned { font-size: 0.82em; font-variant-numeric: tabular-nums; color: var(--kx-muted); white-space: nowrap; }
-  .kx-abandoned b { font-weight: 600; color: var(--kx-fg); }
+  /* the header's counters beside the session count: the count per zone, the median start of the sessions that began
+     fresh, how many sit in the folded "Idle over an hour" group (processes left running, most likely closed tabs), and
+     the prompt cache's warm and cold; a bold number each, "·" between the parts of one */
+  .kx-counter { font-size: 0.82em; font-variant-numeric: tabular-nums; color: var(--kx-muted); white-space: nowrap; }
+  .kx-counter b { font-weight: 600; color: var(--kx-fg); }
+  .kx-counter span + span::before { content: "·"; margin: 0 6px; }
+  .kx-zone-counts { display: inline-flex; flex-wrap: wrap; }
+  .kx-zone-counts b { color: var(--kx-zone-text, inherit); }
+  .kx-cache-counts { display: inline-flex; align-items: center; }
 
   /* "showing 4 of 10" beside the count while a filter hides sessions */
   .kx-showing { font-size: 0.82em; color: var(--kx-muted); white-space: nowrap; }
@@ -438,10 +433,10 @@
 <header>
   <h1><span class="kx-n" data-testid="count" aria-live="polite">0</span> live Claude sessions</h1>
   <span class="kx-showing" data-testid="showing" hidden></span>
-  <span class="kx-zone-counts" data-testid="zones"></span>
-  <span class="kx-start-median" data-testid="start-median" hidden><b></b> start</span>
-  <span class="kx-abandoned" data-testid="abandoned-count" hidden title="A closed VS Code chat tab keeps its process running until Developer: Reload Window or VS Code quits, and the panel cannot tell a closed tab from an open one, so some of these are probably closed tabs"><b></b> idle over an hour</span>
-  <span class="kx-cache-counts" data-testid="cache-counts" title="Prompt cache: how many of the listed sessions have a warm cache now, and how many went cold"><span><b data-testid="cache-warm">0</b> warm</span><span><b data-testid="cache-cold">0</b> cold</span></span>
+  <span class="kx-counter kx-zone-counts" data-testid="zones"></span>
+  <span class="kx-counter kx-start-median" data-testid="start-median" hidden><b></b> start</span>
+  <span class="kx-counter kx-abandoned" data-testid="abandoned-count" hidden title="A closed VS Code chat tab keeps its process running until Developer: Reload Window or VS Code quits, and the panel cannot tell a closed tab from an open one, so some of these are probably closed tabs"><b></b> idle over an hour</span>
+  <span class="kx-counter kx-cache-counts" data-testid="cache-counts" title="Prompt cache: how many of the listed sessions have a warm cache now, and how many went cold"><span><b data-testid="cache-warm">0</b> warm</span><span><b data-testid="cache-cold">0</b> cold</span></span>
   <div class="kx-tools">
     <span class="kx-refreshed" data-testid="refreshed" role="status" hidden></span>
     <button type="button" class="kx-toggle" data-testid="compact" aria-pressed="false" aria-label="Compact rows"></button>
@@ -581,6 +576,15 @@
   // The prompt cache (core.cjs: cacheTtlMs, coldInMs, hitShare). The core decides warm, cold and "soon"
   // (cacheSoon); the panel only shows the state, it never sends a turn.
   const TTL_TEXT = { 3600000: "1h", 300000: "5m" };
+  const TTL_WORDS = { "1h": "1-hour", "5m": "5-minute" };
+  /** The TTL as a pill ("1h", or "5m" in orange), for the row's cache item and the detail's facts; null for another or none. */
+  function ttlPill(session) {
+    const ttl = TTL_TEXT[session.cacheTtlMs];
+    if (!ttl) return null;
+    const pill = el("span", "kx-ttl", ttl);
+    pill.dataset.ttl = ttl;
+    return pill;
+  }
 
   // ── Rendering (DOM API only, never innerHTML with data) ────────────────────
   function tokensText(tokens) {
@@ -715,6 +719,28 @@
   const CURVE_W = 100, CURVE_H = 24;
   const num = (n) => String(Math.round(n * 100) / 100);
 
+  /** The dips and the compactions of a session that fall on its series, for the row's curve and the detail's. */
+  function curveMarks(session, series) {
+    return {
+      dips: Array.isArray(session.dips) ? session.dips.filter((i) => i > 0 && i < series.length) : [],
+      compactions: Array.isArray(session.compactions) ? session.compactions.filter((c) => c && c.at >= 0 && c.at < series.length) : [],
+    };
+  }
+
+  /**
+   * What the row's curve and the detail's draw alike into `svg` (w × h, with `x` and `y` from index and tokens):
+   * a dashed line per limit, the area and the line, a dotted line per dip and a solid one per compaction. `turn`
+   * gives their data-turn: the row's index, the detail's turn number.
+   */
+  function drawCurve(svg, { series, dips, compactions, x, y, w, h, turn }) {
+    for (const g of LIMITS) svg.appendChild(svgEl("line", { class: "kx-limit", "data-limit": g, x1: 0, x2: w, y1: num(y(g)), y2: num(y(g)), "vector-effect": "non-scaling-stroke" }));
+    const points = series.map((v, i) => `${num(x(i))},${num(y(v))}`).join(" L");
+    svg.appendChild(svgEl("path", { class: "kx-area", d: `M0,${h} L${points} L${w},${h} Z` }));
+    svg.appendChild(svgEl("path", { class: "kx-line", d: `M${points}`, "vector-effect": "non-scaling-stroke" }));
+    for (const i of dips) svg.appendChild(svgEl("line", { class: "kx-dip", "data-turn": turn(i), x1: num(x(i)), x2: num(x(i)), y1: 0, y2: h, "vector-effect": "non-scaling-stroke" }));
+    for (const c of compactions) svg.appendChild(svgEl("line", { class: "kx-compact", "data-turn": turn(c.at), "data-trigger": c.trigger || "unknown", x1: num(x(c.at)), x2: num(x(c.at)), y1: 0, y2: h, "vector-effect": "non-scaling-stroke" }));
+  }
+
   function curveFor(session) {
     // the core only pushes numbers, and dips index this very list, so it is drawn as it comes
     const series = Array.isArray(session.series) ? session.series : [];
@@ -722,8 +748,7 @@
     const top = Math.max(SCALE, ...series);
     const x = (i) => (i / (series.length - 1)) * CURVE_W;
     const y = (v) => CURVE_H - 1 - (v / top) * (CURVE_H - 2); // 1 px margin top and bottom for the stroke
-    const dips = Array.isArray(session.dips) ? session.dips.filter((i) => i > 0 && i < series.length) : [];
-    const compactions = Array.isArray(session.compactions) ? session.compactions.filter((c) => c && c.at >= 0 && c.at < series.length) : [];
+    const { dips, compactions } = curveMarks(session, series);
     const label = `Tokens per turn, ${plural(series.length, "turn", "turns")}, ${plural(compactions.length, "compaction", "compactions")}, ${plural(dips.length, "other drop", "other drops")}`;
     const svg = svgEl("svg", {
       class: "kx-curve", viewBox: `0 0 ${CURVE_W} ${CURVE_H}`, preserveAspectRatio: "none", role: "img",
@@ -733,46 +758,48 @@
     const marks = compactions.map((c) => ` · turn ${c.at + 1}: ${compactionText(c)}`).join("");
     title.textContent = `${label} · ${MARKS_TEXT ? `dashed lines at ${MARKS_TEXT}` : "no limits yet"}${marks}${dips.length ? " · dotted marks: drops without a compaction entry" : ""}`;
     svg.appendChild(title);
-    for (const g of LIMITS) svg.appendChild(svgEl("line", { class: "kx-limit", "data-limit": g, x1: 0, x2: CURVE_W, y1: num(y(g)), y2: num(y(g)), "vector-effect": "non-scaling-stroke" }));
-    const points = series.map((v, i) => `${num(x(i))},${num(y(v))}`).join(" L");
-    svg.appendChild(svgEl("path", { class: "kx-area", d: `M0,${CURVE_H} L${points} L${CURVE_W},${CURVE_H} Z` }));
-    svg.appendChild(svgEl("path", { class: "kx-line", d: `M${points}`, "vector-effect": "non-scaling-stroke" }));
-    for (const i of dips) svg.appendChild(svgEl("line", { class: "kx-dip", "data-turn": i, x1: num(x(i)), x2: num(x(i)), y1: 0, y2: CURVE_H, "vector-effect": "non-scaling-stroke" }));
-    for (const c of compactions) svg.appendChild(svgEl("line", { class: "kx-compact", "data-turn": c.at, "data-trigger": c.trigger || "unknown", x1: num(x(c.at)), x2: num(x(c.at)), y1: 0, y2: CURVE_H, "vector-effect": "non-scaling-stroke" }));
+    drawCurve(svg, { series, dips, compactions, x, y, w: CURVE_W, h: CURVE_H, turn: (i) => i });
     return svg;
+  }
+
+  const OUT_H = 8;
+  /**
+   * The output bars into `svg`, for the row's strip and the detail's field: per turn its output (faint) and the
+   * thinking part of it (strong) over it, rising from `base` by up to `height` for the largest turn (`top`), in
+   * slots `slot` wide after `offset` empty ones; a gap between the bars while there are 60 slots or fewer.
+   */
+  function drawOutput(svg, { output, thinking, top, offset, slot, base, height }) {
+    const gap = offset + output.length <= 60 ? slot * 0.2 : 0;
+    const bar = (o, v) => (v > 0 ? `M${num((o + offset) * slot)},${base} h${num(slot - gap)} v${num(-(v / top) * height)} h${num(gap - slot)} Z` : "");
+    svg.appendChild(svgEl("path", { class: "kx-out-all", d: output.map((v, o) => bar(o, v)).join(" ") || "M0,0" }));
+    svg.appendChild(svgEl("path", { class: "kx-out-think", d: output.map((v, o) => bar(o, Math.min(thinking[o] || 0, v || 0))).join(" ") || "M0,0" }));
   }
 
   /**
    * Output per turn as bars under the curve, one per turn of the series (the output series is aligned to its
    * right end, so an older state with a shorter one still lines up), scaled to the session's own largest turn.
    * The thinking part of each bar is drawn over it, from the bottom. Nothing when no turn wrote anything. The
-   * row's strip; the detail view draws its own field (detailCurve).
+   * row's strip; the detail view has its own field around the same bars (detailCurve).
    */
-  const OUT_H = 8;
   function outputFor(session) {
     const series = Array.isArray(session.series) ? session.series : [];
     const output = Array.isArray(session.outputSeries) ? session.outputSeries.slice(-series.length) : [];
     const thinking = Array.isArray(session.thinkingSeries) ? session.thinkingSeries.slice(-series.length) : [];
     const top = Math.max(0, ...output);
     if (series.length < 2 || !top) return null;
-    const offset = series.length - output.length, w = CURVE_W / series.length, gap = series.length <= 60 ? w * 0.2 : 0;
-    const bar = (i, v) => (v > 0 ? `M${num((i + offset) * w)},${OUT_H} h${num(w - gap)} v${num(-(v / top) * OUT_H)} h${num(gap - w)} Z` : "");
     const svg = svgEl("svg", { class: "kx-out", viewBox: `0 0 ${CURVE_W} ${OUT_H}`, preserveAspectRatio: "none", role: "img", "data-testid": "output", "data-bars": output.length, "aria-label": `Output tokens per turn, largest ${tokensText(top)}` });
     const title = svgEl("title", {});
     title.textContent = `Output tokens per turn (faint) and the thinking part of them (strong), scaled to the largest turn: ${tokensText(top)}`;
     svg.appendChild(title);
-    svg.appendChild(svgEl("path", { class: "kx-out-all", d: output.map((v, i) => bar(i, v)).join(" ") || "M0,0" }));
-    svg.appendChild(svgEl("path", { class: "kx-out-think", d: thinking.map((v, i) => bar(i, Math.min(v, output[i] || 0))).join(" ") || "M0,0" }));
+    drawOutput(svg, { output, thinking, top, offset: series.length - output.length, slot: CURVE_W / series.length, base: OUT_H, height: OUT_H });
     return svg;
   }
 
   /** "48K out" with the last turn and the thinking share in the tooltip; null before the first turn. */
   function outputMeta(session) {
     if (!session.turns || !Number.isFinite(session.outputTotal)) return null;
-    const span = el("span", "kx-output");
+    const span = metaItem("pen", `${tokensText(session.outputTotal)} out`);
     span.dataset.testid = "output-total";
-    span.appendChild(icon("pen"));
-    span.appendChild(document.createTextNode(`${tokensText(session.outputTotal)} out`));
     const last = Number.isFinite(session.lastOutput) ? `last turn ${tokensText(session.lastOutput)} out, ${tokensText(session.lastThinking)} thinking · ` : "";
     const shareText = Number.isFinite(session.thinkingShare) ? `, ${Math.round(session.thinkingShare * 100)} % thinking` : "";
     span.title = `Output: ${last}session ${tokensText(session.outputTotal)} out${shareText} · what the model writes is read back as input on the next turn`;
@@ -838,25 +865,31 @@
     return bar;
   }
 
-  /** "busy": the session is working, in the list and the detail view. */
-  function busyBadge() {
-    const badge = el("span", "kx-badge");
-    badge.appendChild(icon("zap"));
-    badge.appendChild(document.createTextNode("busy"));
-    return badge;
+  /**
+   * The zone dot (pulsing while busy) and the badge for the row's title line and the detail's head: "busy" while the
+   * session works, "waiting" while it waits for the user (a permission prompt, a question, a dialog), else none.
+   */
+  function dotAndBadge(session) {
+    const dot = el("span", "kx-dot" + (session.busy ? " kx-pulse" : ""));
+    dot.title = `Zone: ${ZONE_NAME[session.zone] || "unknown"}`;
+    if (!session.busy && !session.waiting) return { dot, badge: null };
+    const badge = el("span", "kx-badge" + (session.busy ? "" : " kx-wait"));
+    if (!session.busy) badge.title = "Waiting for you: a permission prompt, a question or a dialog in this session";
+    badge.appendChild(icon(session.busy ? "zap" : "bell"));
+    badge.appendChild(document.createTextNode(session.busy ? "busy" : "waiting"));
+    return { dot, badge };
+  }
+
+  /** An item of a meta line, the row's or the detail's: an icon and its text. */
+  function metaItem(name, text, className) {
+    const span = el("span", className);
+    span.appendChild(icon(name));
+    span.appendChild(document.createTextNode(text));
+    return span;
   }
 
   /** "Opus 5.5 · xhigh": the model and the effort of the last turn. */
   const modelEffort = (session) => (session.modelShort || "unknown") + (session.effort ? ` · ${session.effort}` : "");
-
-  /** "waiting": the session waits for the user (a permission prompt, a question, a dialog), in the list and the detail view. */
-  function waitingBadge() {
-    const badge = el("span", "kx-badge kx-wait");
-    badge.title = "Waiting for you: a permission prompt, a question or a dialog in this session";
-    badge.appendChild(icon("bell"));
-    badge.appendChild(document.createTextNode("waiting"));
-    return badge;
-  }
 
   function rowFor(session) {
     const row = zoned(el("article", "kx-session" + (session.dimmed ? " kx-dimmed" : "")), session.zone);
@@ -868,14 +901,12 @@
       row.setAttribute("aria-label", `Open details: ${session.titleText || ""}, ${countLabel(session)}`);
     }
     const titleRow = el("div", "kx-row-title");
-    const dot = el("span", "kx-dot" + (session.busy ? " kx-pulse" : ""));
-    dot.title = `Zone: ${ZONE_NAME[session.zone] || "unknown"}`;
+    const { dot, badge } = dotAndBadge(session);
     titleRow.appendChild(dot);
     const title = titled(el("div", "kx-title"), session);
     title.title = title.textContent;
     titleRow.appendChild(title);
-    if (session.busy) titleRow.appendChild(busyBadge());
-    else if (session.waiting) titleRow.appendChild(waitingBadge());
+    if (badge) titleRow.appendChild(badge);
     row.appendChild(titleRow);
     const count = el("div", "kx-count");
     const tokens = zoned(el("div", "kx-num", countText(session)), session.zone);
@@ -895,7 +926,7 @@
     if (outputBars) curveWrap.appendChild(outputBars);
     row.appendChild(curveWrap);
     const meta = el("div", "kx-meta");
-    const add = (name, text) => { const s = el("span"); s.appendChild(icon(name)); s.appendChild(document.createTextNode(text)); meta.appendChild(s); };
+    const add = (name, text) => meta.appendChild(metaItem(name, text));
     if (!session.turns) add("play", startText(session)); // no model, turns or last turn to show yet; the curve says "no turns yet"
     else {
       add("cpu", modelEffort(session));
@@ -926,11 +957,9 @@
   function subagentsMeta(session) {
     const a = session.subagents;
     if (!a || !(a.count > 0)) return null;
-    const span = el("span", "kx-agents");
+    const span = metaItem("bot", plural(a.count, "subagent", "subagents") + (a.running ? ` · ${a.running} running` : ""), "kx-agents");
     span.dataset.testid = "subagents";
     span.dataset.zone = ZONES.includes(a.zone) ? a.zone : "unknown";
-    span.appendChild(icon("bot"));
-    span.appendChild(document.createTextNode(plural(a.count, "subagent", "subagents") + (a.running ? ` · ${a.running} running` : "")));
     const largest = a.largest ? `largest: ${agentName(a.largest)} at ${tokensText(a.largest.tokens)}, ${ZONE_NAME[a.zone] || "unknown"} zone` : "no count yet";
     span.title = `Subagents: ${a.count}, ${a.running} running · ${largest} · ${AGENTS_WHY}`;
     return span;
@@ -955,21 +984,16 @@
   function cacheFor(session) {
     if (session.cacheState !== "warm" && session.cacheState !== "cold") return null; // no TTL
     const state = session.cacheState === "cold" ? "cold" : session.cacheSoon ? "soon" : "warm";
-    const span = el("span", "kx-cache");
+    const span = metaItem("timer", state === "cold" ? "cold" : `warm · ${leftText(session.coldInMs)}`, "kx-cache");
     span.dataset.testid = "cache";
     span.dataset.cache = state;
-    span.appendChild(icon("timer"));
-    span.appendChild(document.createTextNode(state === "cold" ? "cold" : `warm · ${leftText(session.coldInMs)}`));
+    const pill = ttlPill(session);
+    if (pill) span.appendChild(pill);
     const ttl = TTL_TEXT[session.cacheTtlMs];
-    if (ttl) {
-      const pill = el("span", "kx-ttl", ttl);
-      pill.dataset.ttl = ttl;
-      span.appendChild(pill);
-    }
     const hit = Number.isFinite(session.hitShare) ? `${Math.round(session.hitShare * 100)} %` : "unknown";
     const read = Number.isFinite(session.cacheRead) ? tokensText(session.cacheRead) : "unknown";
     const written = Number.isFinite(session.cacheCreated) ? tokensText(session.cacheCreated) : "unknown";
-    const ttlText = ttl === "1h" ? "1-hour" : ttl === "5m" ? "5-minute" : "unknown";
+    const ttlText = TTL_WORDS[ttl] || "unknown";
     const when = state === "cold" ? `cold since ${clockText(session.coldAt)}` : `cold at ${clockText(session.coldAt)} unless a turn is sent (in ${leftText(session.coldInMs)})`;
     span.title = `Prompt cache: ${ttlText} TTL, ${when} · last turn: ${read} read from cache (${hit} of the context), ${written} written · a cold cache rewrites the whole context on the next turn`;
     return span;
@@ -1138,8 +1162,7 @@
     const series = Array.isArray(session.series) ? session.series : [];
     const turns = Math.max(session.turns || 0, series.length);
     const first = turns - series.length + 1, last = turns;
-    const compactions = Array.isArray(session.compactions) ? session.compactions.filter((c) => c && c.at >= 0 && c.at < series.length) : [];
-    const dips = Array.isArray(session.dips) ? session.dips.filter((i) => i > 0 && i < series.length) : [];
+    const { dips, compactions } = curveMarks(session, series);
     const lbl = el("div", "kx-d-lbl");
     const span = first > 1 ? `last ${series.length} of ${plural(turns, "turn", "turns")}` : plural(series.length, "turn", "turns");
     const summary = el("span", "", !turns ? "Tokens per turn" // the field below says "no turns yet"
@@ -1165,12 +1188,7 @@
       r.style.setProperty("--kx-band", `var(--kx-${z}-fill)`);
       svg.appendChild(r);
     }
-    for (const g of LIMITS) svg.appendChild(svgEl("line", { class: "kx-limit", x1: 0, x2: D_W, y1: num(y(g)), y2: num(y(g)), "vector-effect": "non-scaling-stroke" }));
-    const points = series.map((v, i) => `${num(x(i))},${num(y(v))}`).join(" L");
-    svg.appendChild(svgEl("path", { class: "kx-area", d: `M0,${D_H} L${points} L${D_W},${D_H} Z` }));
-    svg.appendChild(svgEl("path", { class: "kx-line", d: `M${points}`, "vector-effect": "non-scaling-stroke" }));
-    for (const i of dips) svg.appendChild(svgEl("line", { class: "kx-dip", "data-turn": first + i, x1: num(x(i)), x2: num(x(i)), y1: 0, y2: D_H, "vector-effect": "non-scaling-stroke" }));
-    for (const c of compactions) svg.appendChild(svgEl("line", { class: "kx-compact", "data-turn": first + c.at, x1: num(x(c.at)), x2: num(x(c.at)), y1: 0, y2: D_H, "vector-effect": "non-scaling-stroke" }));
+    drawCurve(svg, { series, dips, compactions, x, y, w: D_W, h: D_H, turn: (i) => first + i });
     field.appendChild(svg);
     // the axis labels: the limits and the top of the scale; when the scale runs far above 300K the limits sit
     // close together, so only the highest (red's) is labelled, and they never overlap. The top is at least 300K,
@@ -1220,12 +1238,9 @@
     if (largest) {
       ofield = el("div", "kx-d-ofield");
       ofield.dataset.testid = "detail-output";
-      const gap = series.length <= 60 ? slot * 0.2 : 0;
-      const bar = (o, v) => (v > 0 ? `M${num((o + offset) * slot)},${D_OUT_H} h${num(slot - gap)} v${num(-(v / largest) * D_OUT_TOP)} h${num(gap - slot)} Z` : "");
       const bars = svgEl("svg", { class: "kx-d-obars", viewBox: `0 0 ${D_W} ${D_OUT_H}`, preserveAspectRatio: "none", role: "img", "data-bars": output.length,
         "aria-label": `Output tokens per turn, of it thinking; largest ${tokensText(largest)}` });
-      bars.appendChild(svgEl("path", { class: "kx-out-all", d: output.map((v, o) => bar(o, v)).join(" ") || "M0,0" }));
-      bars.appendChild(svgEl("path", { class: "kx-out-think", d: output.map((_, o) => bar(o, thinkingAt(o))).join(" ") || "M0,0" }));
+      drawOutput(bars, { output, thinking, top: largest, offset, slot, base: D_OUT_H, height: D_OUT_TOP });
       ofield.appendChild(bars);
       const axis = el("span", "kx-d-axis", tokensText(largest));
       axis.setAttribute("aria-hidden", "true");
@@ -1413,13 +1428,11 @@
       t.appendChild(body);
       return t;
     };
-    const ttl = TTL_TEXT[session.cacheTtlMs];
+    const pill = ttlPill(session);
     const ttlEl = el("span");
-    if (ttl) {
-      const pill = el("span", "kx-ttl", ttl);
-      pill.dataset.ttl = ttl;
+    if (pill) {
       ttlEl.appendChild(pill);
-      ttlEl.appendChild(document.createTextNode(ttl === "1h" ? " 1-hour" : " 5-minute"));
+      ttlEl.appendChild(document.createTextNode(` ${TTL_WORDS[pill.dataset.ttl]}`));
     } else ttlEl.textContent = "unknown";
     const now = session.cacheState === "cold" ? `cold since ${clockText(session.coldAt)}`
       : session.cacheState === "warm" ? `warm · ${leftText(session.coldInMs)} left (cold at ${clockText(session.coldAt)})` : "unknown";
@@ -1620,13 +1633,9 @@
     root.dataset.session = session.sessionId;
     const top = el("div", "kx-d-top");
     top.appendChild(backButton());
-    if (session.busy) {
-      const badge = busyBadge();
-      badge.dataset.testid = "detail-busy";
-      top.appendChild(badge);
-    } else if (session.waiting) {
-      const badge = waitingBadge();
-      badge.dataset.testid = "detail-waiting";
+    const { dot, badge } = dotAndBadge(session);
+    if (badge) {
+      badge.dataset.testid = session.busy ? "detail-busy" : "detail-waiting";
       top.appendChild(badge);
     }
     const esc = el("span", "kx-d-esc", "Esc");
@@ -1635,8 +1644,6 @@
     top.appendChild(esc);
     root.appendChild(top);
     const head = el("div", "kx-d-head");
-    const dot = el("span", "kx-dot" + (session.busy ? " kx-pulse" : ""));
-    dot.title = `Zone: ${ZONE_NAME[session.zone] || "unknown"}`;
     head.appendChild(dot);
     const h = titled(el("h1"), session);
     h.dataset.testid = "detail-title";
@@ -1644,7 +1651,7 @@
     root.appendChild(head);
     const meta = el("div", "kx-d-meta");
     meta.dataset.testid = "detail-meta";
-    const add = (name, text) => { const s = el("span"); s.appendChild(icon(name)); s.appendChild(document.createTextNode(text)); meta.appendChild(s); return s; };
+    const add = (name, text) => meta.appendChild(metaItem(name, text));
     add("folder", session.project || "unknown").title = session.cwd || "";
     if (session.turns) { // before the first turn the context box and the curve say "no turns yet"
       add("cpu", modelEffort(session));
