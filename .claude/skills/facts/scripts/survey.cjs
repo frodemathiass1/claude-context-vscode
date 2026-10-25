@@ -1,4 +1,4 @@
-// survey.cjs — what Claude Code writes on this machine today, against what core.cjs reads. Prints field names,
+// survey.cjs — what Claude Code writes on this machine today, against what src/core.cjs reads. Prints field names,
 // the values of enumerations (status, type, model, trigger) and counts only: never a cwd, title, message or
 // other content, so the output can go into NOTES.md as it is.
 // Usage: node .claude/skills/facts/scripts/survey.cjs [claudeDir] [--days 7] [--max 40]
@@ -7,7 +7,7 @@
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const core = require(path.resolve(__dirname, "../../../../core.cjs"));
+const core = require(path.resolve(__dirname, "../../../../src/core.cjs"));
 
 const args = process.argv.slice(2);
 const opt = (name, fallback) => { const i = args.indexOf(name); return i >= 0 ? Number(args[i + 1]) : fallback; };

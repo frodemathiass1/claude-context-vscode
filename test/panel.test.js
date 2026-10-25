@@ -1,11 +1,11 @@
-// test/panel.test.js — the webview (panel.html), run in jsdom as a host loads it: a stand-in for acquireVsCodeApi
-// records what the panel posts and keeps its state, and the host's messages come as `message` events with lists
-// from the real buildSessions, so the panel is fed what the hosts send it.
+// test/panel.test.js — the webview (src/panel.html), run in jsdom as a host loads it: a stand-in for acquireVsCodeApi
+// records what the panel posts and keeps its state, and the host's messages come as `message` events with lists from
+// the real buildSessions, so the panel is fed what the hosts send it.
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { createRequire } from "node:module";
 import path from "node:path";
 const require = createRequire(import.meta.url);
-const K = require("../core.cjs");
+const K = require("../src/core.cjs");
 const { JSDOM, VirtualConsole } = require("jsdom");
 
 const NOW = Date.parse("2026-10-24T12:00:00.000Z");

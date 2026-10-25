@@ -76,7 +76,7 @@ For regular use, clone the repo once and start the server from the clone:
 ```
 git clone https://github.com/frodemathiass1/claude-context-vscode
 cd claude-context-vscode
-node server.cjs
+node src/server.cjs
 ```
 
 Either way it prints a URL and opens it in the default browser. The server runs as long as its terminal does;
@@ -90,7 +90,7 @@ To uninstall, delete the clone: nothing else is installed.
 The flags, the same for both:
 
 ```
-node server.cjs [folder…] [--port <n>] [--claude-dir <dir>] [--no-open]
+node src/server.cjs [folder…] [--port <n>] [--claude-dir <dir>] [--no-open]
 ```
 
 - **folder…**: the folders that make up "This workspace", as the open folders do in VS Code. With none, the
@@ -324,9 +324,10 @@ cannot find shows as "unknown"; nothing throws.
 
 ## Development
 
-No dependencies, no build step: `core.cjs` (the pure functions, and the reader and watcher of Claude Code's
-files), `panel.html` (the panel), and its two hosts, `extension.js` (VS Code) and `server.cjs` (the browser, with
-Node's own `http`; it also holds the browser stand-in for the webview that the demo uses).
+No dependencies, no build step. The code is in `src/`: `core.cjs` (the pure functions, and the reader and watcher
+of Claude Code's files), `panel.html` (the panel), and its two hosts, `extension.js` (VS Code) and `server.cjs`
+(the browser, with Node's own `http`; it also holds the browser stand-in for the webview that the demo uses). The
+root holds the docs and `package.json`, so VS Code installs the extension from the repo folder.
 
 ```
 npm install

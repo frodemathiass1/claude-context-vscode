@@ -1,4 +1,4 @@
-// test/server.test.js — the browser host (server.cjs): the panel served on 127.0.0.1 behind a token, the messages
+// test/server.test.js — the browser host (src/server.cjs): the panel served on 127.0.0.1 behind a token, the messages
 // over POST /message and Server-Sent Events, the scope, and the browser stand-in it shares with scripts/demo.cjs.
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, cpSync } from "node:fs";
@@ -9,8 +9,8 @@ import crypto from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 const require = createRequire(import.meta.url);
-const K = require("../core.cjs");
-const S = require("../server.cjs");
+const K = require("../src/core.cjs");
+const S = require("../src/server.cjs");
 
 const FIX = fileURLToPath(new URL("./fixtures/", import.meta.url));
 // resolved, so the registry's cwd and the folder given compare as native paths on Windows too

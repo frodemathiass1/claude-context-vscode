@@ -1,6 +1,6 @@
-// test/extension.test.js — the VS Code host (extension.js), with a stand-in for the `vscode` module, which only the
-// extension host has: the messages it answers, and how it follows the workspace folders, the setting and the view.
-// The reader and the watcher are the real ones from core.cjs, on a Claude folder made from the fixtures.
+// test/extension.test.js — the VS Code host (src/extension.js), with a stand-in for the `vscode` module, which only
+// the extension host has: the messages it answers, and how it follows the workspace folders, the setting and the
+// view. The reader and the watcher are the real ones from core.cjs, on a Claude folder made from the fixtures.
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, cpSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -9,9 +9,9 @@ import Module from "node:module";
 import os from "node:os";
 import path from "node:path";
 const require = createRequire(import.meta.url);
-const K = require("../core.cjs");
+const K = require("../src/core.cjs");
 
-const EXT = fileURLToPath(new URL("../extension.js", import.meta.url));
+const EXT = fileURLToPath(new URL("../src/extension.js", import.meta.url));
 const FIX = fileURLToPath(new URL("./fixtures/", import.meta.url));
 // resolved, so the registry's cwd and the workspace folder compare as native paths on Windows too
 const MINE = path.resolve("/Users/me/Dev/my-project"), OTHER = path.resolve("/Users/me/Dev/other-project");

@@ -14,9 +14,9 @@
     "vscode": "^1.131.0"
   },
   "categories": ["Other"],
-  "main": "extension.js",
+  "main": "src/extension.js",
   "bin": {
-    "claude-context": "server.cjs"
+    "claude-context": "src/server.cjs"
   },
   "activationEvents": ["onView:claudeContext.panel"],
   "contributes": {
