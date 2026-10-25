@@ -865,6 +865,15 @@
     return bar;
   }
 
+  /** A badge: its icon and text, with an extra class ("kx-wait") and a tooltip when given; one markup for every badge. */
+  function badgeEl(name, text, { className = "", title = "" } = {}) {
+    const span = el("span", "kx-badge" + (className ? ` ${className}` : ""));
+    if (title) span.title = title;
+    span.appendChild(icon(name));
+    span.appendChild(document.createTextNode(text));
+    return span;
+  }
+
   /**
    * The zone dot (pulsing while busy) and the badge for the row's title line and the detail's head: "busy" while the
    * session works, "waiting" while it waits for the user (a permission prompt, a question, a dialog), else none.
@@ -872,12 +881,9 @@
   function dotAndBadge(session) {
     const dot = el("span", "kx-dot" + (session.busy ? " kx-pulse" : ""));
     dot.title = `Zone: ${ZONE_NAME[session.zone] || "unknown"}`;
-    if (!session.busy && !session.waiting) return { dot, badge: null };
-    const badge = el("span", "kx-badge" + (session.busy ? "" : " kx-wait"));
-    if (!session.busy) badge.title = "Waiting for you: a permission prompt, a question or a dialog in this session";
-    badge.appendChild(icon(session.busy ? "zap" : "bell"));
-    badge.appendChild(document.createTextNode(session.busy ? "busy" : "waiting"));
-    return { dot, badge };
+    if (session.busy) return { dot, badge: badgeEl("zap", "busy") };
+    if (session.waiting) return { dot, badge: badgeEl("bell", "waiting", { className: "kx-wait", title: "Waiting for you: a permission prompt, a question or a dialog in this session" }) };
+    return { dot, badge: null };
   }
 
   /** An item of a meta line, the row's or the detail's: an icon and its text. */
@@ -1543,7 +1549,7 @@
       tr.dataset.status = a.status;
       const status = el("td", "kx-d-a-st");
       status.dataset.status = a.status;
-      if (a.status === "running") { const badge = el("span", "kx-badge"); badge.appendChild(icon("zap")); badge.appendChild(document.createTextNode("running")); status.appendChild(badge); }
+      if (a.status === "running") status.appendChild(badgeEl("zap", "running"));
       else status.textContent = a.status;
       status.title = AGENT_STATUS[a.status] || a.status;
       tr.appendChild(status);
