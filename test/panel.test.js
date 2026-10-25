@@ -25,11 +25,12 @@ afterEach(() => {
 
 /**
  * panel.html loaded as extension.js loads it (the CSP, the nonce), with `state` as the webview state it starts
- * with. The page's timers are the test's, so vi.useFakeTimers() moves them.
+ * with. The page's timers are the test's, so vi.useFakeTimers() moves them. jsdom has no layout and no ResizeObserver:
+ * the page gets a stand-in whose callbacks `resize()` calls, as a browser does when an observed element changes size.
  */
 function panel({ state = null } = {}) {
   const html = PANEL.replace("<!-- csp -->", `<meta http-equiv="Content-Security-Policy" content="${K.pageCsp("n")}">`).replace(/\{\{nonce\}\}/g, "n");
-  const posted = [], errors = [];
+  const posted = [], errors = [], resizers = [];
   let saved = state;
   const virtualConsole = new VirtualConsole();
   virtualConsole.on("jsdomError", (e) => errors.push(e.message));
@@ -39,6 +40,7 @@ function panel({ state = null } = {}) {
     beforeParse(w) {
       w.acquireVsCodeApi = () => ({ getState: () => saved, setState: (s) => { saved = s; }, postMessage: (m) => posted.push(m) });
       for (const name of ["setTimeout", "clearTimeout"]) w[name] = (...a) => globalThis[name](...a);
+      w.ResizeObserver = class { constructor(cb) { resizers.push(cb); } observe() {} disconnect() {} };
     },
   });
   const doc = window.document;
@@ -51,6 +53,7 @@ function panel({ state = null } = {}) {
     row: (id) => doc.querySelector(`[data-testid="list"] .kx-session[data-session="${id}"]`),
     fold: (group) => doc.querySelector(`[data-testid="fold"][data-group="${group}"]`),
     key: (target, key) => target.dispatchEvent(new window.KeyboardEvent("keydown", { key, bubbles: true })),
+    resize: () => resizers.forEach((cb) => cb([])),
   };
   opened.push(p);
   return p;
@@ -224,6 +227,69 @@ describe("panel: the zone scale", () => {
     expect(["green", "orange"].map((z) => p.$(`zone-${z}`).textContent)).toEqual(["1", "0"]);
     p.send(list([mine, other], { workspaceFolders: [MINE], all: true }));
     expect(["green", "orange"].map((z) => p.$(`zone-${z}`).textContent)).toEqual(["1", "1"]);
+  });
+
+  it("takes the limits from the core's zones: other limits move the bands and the rows' marks", () => {
+    const p = panel();
+    const ticks = () => [...p.row("a").querySelectorAll(".kx-tick")].map((t) => t.style.getPropertyValue("--t"));
+    p.send(list([session("a")]));
+    expect(ticks()).toEqual(["50", "62.5", "75"]);
+    const built = list([session("a")]);
+    const bounds = [[0, 80000], [80000, 120000], [120000, 160000], [160000, null]];
+    p.send({ ...built, zones: built.zones.map((z, i) => ({ ...z, from: bounds[i][0], to: bounds[i][1] })) });
+    expect(["green", "yellow", "orange", "red"].map((z) => p.$(`band-${z}`).style.getPropertyValue("--w"))).toEqual(["40", "20", "20", "20"]);
+    expect(ticks()).toEqual(["40", "60", "80"]);
+  });
+
+  it("before any zones, draws no limits and names none, in the rows and the detail view", () => {
+    const p = panel();
+    p.send({ ...list([session("a")]), zones: undefined });
+    expect(p.$$("band-green")).toHaveLength(0);
+    expect(p.row("a").querySelectorAll(".kx-tick")).toHaveLength(0);
+    expect(p.row("a").querySelector('[data-testid="bar"]').title).not.toMatch(/marks at/);
+    p.row("a").click();
+    expect(p.$("detail").innerHTML).not.toMatch(/NaN|undefined/);
+    expect(p.$("detail").textContent).not.toMatch(/Zones warn about quality at/);
+    expect(p.errors).toEqual([]);
+  });
+
+  it("ignores zones out of order or beyond the scale", () => {
+    const p = panel();
+    p.send(list([session("a")]));
+    const built = list([session("a")]);
+    p.send({ ...built, zones: [built.zones[1], built.zones[0], ...built.zones.slice(2)] });
+    p.send({ ...built, zones: built.zones.map((z, i) => (i === 3 ? { ...z, from: 250000 } : z)) });
+    expect(p.$("band-red").style.getPropertyValue("--w")).toBe("25");
+  });
+
+  it("builds the bands once for the same zones, so a band's tooltip survives the next list; a list without zones keeps them", () => {
+    const p = panel();
+    p.send(list([session("a")]));
+    const band = p.$("band-yellow");
+    p.send(list([session("a", { tokens: 120000 })]));
+    expect(p.$("band-yellow")).toBe(band);
+    p.send({ ...list([session("a")]), zones: undefined });
+    expect(p.$("band-yellow")).toBe(band);
+    expect(p.row("a").querySelectorAll(".kx-tick")).toHaveLength(3);
+  });
+
+  it("shows a band's long range when it fits, else the short one, else none, never a clipped label", () => {
+    const p = panel();
+    p.send(list([session("a")]));
+    // jsdom has no layout: each band is given a width, and its content the width of the text it shows
+    const widths = { green: [160, 80, 40], yellow: [20, 68, 34], orange: [20, 68, 24] };
+    for (const [z, [client, long, short]] of Object.entries(widths)) {
+      const band = p.$(`band-${z}`);
+      Object.defineProperty(band, "clientWidth", { value: client, configurable: true });
+      Object.defineProperty(band, "scrollWidth", { get: () => ({ long, short, none: 0 })[band.dataset.fit] });
+    }
+    p.resize();
+    expect(["green", "yellow", "orange"].map((z) => p.$(`band-${z}`).dataset.fit)).toEqual(["long", "none", "none"]);
+    Object.defineProperty(p.$("band-yellow"), "clientWidth", { value: 40 });
+    p.send(list([session("a")])); // a list does not measure again: each try forces a layout
+    expect(p.$("band-yellow").dataset.fit).toBe("none");
+    p.resize();
+    expect(p.$("band-yellow").dataset.fit).toBe("short");
   });
 });
 

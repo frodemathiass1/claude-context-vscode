@@ -174,9 +174,10 @@ At the right end, the compact switch and the refresh button: refresh reads the r
 again from the first byte, and says "updated 12:04:31" when done. Click it when you doubt what the list shows,
 for example right after a process was ended.
 
-Across the bottom of the header, the zone scale: a strip with the row bar's 0–200K, each zone a band at its true
-width with its range written inside ("below 100K", "100K–125K" …; "<100K", "100K+" … when the panel is narrow),
-so the limits are in view before any row. Point at a band for what to do at the next phase boundary in that zone.
+Across the bottom of the header, the zone scale: a strip as wide as the header that stands for 0–200K, the same
+scale as the row bars, each zone a band at its true width with its range written inside ("below 100K",
+"100K–125K" …; "<100K", "100K+" … when a band is too narrow, and no text when even that does not fit), so the
+limits are in view before any row. Point at a band for what to do at the next phase boundary in that zone.
 
 ### Groups
 
