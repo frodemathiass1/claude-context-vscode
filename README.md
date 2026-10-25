@@ -269,8 +269,8 @@ The detail view opens in the list's place:
   subagent's report, counted under "Agent" in where the context went. "Running" means Claude Code has not
   recorded its end and it was written since the session's process started; "finished", that the end is
   recorded; "unknown", neither (a subagent cut off with an earlier process, as in a resumed session). A
-  background subagent that wakes again after its end stays "finished" for those turns: Claude Code does not take
-  its end back.
+  background subagent that wakes again after its end stays "finished" for those turns, since its first end is
+  already on record.
 
 The list carries the last 200 turns of each session; the detail view asks the host for all of them, and says
 "last 200 of 233 turns" only if the host cannot answer. The view follows the live list, says so if the
