@@ -257,6 +257,60 @@ describe("panel: lists update in place", () => {
     expect(records.flatMap((r) => [...r.addedNodes])).toEqual([]);
   });
 
+  it("an unchanged row is not touched, a changed one is patched alone, and its since text still moves", () => {
+    const p = panel();
+    const at = (tokens, ago) => [session("a", { tokens, ago }), session("b", { ago: 2 * MIN }), session("c", { ago: 3 * MIN })];
+    p.send(list(at(50000, MIN)));
+    const rows = ["a", "b", "c"].map((id) => p.row(id));
+    const seen = new p.window.MutationObserver(() => {});
+    seen.observe(p.$("list"), { subtree: true, childList: true, attributes: true, characterData: true });
+    // the rows the panel builds: every element it makes, the rows among them
+    const made = [], create = p.doc.createElement.bind(p.doc);
+    p.doc.createElement = (...a) => { const e = create(...a); made.push(e); return e; };
+    const built = () => made.splice(0).filter((e) => e.classList.contains("kx-session")).length;
+    p.send(list(at(50000, MIN)));
+    expect(built()).toBe(0);
+    expect(seen.takeRecords()).toEqual([]);
+    expect(["a", "b", "c"].map((id) => p.row(id))).toEqual(rows);
+    expect(p.row("b").querySelector('[data-testid="tokens"]').textContent).toBe("50K"); // the live row, not a placeholder
+    p.send(list(at(120000, MIN)));
+    expect(built()).toBe(1);
+    const touched = seen.takeRecords().map((r) => (r.target.nodeType === 1 ? r.target : r.target.parentElement).closest(".kx-session")?.dataset.session);
+    expect(touched.length).toBeGreaterThan(0);
+    expect(new Set(touched)).toEqual(new Set(["a"]));
+    expect(p.row("a").querySelector('[data-testid="tokens"]').textContent).toBe("120K");
+    const since = () => [...p.row("a").querySelectorAll(".kx-meta span")].map((s) => s.textContent).find((t) => / ago$/.test(t));
+    expect(since()).toBe("1 min ago");
+    p.send(list(at(120000, 2 * MIN)));
+    expect(since()).toBe("2 min ago");
+    expect(p.row("a")).toBe(rows[0]);
+  });
+
+  it("two processes of one session keep two full rows through an identical list", () => {
+    const one = session("a"), two = { ...session("a"), registry: { ...session("a").registry, pid: 2000 } };
+    const p = panel();
+    p.send(list([one, two, session("b", { ago: 2 * MIN })]));
+    p.send(list([one, two, session("b", { ago: 2 * MIN })]));
+    expect(p.rows()).toEqual(["a", "a", "b"]);
+    for (const row of p.doc.querySelectorAll('[data-testid="list"] .kx-session')) {
+      expect(row.hasAttribute("data-kept")).toBe(false);
+      expect(row.querySelector('[data-testid="tokens"]')).not.toBeNull();
+    }
+  });
+
+  it("the scope line and the model chips keep their text and titles through an identical list", () => {
+    const p = panel();
+    const sessions = [session("a"), session("s", { model: "claude-sonnet-5-5" }), session("o", { cwd: OTHER })];
+    p.send(list(sessions, { workspaceFolders: [MINE] }));
+    const parts = [p.$("scope-name").firstChild, p.$("scope-more").firstChild, ...p.$$("filter-model").map((c) => c.firstChild)];
+    const seen = new p.window.MutationObserver(() => {});
+    for (const e of [p.$("scope-name"), p.$("scope-more"), p.$("models")]) seen.observe(e, { subtree: true, childList: true, characterData: true, attributeFilter: ["title"] });
+    p.send(list(sessions, { workspaceFolders: [MINE] }));
+    expect(seen.takeRecords()).toEqual([]);
+    expect([p.$("scope-name").firstChild, p.$("scope-more").firstChild, ...p.$$("filter-model").map((c) => c.firstChild)]).toEqual(parts);
+    expect(p.$("scope-name").title).toBe("The sessions started inside the workspace folder my-project");
+  });
+
   it("a project named like a group gets ids and keys of its own", () => {
     const p = panel();
     const one = session("a", { cwd: path.join(path.sep, "dev", "busy") }), two = session("b", { status: "busy", cwd: path.join(path.sep, "dev", "project") });
@@ -553,6 +607,106 @@ describe("panel: the detail view", () => {
     expect(axis()).toEqual({ narrow: "1", wide: "2", labels: ["150K", "200K", "900K"], low: ["150K"], shown: ["200K", "900K"] });
     p.send(list([session("a", { series: [30000, 900000, 2000000] })]));
     expect(axis()).toMatchObject({ narrow: "1", wide: "1", low: ["150K"], shown: ["200K", "2.0M"] });
+  });
+
+  it("leaves the list alone while it is open, and the way back shows the last list", () => {
+    const p = panel();
+    p.send(list([session("a"), session("b", { ago: 2 * MIN })]));
+    p.row("a").click();
+    const seen = new p.window.MutationObserver(() => {});
+    seen.observe(p.$("list"), { subtree: true, childList: true, attributes: true, characterData: true });
+    p.send(list([session("a", { tokens: 120000 }), session("c", { ago: 3 * MIN })]));
+    expect(seen.takeRecords()).toEqual([]);
+    p.$("detail-back").click();
+    expect(p.rows()).toEqual(["a", "c"]);
+    expect(p.row("a").querySelector('[data-testid="tokens"]').textContent).toBe("120K");
+    expect(p.doc.activeElement).toBe(p.row("a"));
+  });
+
+  it("on the way back a moved row's bar is set to its new width once, not slid from the width it had", () => {
+    const p = panel();
+    p.send(list([session("a"), session("b", { tokens: 50000, ago: 2 * MIN })]));
+    p.row("a").click();
+    p.send(list([session("a"), session("b", { tokens: 120000, status: "busy" })])); // b moves to Working now
+    const fill = p.row("b").querySelector(".kx-fill");
+    const seen = new p.window.MutationObserver(() => {});
+    seen.observe(fill, { attributes: true, attributeFilter: ["style"] });
+    p.$("detail-back").click();
+    expect(p.row("b").closest(".kx-rows").id).toBe("kx-rows-busy");
+    expect(seen.takeRecords()).toHaveLength(1);
+    expect(fill.style.getPropertyValue("--p")).toBe("40");
+  });
+
+  it("says the session is gone at once, also after an answer has come", () => {
+    const one = session("a");
+    const p = panel();
+    p.send(list([one, session("b")]));
+    p.row("a").click();
+    p.send({ type: "detail", sessionId: "a", detail: { turns: 3, ...K.seriesFor(one.transcript) } });
+    p.send(list([session("b")]));
+    expect(p.$("detail-gone").textContent).toBe("That session is gone from the registry.");
+  });
+
+  it("draws once per list, from its answer, and keeps its elements, so their tooltips stay open", () => {
+    const one = session("a", { tokens: 90000, turns: 5 }), two = session("a", { tokens: 120000, turns: 6 });
+    const answer = (s) => ({ type: "detail", sessionId: "a", detail: { turns: s.transcript.turns, ...K.seriesFor(s.transcript) } });
+    const p = panel();
+    p.send(list([one]));
+    p.row("a").click();
+    p.send(answer(one));
+    const parts = ["detail-title", "detail-meta", "detail-curve", "detail-output", "detail-turn", "detail-facts", "copy-pid"].map((id) => p.$(id));
+    const folder = p.$("detail-meta").firstChild;
+    const seen = new p.window.MutationObserver(() => {});
+    seen.observe(p.$("detail"), { subtree: true, childList: true, attributes: true, characterData: true });
+    p.send(list([two]));
+    expect(seen.takeRecords()).toEqual([]); // the answer draws it, not the list
+    expect(p.posted.at(-1)).toEqual({ type: "detail", sessionId: "a" });
+    p.send(answer(two));
+    expect(["detail-title", "detail-meta", "detail-curve", "detail-output", "detail-turn", "detail-facts", "copy-pid"].map((id) => p.$(id))).toEqual(parts);
+    expect(p.$("detail-meta").firstChild).toBe(folder);
+    expect(folder.title).toBe(MINE);
+    expect(p.$("detail-tokens").textContent).toBe("120K");
+    expect(p.$("detail-curve").querySelector("svg").getAttribute("data-points")).toBe("6");
+    expect(p.$("detail-turn").max).toBe("6");
+  });
+
+  it("the pointer and the range read the curve of the last draw, and the shown turn survives a draw", () => {
+    const one = session("a", { series: [20000, 50000, 45000] }), two = session("a", { series: [20000, 50000, 45000, 80000] });
+    const p = panel();
+    p.send(list([one]));
+    p.row("a").click();
+    const field = p.$("detail-curve");
+    field.getBoundingClientRect = () => ({ left: 0, width: 100 });
+    field.dispatchEvent(new p.window.MouseEvent("mousemove", { clientX: 50, bubbles: true }));
+    expect(p.$("detail-tip").textContent).toMatch(/^turn 2 · 50K · \+30K from turn 1/);
+    expect(field.classList.contains("kx-d-hover")).toBe(true);
+    p.send(list([two])); // no answer yet for this session: the list draws it
+    expect(p.$("detail-curve")).toBe(field);
+    expect(field.classList.contains("kx-d-hover")).toBe(true);
+    expect(p.$("detail-tip").textContent).toMatch(/^turn 2 · 50K/);
+    expect(p.$("detail-turn-value").textContent).toBe("2 / 4");
+    const range = p.$("detail-turn");
+    range.value = "4";
+    range.dispatchEvent(new p.window.Event("input"));
+    expect(p.$("detail-tip").textContent).toMatch(/^turn 4 · 80K · \+35K from turn 3/);
+    field.dispatchEvent(new p.window.MouseEvent("mouseleave"));
+    expect(field.classList.contains("kx-d-hover")).toBe(false);
+  });
+
+  it("a copy button gives its receipt, and keeps it through a draw", async () => {
+    const p = panel();
+    p.send(list([session("a")]));
+    p.row("a").click();
+    const button = p.$("copy-session");
+    expect(button.textContent).toBe("copy");
+    button.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const receipt = button.textContent;
+    expect(["copied", "copy failed"]).toContain(receipt);
+    p.send(list([session("a", { tokens: 60000 })]));
+    expect(p.$("copy-session")).toBe(button);
+    expect(button.textContent).toBe(receipt);
+    expect(button.getAttribute("aria-label")).toBe(`${receipt}: a`);
   });
 
   it("the range shows a turn, with its growth from the turn before", () => {

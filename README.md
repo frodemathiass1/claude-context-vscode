@@ -298,10 +298,12 @@ on Windows; `CLAUDE_CONFIG_DIR` moves it). The extension joins the two, parses o
 transcript on every change (`fs.watch` on the folders, debounced, plus a 30-second tick) and pushes the
 list to the webview; it reads again at once when a workspace folder is added or removed, and reads nothing while
 the panel is hidden (shown again, one read catches up). In the browser, `server.cjs` does the same and pushes the list to the page with
-Server-Sent Events; the page sends its messages back as `POST` requests. The webview updates the rows and the
-header's counters in place rather than rebuilding them, so a tooltip stays open while lists come in. While a session is open, the webview asks for every turn of it after each list (the
-message `{ type: "detail", sessionId }`), and the host answers from the state it already parsed, without
-reading the transcript again.
+Server-Sent Events; the page sends its messages back as `POST` requests. The webview updates the rows, the
+header's counters and the open session's view in place rather than rebuilding them, so a tooltip stays open while
+lists come in, and it builds again only the rows whose content changed. While a session is open, the list behind it
+rests, and the webview asks for every turn of the session after each list (the
+message `{ type: "detail", sessionId }`); the host answers from the state it already parsed, without
+reading the transcript again, and the view is drawn once, with that answer.
 
 The transcript format is Claude Code's internal one and can change between versions. A field the panel
 cannot find shows as "unknown"; nothing throws.
