@@ -23,14 +23,14 @@ Follow the rules and the workflow in `CLAUDE.md`. In order:
    If something is unclear, ask before writing code, not after.
 2. **Branch** from an up-to-date `main` (`git switch main && git pull`), named after the topic in a few
    kebab-case words. If the working tree is not clean, stop and ask.
-3. **Build.** Logic that can be computed goes in `src/core.cjs`; the panel (`src/panel.html`, `.css`, `.js`)
-   only draws. A fact about Claude Code's files that the issue relies on is checked on real files first
-   (`/facts` or a targeted look, names and counts only) and written in `NOTES.md`.
-4. **Test.** Every rule added to `src/core.cjs` gets a test in `test/core.test.js`, with a new hand-made
-   fixture when a transcript shape is new. `npm test` must be green; show the summary line.
-5. **Docs and version.** Update `README.md` for anything the user can see, `NOTES.md` for anything
-   measured, and bump the minor version in `package.json` when the change is visible.
+3. **Build** by the rules in `CLAUDE.md`. Done when every fact about Claude Code's files that the issue
+   relies on is measured on real files (`/facts` or a targeted look) and written in `NOTES.md`.
+4. **Test.** Done when every rule added to `src/core.cjs` has a test in `test/core.test.js` (a new hand-made
+   fixture for a new transcript shape) and `npm test` is green, its summary line shown.
+5. **Docs and version.** Done when `README.md` covers every change the user can see, `NOTES.md` every
+   measurement, and the minor version in `package.json` is bumped if the change is visible.
 6. **Hand over.** Commit as `#$ARGUMENTS <sentence>` with a prose body, push, and open the PR with
-   `Closes #$ARGUMENTS.` (formats in `CLAUDE.md`). Do not merge. End with what the owner should look at
-   in VS Code (**Developer: Reload Window** first): the rows, states and widths the change touches, in
-   light and dark theme.
+   `Closes #$ARGUMENTS.` (formats in `CLAUDE.md`). Do not merge.
+7. **Review.** A read-only subagent reviews the PR (`CLAUDE.md`, Workflow); fix what it confirms on the same
+   branch. End with its findings and what the owner should look at in VS Code (**Developer: Reload Window**
+   first): the rows, states and widths the change touches, in light and dark theme.
