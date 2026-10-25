@@ -7,8 +7,6 @@
 "use strict";
 
 const vscode = require("vscode");
-const fs = require("node:fs");
-const path = require("node:path");
 const core = require("./core.cjs");
 
 const VIEW_ID = "claudeContext.panel";
@@ -49,7 +47,7 @@ class ClaudeContextViewProvider {
     this.disposeView(); // a view resolved again: the listeners of the one before go
     this.view = view;
     view.webview.options = { enableScripts: true, localResourceRoots: [] };
-    view.webview.html = this.renderHtml();
+    view.webview.html = core.panelPage();
     this.listeners.push(
       view.webview.onDidReceiveMessage((msg) => this.onMessage(msg)),
       // hidden, the webview keeps its context (retainContextWhenHidden) but nothing is read for it; shown again,
@@ -72,35 +70,22 @@ class ClaudeContextViewProvider {
   }
 
   onMessage(msg) {
-    if (!msg || typeof msg !== "object") return;
-    if (msg.type === "ready") this.refresh();
-    if (msg.type === "refresh") this.refresh({ full: true }); // the panel's button: forget the parsed state, read everything again
-    if (msg.type === "scope") this.context.globalState.update(SCOPE_KEY, !!msg.all).then(() => this.refresh());
-    // the detail view asks for every turn of the open session after each list; the answer is the last read's
-    if (msg.type === "detail" && typeof msg.sessionId === "string" && this.view) {
-      this.view.webview.postMessage({ type: "detail", sessionId: msg.sessionId, detail: this.reader.detail(msg.sessionId) });
-    }
-  }
-
-  renderHtml() {
-    const nonce = core.randomNonce();
-    const csp = `<meta http-equiv="Content-Security-Policy" content="${core.pageCsp(nonce)}">`;
-    return fs.readFileSync(path.join(__dirname, "panel.html"), "utf8")
-      .replace("<!-- csp -->", csp)
-      .replace(/\{\{nonce\}\}/g, nonce);
+    core.answerPanel(msg, {
+      refresh: (full) => this.refresh({ full }),
+      keepScope: (all) => this.context.globalState.update(SCOPE_KEY, all),
+      reader: () => this.reader,
+      post: (m) => { if (this.view) this.view.webview.postMessage(m); },
+    });
   }
 
   refresh({ full = false } = {}) {
     if (!this.view || !this.view.visible) return; // hidden: the next show reads
     const all = !!this.context.globalState.get(SCOPE_KEY, false);
     const workspaceFolders = (vscode.workspace.workspaceFolders || []).map((f) => f.uri.fsPath);
-    // called from the watcher's timers too: an exception there would land in the extension host, so the
-    // panel keeps its last list instead and the error goes to the extension host log
-    let payload;
-    try { payload = this.reader.read({ workspaceFolders, all, full }); }
-    catch (e) { console.error("Claude Context: reading the sessions failed", e); return; }
-    this.watcher.watchAll(payload.projectFolders);
-    this.view.webview.postMessage({ type: "sessions", ...payload, full }); // full: the panel's refresh receipt keys on it
+    const list = core.readSessions(this.reader, { workspaceFolders, all, full });
+    if (!list) return;
+    this.watcher.watchAll(list.projectFolders);
+    this.view.webview.postMessage(list);
   }
 
   disposeView() {

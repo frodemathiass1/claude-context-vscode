@@ -49,6 +49,7 @@ function zone(tokens) {
 }
 
 const SESSION_ID = /^[\w-]+$/; // a UUID as Claude Code writes it; never a path
+const PANEL = path.join(__dirname, "panel.html"); // read for every page (panelPage), so a reload shows a change
 // a cold read of an invented 38 MB transcript as one buffer, one string and one split held about 83 MB at its end,
 // in 1 MB chunks 44 MB (the lines alone are 42), and took 50 ms instead of 39 with ASCII text, about the same where
 // decoding other characters dominates (Node 22, 2026-10-25, #68); the largest of 412 transcripts here is 34.7 MB
@@ -81,22 +82,21 @@ function readRegistry(dir, alive) {
 }
 
 /**
- * Whole lines from a transcript: from byte offset `from`, or the last `bytes` bytes with the
- * truncated first line dropped. `end` is the offset after the last newline, so a line still being
- * written is read again next time. A `from` beyond the end means the file was rewritten shorter:
- * it is read from the start and `restarted` is true, so the caller drops its previous state.
+ * Whole lines from a transcript, from byte offset `from` (the start of a line: 0, or the `end` of the read before).
+ * `end` is the offset after the last newline, so a line still being written is read again next time. A `from`
+ * beyond the end means the file was rewritten shorter: it is read from the start and `restarted` is true, so the
+ * caller drops its previous state.
  * The bytes are read in chunks of READ_CHUNK and split at the newline byte, which never occurs inside a UTF-8
  * character, so a character across two chunks is decoded whole; the part after a chunk's last newline is carried
  * into the next. Only the bytes readSync reports are used: a file cut shorter during the read ends it early.
  */
-function readTail(file, { from, bytes } = {}) {
+function readTail(file, { from = 0 } = {}) {
   let fd;
   try { fd = fs.openSync(file, "r"); } catch { return { lines: [], end: 0, missing: true, restarted: false }; }
   try {
     const size = fs.fstatSync(fd).size;
-    const restarted = Number.isFinite(from) && from > size;
-    const start = restarted ? 0 : Number.isFinite(from) ? from : Math.max(0, size - (bytes || 0));
-    let skip = start > 0 && !Number.isFinite(from); // the first line was cut mid-line
+    const restarted = from > size;
+    const start = restarted ? 0 : from;
     const buf = Buffer.allocUnsafe(Math.min(READ_CHUNK, size - start));
     const lines = [];
     let carry = []; // the bytes after the last newline so far, a line not yet ended
@@ -110,7 +110,7 @@ function readTail(file, { from, bytes } = {}) {
       if (first < 0) { carry.push(Buffer.from(chunk)); continue; } // copied: buf is read into again
       const last = chunk.lastIndexOf(0x0a);
       const head = Buffer.concat([...carry, chunk.subarray(0, first)]).toString("utf8");
-      if (skip) skip = false; else if (head) lines.push(head);
+      if (head) lines.push(head);
       if (last > first) for (const line of chunk.toString("utf8", first + 1, last).split("\n")) if (line) lines.push(line);
       carry = last + 1 < n ? [Buffer.from(chunk.subarray(last + 1))] : [];
       end = pos - (n - last - 1);
@@ -514,7 +514,7 @@ function buildSessions({ registry = [], transcripts = {}, subagents = {}, now, w
   const nowMs = typeof now === "number" ? now : Date.parse(now);
   const firstStart = firstStarts(registry);
   const sessions = registry
-    .filter((r) => all || workspaceFolders.length === 0 || workspaceFolders.some((f) => inFolder(r.cwd, f)))
+    .filter((r) => inScope(r.cwd, { workspaceFolders, all }))
     .map((r) => {
       const t = transcripts[r.sessionId] || {};
       const tokens = numOrNull(t.tokens);
@@ -572,6 +572,15 @@ function buildSessions({ registry = [], transcripts = {}, subagents = {}, now, w
 }
 
 /**
+ * True when a session in `cwd` is in the scope: with `all`, or without workspace folders (a window with no folder
+ * open), every session; else one in or below a workspace folder (inFolder). The registry alone decides it, so a
+ * read knows which transcripts to read before it builds the list.
+ */
+function inScope(cwd, { workspaceFolders = [], all = false, platform = process.platform } = {}) {
+  return all || workspaceFolders.length === 0 || workspaceFolders.some((f) => inFolder(cwd, f, platform));
+}
+
+/**
  * True when `cwd` is `folder` or below it. Both are compared with `/` as the separator and without a
  * trailing one; on Windows also case-insensitively (VS Code gives `c:\…` where the registry can have `C:\…`).
  */
@@ -620,6 +629,50 @@ function randomNonce() {
 }
 
 /**
+ * The panel's page, one copy for both hosts, the demo and the panel's tests: panel.html with the CSP for `nonce`
+ * (pageCsp, with `connect`) in place of `<!-- csp -->`, followed by `head` (the browser stand-in's theme style and
+ * script, see server.cjs), and the nonce set.
+ */
+function panelPage({ nonce = randomNonce(), connect = false, head = "" } = {}) {
+  const csp = `<meta http-equiv="Content-Security-Policy" content="${pageCsp(nonce, connect)}">`;
+  // a function, so a "$&" in the head is not a replacement pattern
+  return fs.readFileSync(PANEL, "utf8").replace("<!-- csp -->", () => (head ? `${csp}\n${head}` : csp)).replace(/\{\{nonce\}\}/g, nonce);
+}
+
+/**
+ * One read for a host, as the `sessions` message the panel gets, or null when it failed. `full` forgets the parsed
+ * state first (SessionReader.read) and is the refresh receipt the panel keys on.
+ */
+function readSessions(reader, { workspaceFolders, all, full = false }) {
+  // called from the watcher's timers too: an exception there would land in the extension host, or end the server,
+  // so the panel keeps its last list instead and the error goes to the host's log
+  let payload;
+  try { payload = reader.read({ workspaceFolders, all, full }); }
+  catch (e) { console.error("Claude Context: reading the sessions failed", e); return null; }
+  return { type: "sessions", ...payload, full };
+}
+
+/**
+ * The panel's messages (`ready`, `refresh`, `scope`, `detail`), answered the same way by both hosts. `host` gives what
+ * differs: `refresh(full)` reads and posts the list, `keepScope(all)` keeps the scope where the host keeps it (it may
+ * return a thenable, as VS Code's globalState.update does, and the list follows once it is kept), `reader()` is the
+ * reader of the page's scope and `post(msg)` sends a message to the page. Anything else is ignored.
+ */
+function answerPanel(msg, host) {
+  if (!msg || typeof msg !== "object") return;
+  if (msg.type === "ready") host.refresh(false);
+  if (msg.type === "refresh") host.refresh(true); // the panel's button: forget the parsed state, read everything again
+  if (msg.type === "scope") {
+    const kept = host.keepScope(!!msg.all);
+    if (kept && typeof kept.then === "function") kept.then(() => host.refresh(false)); else host.refresh(false);
+  }
+  // the detail view asks for every turn of the open session after each list; the answer is the last read's of its scope
+  if (msg.type === "detail" && typeof msg.sessionId === "string") {
+    host.post({ type: "detail", sessionId: msg.sessionId, detail: host.reader().detail(msg.sessionId) });
+  }
+}
+
+/**
  * Reads the registry and the transcripts incrementally: each transcript keeps its parsed state and byte
  * offset, so a refresh reads only the new bytes; `read({ full: true })` forgets that state first and reads
  * every transcript from its first byte (the panel's refresh button). The state is kept while the session is in
@@ -647,7 +700,10 @@ class SessionReader {
     if (registry.error) errors.push(registry.error);
     // only the sessions in scope are read: outside the window they would be filtered away anyway,
     // and their missing project folders are not this window's errors
-    const inScope = buildSessions({ registry: registry.sessions, now: Date.now(), workspaceFolders, all }).sessions;
+    // in the list's order before a transcript is read (busy, waiting, then pid, as buildSessions sorts), so the error
+    // lines keep their order whatever order readdir gives the registry files in
+    const rank = (r) => (r.status === "busy" ? 0 : r.status === "waiting" ? 1 : 2);
+    const scoped = registry.sessions.filter((r) => inScope(r.cwd, { workspaceFolders, all })).sort((a, b) => (rank(a) - rank(b)) || (a.pid - b.pid));
     const transcripts = {};
     const subagents = {};
     const projectFolders = new Set();
@@ -656,7 +712,7 @@ class SessionReader {
     const liveIds = new Set();
     this.files = new Map();
     this.agents = new Map();
-    for (const s of inScope) {
+    for (const s of scoped) {
       if (!s.cwd || !s.sessionId) continue;
       liveIds.add(s.sessionId);
       const slugFolder = path.join(this.projectsDir, projectSlug(s.cwd));
@@ -831,4 +887,5 @@ class SessionWatcher {
 }
 
 module.exports = { projectSlug, zone, tokensText, dips, readRegistry, readTail, parseTranscript, seriesFor, contextFacts, growthRows,
-  readSubagentMeta, subagentStatus, subagentRows, subagentSummary, buildSessions, inFolder, projectName, modelShort, claudeDir, pageCsp, randomNonce, SessionReader, SessionWatcher };
+  readSubagentMeta, subagentStatus, subagentRows, subagentSummary, buildSessions, inScope, inFolder, projectName, modelShort, claudeDir, pageCsp, randomNonce, panelPage, readSessions, answerPanel,
+  SessionReader, SessionWatcher };

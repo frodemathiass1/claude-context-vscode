@@ -11,7 +11,8 @@ server as it is.
 
 - `core.cjs`: pure functions and the two classes that touch the disk (`SessionReader`, `SessionWatcher`).
   No `vscode` import, so the tests can run all of it. Everything that can be computed belongs here, and what
-  both hosts need (the Claude folder, the panel's CSP), so there is one copy.
+  both hosts need (the Claude folder, the panel's page and CSP, the answers to its messages), so there is one
+  copy.
 - `extension.js`: the VS Code host. Reads the setting, owns the reader and the watcher (stopped while the view is
   hidden, replaced when the setting changes), and talks to the webview with `postMessage` only (`ready`,
   `refresh`, `scope`, `detail` in; `sessions`, `detail` out). Its tests hand it a stand-in for `vscode`.

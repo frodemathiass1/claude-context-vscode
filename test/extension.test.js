@@ -96,8 +96,9 @@ describe("extension.js: the messages", () => {
     const h = activate({ dir: twoProjects() });
     expect(h.view.webview.options).toEqual({ enableScripts: true, localResourceRoots: [] });
     const nonce = /script-src 'nonce-([^']+)'/.exec(h.view.webview.html)[1];
-    expect(h.view.webview.html).toContain(`<script nonce="${nonce}">`);
-    expect(h.view.webview.html).not.toContain("{{nonce}}");
+    expect(h.view.webview.html).toBe(K.panelPage({ nonce })); // the one builder, without the browser's connect-src and head
+    expect(h.view.webview.html).not.toContain("connect-src");
+    expect(h.view.webview.html).not.toContain("acquireVsCodeApi = ");
     expect(h.lists()).toHaveLength(1);
     expect(h.last()).toMatchObject({ all: false, full: false, count: 1, errors: [] });
     expect(h.ids()).toEqual(["aaaa-1"]);

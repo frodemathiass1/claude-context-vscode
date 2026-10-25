@@ -399,6 +399,70 @@ describe("inFolder", () => {
   });
 });
 
+describe("what both hosts share: the page and the messages", () => {
+  const meta = (nonce, connect) => `<meta http-equiv="Content-Security-Policy" content="${K.pageCsp(nonce, connect)}">`;
+
+  it("the page has the CSP for its nonce in place of the marker and the nonce set; the browser's has connect-src and its head after the CSP", () => {
+    const webview = K.panelPage({ nonce: "n" });
+    expect(webview).toContain(meta("n"));
+    expect(webview).toContain('<script nonce="n">');
+    for (const left of ["{{nonce}}", "<!-- csp -->", "connect-src"]) expect(webview).not.toContain(left);
+    const head = '<style nonce="n">html { color: red; }</style>';
+    const browser = K.panelPage({ nonce: "n", connect: true, head });
+    expect(browser).toContain(`${meta("n", true)}\n${head}`);
+    expect(browser).toContain("connect-src 'self';");
+    for (const left of ["{{nonce}}", "<!-- csp -->"]) expect(browser).not.toContain(left);
+    expect(webview).not.toContain(head);
+    expect(K.panelPage({ nonce: "n", head: "<script>x = \"$&$'\"</script>" })).toContain("x = \"$&$'\""); // not a replacement pattern
+    const nonce = /script-src 'nonce-([^']+)'/.exec(K.panelPage())[1]; // none given: a random one
+    expect(nonce).toHaveLength(24);
+    expect(K.panelPage()).not.toContain(nonce);
+  });
+
+  it("readSessions gives the read as the sessions message with full; a read that throws gives null and the log line", () => {
+    const payload = { sessions: [], count: 0, all: true, projectFolders: ["/p"] };
+    const calls = [];
+    const reader = { read: (o) => { calls.push(o); return payload; } };
+    expect(K.readSessions(reader, { workspaceFolders: ["/w"], all: true, full: true })).toEqual({ type: "sessions", ...payload, full: true });
+    expect(K.readSessions(reader, { workspaceFolders: [], all: false }).full).toBe(false);
+    expect(calls).toEqual([{ workspaceFolders: ["/w"], all: true, full: true }, { workspaceFolders: [], all: false, full: false }]);
+    const failure = new Error("EIO");
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      expect(K.readSessions({ read: () => { throw failure; } }, { workspaceFolders: [], all: false })).toBeNull();
+      expect(log).toHaveBeenCalledWith("Claude Context: reading the sessions failed", failure);
+    } finally { log.mockRestore(); }
+  });
+
+  /** A host for answerPanel that records what it is asked to do; `kept` is what keepScope returns. */
+  const host = (kept) => {
+    const calls = [];
+    return { calls, refresh: (full) => calls.push(["refresh", full]), keepScope: (all) => { calls.push(["keepScope", all]); return kept; },
+      reader: () => ({ detail: (id) => (id === "aaaa-1" ? { turns: 2 } : null) }), post: (msg) => calls.push(["post", msg]) };
+  };
+
+  it("answerPanel: ready reads, refresh reads in full, detail posts the reader's detail, and anything else does nothing", () => {
+    const h = host();
+    for (const msg of [{ type: "ready" }, { type: "refresh" }, { type: "detail", sessionId: "aaaa-1" }, { type: "detail", sessionId: "gone" },
+      null, "ready", { type: "detail", sessionId: 7 }, { type: "unknown" }]) K.answerPanel(msg, h);
+    expect(h.calls).toEqual([["refresh", false], ["refresh", true],
+      ["post", { type: "detail", sessionId: "aaaa-1", detail: { turns: 2 } }], ["post", { type: "detail", sessionId: "gone", detail: null }]]);
+  });
+
+  it("answerPanel: a scope is kept, then read; at once when the host keeps it at once, once it is kept when it returns a thenable", async () => {
+    const now = host();
+    K.answerPanel({ type: "scope", all: 1 }, now);
+    expect(now.calls).toEqual([["keepScope", true], ["refresh", false]]);
+    let keep;
+    const later = host(new Promise((resolve) => { keep = resolve; }));
+    K.answerPanel({ type: "scope" }, later);
+    await Promise.resolve();
+    expect(later.calls).toEqual([["keepScope", false]]);
+    keep();
+    await vi.waitFor(() => expect(later.calls).toEqual([["keepScope", false], ["refresh", false]]));
+  });
+});
+
 describe("projectName", () => {
   it("is the last part of the path, with forward slashes or backslashes", () => {
     expect(K.projectName("/Users/me/Dev/my-project")).toBe("my-project");
@@ -467,12 +531,13 @@ describe("readTail", () => {
   const file = `${FIX}transcripts/with-title.jsonl`;
   const whole = readFileSync(file, "utf8");
 
-  it("the last bytes give whole lines: a truncated first line is dropped", () => {
-    // 700 bytes from the end cut inside the a2 line, so only ai-title, u2 and a3 are whole
-    const h = K.readTail(file, { bytes: 700 });
-    expect(h.lines.length).toBe(3);
+  it("from the start of a line the lines after it are read, to the offset after the last newline; no offset is the start", () => {
+    const h = K.readTail(file, { from: Buffer.byteLength(whole.slice(0, whole.indexOf('{"type":"ai-title"'))) });
+    expect(h.lines.length).toBe(3); // ai-title, u2 and a3
     expect(h.lines[0].startsWith('{"type":"ai-title"')).toBe(true);
     expect(h.end).toBe(Buffer.byteLength(whole));
+    expect(K.readTail(file)).toEqual(K.readTail(file, { from: 0 }));
+    expect(K.readTail(file).lines.length).toBe(7);
   });
 
   it("from an offset the rest of the file is read, and a missing file gives no lines", () => {
@@ -480,7 +545,7 @@ describe("readTail", () => {
     const h = K.readTail(file, { from: Buffer.byteLength(whole.slice(0, first)) });
     expect(h.lines.length).toBe(6);
     expect(h.lines[0].startsWith('{"parentUuid":null')).toBe(true);
-    expect(K.readTail(`${FIX}transcripts/does-not-exist.jsonl`, { bytes: 100 })).toEqual({ lines: [], end: 0, missing: true, restarted: false });
+    expect(K.readTail(`${FIX}transcripts/does-not-exist.jsonl`, { from: 0 })).toEqual({ lines: [], end: 0, missing: true, restarted: false });
   });
 
   it("an offset past the end (the file was rewritten shorter) reads from the start and says so, so the previous state is dropped", () => {
@@ -512,23 +577,23 @@ describe("readTail", () => {
       const buf = Buffer.from(whole);
       expect(buf.indexOf("😀")).toBe(MB - 2);
       // the reading before #68: one buffer, one string, one split
-      const once = (start, cut) => {
+      const once = (start) => {
         const last = buf.lastIndexOf(0x0a);
-        let text = buf.subarray(start, last + 1).toString("utf8");
-        if (cut) text = text.slice(text.indexOf("\n") + 1);
+        const text = buf.subarray(start, last + 1).toString("utf8");
         return { lines: text.split("\n").filter(Boolean), end: last + 1, missing: false, restarted: false };
       };
       const fromStart = K.readTail(big, { from: 0 });
-      expect(fromStart).toEqual(once(0, false));
+      expect(fromStart).toEqual(once(0));
       expect(fromStart.lines.some((l) => l.includes("😀 across"))).toBe(true);
       expect(fromStart.end).toBe(buf.length - Buffer.byteLength('{"n":"half","te'));
       const offset = buf.indexOf("\n", MB - 1000) + 1;
-      expect(K.readTail(big, { from: offset })).toEqual(once(offset, false));
-      expect(K.readTail(big, { bytes: 3 * MB })).toEqual(once(buf.length - 3 * MB, true));
+      expect(K.readTail(big, { from: offset })).toEqual(once(offset));
+      const late = buf.indexOf("\n", buf.length - 3 * MB) + 1; // a line start before all three boundaries but the first chunk's
+      expect(K.readTail(big, { from: late })).toEqual(once(late));
       // readSync may give fewer bytes than asked: only those are used, and the next read starts after them
       const fs = require("node:fs"), readSync = fs.readSync;
       const short = vi.spyOn(fs, "readSync").mockImplementation((fd, b, off, len, at) => readSync(fd, b, off, Math.min(len, 1000), at));
-      try { expect(K.readTail(big, { from: 0 })).toEqual(once(0, false)); } finally { short.mockRestore(); }
+      try { expect(K.readTail(big, { from: 0 })).toEqual(once(0)); } finally { short.mockRestore(); }
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });
@@ -869,6 +934,26 @@ describe("buildSessions", () => {
     expect(r.sessions[0].sinceMs).toBe(0);
     expect(r).toMatchObject({ hiddenCount: 0, workspaceNames: [] });
   });
+
+  it("inScope gives the sessions of buildSessions' list: a workspace, All projects, no workspace folders, Windows paths", () => {
+    const windows = [reg(1, "root", "c:\\Develop\\my-project", "idle"), reg(2, "tree", "C:\\Develop\\my-project\\.claude\\worktrees\\x", "idle"),
+      reg(3, "slashes", "c:/Develop/my-project/sub", "idle"), reg(4, "elsewhere", "c:\\Develop\\other", "idle")];
+    const cases = [
+      [registry, { workspaceFolders: [MINE] }], [registry, { workspaceFolders: [MINE], all: true }], [registry, { workspaceFolders: [] }],
+      [registry, { workspaceFolders: [`${OTHER}/`, MINE] }], [registry, { workspaceFolders: ["/Users/me/Dev/my"] }],
+      [windows, { workspaceFolders: ["c:\\Develop\\my-project\\"] }], [windows, { workspaceFolders: ["c:\\Develop\\elsewhere"], all: true }],
+    ];
+    for (const [entries, scope] of cases) {
+      const listed = K.buildSessions({ registry: entries, transcripts, now: NOW, all: false, ...scope }).sessions.map((s) => s.sessionId);
+      expect(entries.filter((r) => K.inScope(r.cwd, scope)).map((r) => r.sessionId).sort()).toEqual(listed.sort());
+    }
+    // the drive letter's case: the same folder on Windows, two folders elsewhere
+    const upper = "C:\\Develop\\my-project\\.claude\\worktrees\\x", lower = ["c:\\Develop\\my-project"];
+    expect(K.inScope(upper, { workspaceFolders: lower, platform: "win32" })).toBe(true);
+    expect(K.inScope(upper, { workspaceFolders: lower, platform: "linux" })).toBe(false);
+    expect(K.inScope("c:/Develop/my-project/sub", { workspaceFolders: lower, platform: "linux" })).toBe(true); // backslashes on every platform
+    expect(K.inScope("/anywhere", {})).toBe(true); // no workspace folders: every session
+  });
 });
 
 describe("SessionReader", () => {
@@ -890,6 +975,19 @@ describe("SessionReader", () => {
     }
     return { dir, folder, file: path.join(folder, "aaaa-1.jsonl") };
   }
+
+  it("the error lines come in the list's order (busy, waiting, then pid), not the registry files' order", () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "claude-context-"));
+    try {
+      mkdirSync(path.join(dir, "sessions"));
+      for (const [pid, status] of [[100, "idle"], [20, "idle"], [7, "idle"], [300, "busy"], [50, "waiting"]]) {
+        writeFileSync(path.join(dir, "sessions", `${pid}.json`), JSON.stringify({ pid, sessionId: `p${pid}`, cwd: `/Users/me/Dev/p${pid}`, status }));
+      }
+      const r = new K.SessionReader(dir, { alive: () => true }).read({ workspaceFolders: [], all: true });
+      const missing = (pid) => `Project folder not found: ${path.join(dir, "projects", K.projectSlug(`/Users/me/Dev/p${pid}`))}`;
+      expect(r.errors).toEqual([300, 50, 7, 20, 100].map(missing));
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
 
   it("reads the registry (live processes only) and the transcript, and takes only the new bytes next time", () => {
     const { dir, file, folder } = rig();
