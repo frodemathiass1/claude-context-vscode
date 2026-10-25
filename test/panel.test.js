@@ -161,7 +161,7 @@ describe("panel: the list", () => {
     expect(p.rows()).toEqual(["a"]);
     p.fold("abandoned").click();
     expect(p.rows()).toEqual(["a", "old"]);
-    expect(p.doc.activeElement).toBe(p.fold("abandoned")); // the render replaced the button; the focus stays on it
+    expect(p.doc.activeElement).toBe(p.fold("abandoned")); // the button is kept, and the focus stays on it
     p.fold("idle").click();
     expect(p.rows()).toEqual(["old"]);
     expect(p.state()).toMatchObject({ folded: ["idle"], unfolded: ["abandoned"] });
@@ -196,6 +196,78 @@ describe("panel: the list", () => {
     p.send(list([]));
     expect(p.$("count").textContent).toBe("0");
     expect(p.$("list").textContent).toBe("No live Claude sessions");
+  });
+});
+
+describe("panel: lists update in place", () => {
+  it("a second list keeps a row's elements, its bar and the zone counts, with the new text, widths and titles", () => {
+    const p = panel();
+    p.send(list([session("a", { tokens: 100000 }), session("b", { tokens: 170000, ago: 2 * MIN })]));
+    const row = p.row("a"), bar = row.querySelector('[data-testid="bar"]'), fill = bar.querySelector(".kx-fill");
+    const parts = [bar, fill, ...["tokens", "curve", "output", "growth", "cache"].map((id) => row.querySelector(`[data-testid="${id}"]`))];
+    const counters = ["zone-green", "zone-orange", "zone-red", "count", "cache-warm"].map((id) => p.$(id));
+    const greenItem = p.$("zone-green").parentNode;
+    p.send(list([session("a", { tokens: 160000 }), session("b", { tokens: 170000, ago: 2 * MIN })]));
+    expect(p.row("a")).toBe(row);
+    const after = [bar, fill, ...["tokens", "curve", "output", "growth", "cache"].map((id) => row.querySelector(`[data-testid="${id}"]`))];
+    for (const [i, e] of after.entries()) expect(e, `part ${i}`).toBe(parts[i]);
+    for (const [i, id] of ["zone-green", "zone-orange", "zone-red", "count", "cache-warm"].entries()) expect(p.$(id)).toBe(counters[i]);
+    expect(row.querySelector('[data-testid="tokens"]').textContent).toBe("160K");
+    expect(fill.style.getPropertyValue("--p")).toBe("53.33");
+    expect(bar.title).toMatch(/^160K tokens in the context.*· Break at the next phase boundary/);
+    expect(row.dataset.zone).toBe("orange");
+    expect(row.style.getPropertyValue("--kx-zone-fill")).toBe("var(--kx-orange-fill)");
+    expect(["green", "orange", "red"].map((z) => p.$(`zone-${z}`).textContent)).toEqual(["0", "2", "0"]);
+    expect(greenItem.title).toMatch(/^0 of the 2 sessions .* are in the green zone$/);
+  });
+
+  it("a gone session loses its row, a new one gets a row in the core's order, and one that went busy moves to Working now", () => {
+    const p = panel();
+    p.send(list([session("a", { ago: MIN }), session("b", { ago: 2 * MIN }), session("c", { ago: 3 * MIN })]));
+    expect(p.rows()).toEqual(["a", "b", "c"]);
+    const b = p.row("b"), c = p.row("c");
+    b.focus();
+    const next = [session("b", { status: "busy", ago: 2 * MIN }), session("c", { ago: 3 * MIN }), session("d", { ago: 30000 })];
+    p.send(list(next));
+    expect(p.rows()).toEqual(["b", "d", "c"]);
+    expect(p.row("a")).toBeNull();
+    expect(p.row("b")).toBe(b);
+    expect(p.row("c")).toBe(c);
+    expect(b.closest(".kx-rows").id).toBe("kx-rows-busy");
+    expect(b.querySelector(".kx-badge").textContent).toBe("busy");
+    expect(p.$$("fold").map((f) => f.dataset.group)).toEqual(["busy", "idle"]);
+    expect(p.doc.activeElement).toBe(b); // it moved, and kept the focus
+    // with all projects the rows go under a project heading, still the same nodes
+    p.send(list(next, { all: true, workspaceFolders: [MINE] }));
+    expect(p.row("b")).toBe(b);
+    expect(p.row("c")).toBe(c);
+    expect(b.closest(".kx-rows").id).toBe("kx-rows-my-project_busy");
+  });
+
+  it("the focus on a row survives a list, and folding, the sort, the filters and compact rows give the rows they gave", () => {
+    const p = panel();
+    const at = (tokens) => [session("a", { tokens: tokens[0], ago: MIN }), session("b", { tokens: tokens[1], ago: 2 * MIN }), session("c", { tokens: tokens[2], ago: 3 * MIN })];
+    p.send(list(at([50000, 170000, 230000])));
+    p.row("b").focus();
+    p.send(list(at([52000, 171000, 231000])));
+    expect(p.doc.activeElement).toBe(p.row("b"));
+    p.$("sort").value = "size";
+    p.$("sort").dispatchEvent(new p.window.Event("change"));
+    expect(p.rows()).toEqual(["c", "b", "a"]);
+    p.send(list(at([52000, 240000, 231000])));
+    expect(p.rows()).toEqual(["b", "c", "a"]);
+    p.$("filter-hot").click();
+    expect(p.rows()).toEqual(["b", "c"]);
+    p.$("reset").click();
+    expect(p.rows()).toEqual(["a", "b", "c"]);
+    p.$("compact").click();
+    p.send(list(at([52000, 240000, 231000])));
+    expect(p.rows()).toEqual(["a", "b", "c"]);
+    p.fold("idle").click();
+    expect(p.rows()).toEqual([]);
+    expect(p.fold("idle").getAttribute("aria-expanded")).toBe("false");
+    p.fold("idle").click();
+    expect(p.rows()).toEqual(["a", "b", "c"]);
   });
 });
 

@@ -298,7 +298,8 @@ on Windows; `CLAUDE_CONFIG_DIR` moves it). The extension joins the two, parses o
 transcript on every change (`fs.watch` on the folders, debounced, plus a 30-second tick) and pushes the
 list to the webview; it reads again at once when a workspace folder is added or removed, and reads nothing while
 the panel is hidden (shown again, one read catches up). In the browser, `server.cjs` does the same and pushes the list to the page with
-Server-Sent Events; the page sends its messages back as `POST` requests. While a session is open, the webview asks for every turn of it after each list (the
+Server-Sent Events; the page sends its messages back as `POST` requests. The webview updates the rows and the
+header's counters in place rather than rebuilding them, so a tooltip stays open while lists come in. While a session is open, the webview asks for every turn of it after each list (the
 message `{ type: "detail", sessionId }`), and the host answers from the state it already parsed, without
 reading the transcript again.
 

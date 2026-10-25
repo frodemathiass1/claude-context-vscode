@@ -926,7 +926,8 @@
   /**
    * A group heading whose whole text is a fold button: aria-expanded says whether the rows under it are
    * drawn, the count stays visible when folded. `key` is the group's name in `folded` (or `unfolded`); the rows under it
-   * come from rowsFor(), which links them through aria-controls.
+   * come from rowsFor(), which links them through aria-controls. A click is handled once on the list (the fold
+   * listener below), so a heading kept from the last list needs no listener of its own.
    */
   function groupHeading(text, n, iconName, className, key) {
     const h = el("h2", "kx-group" + (className ? ` ${className}` : ""));
@@ -943,14 +944,6 @@
     btn.appendChild(icon(iconName));
     btn.appendChild(document.createTextNode(text));
     btn.appendChild(el("span", "kx-gn", `· ${n}`));
-    btn.addEventListener("click", () => {
-      toggleFold(key);
-      if (!lastData) return;
-      render(lastData);
-      // the render replaced the button; keyboard focus would fall to the body
-      const again = listEl.querySelector(`[data-testid="fold"][data-group="${CSS.escape(key)}"]`);
-      if (again) again.focus();
-    });
     h.appendChild(btn);
     return h;
   }
@@ -997,8 +990,10 @@
       const list = sorted(all.filter(passes));
       // the heading counts what is shown; "4 of 9" while the filters hide some, so the hidden ones are not forgotten
       const heading = groupHeading(text, list.length === all.length ? list.length : `${list.length} of ${all.length}`, iconName, "", key);
+      const idKey = project ? `${project}/${key}` : key; // "busy" is in every project
+      heading.dataset.key = `group:${idKey}`;
       frag.appendChild(heading);
-      const rows = rowsFor(heading, project ? `${project}/${key}` : key);
+      const rows = rowsFor(heading, idKey);
       if (!rows) continue;
       if (!list.length) {
         rows.appendChild(el("p", "kx-hidden-all", `all ${all.length} hidden by the filters`));
@@ -1561,6 +1556,9 @@
   }
 
   listEl.addEventListener("click", (e) => {
+    const fold = e.target.closest('[data-testid="fold"]');
+    // the list patches the button in place, so it keeps its place for the keyboard; a click does not focus it everywhere
+    if (fold) { toggleFold(fold.dataset.group); if (lastData) render(lastData); fold.focus(); return; }
     const row = e.target.closest(".kx-session[tabindex]");
     if (row && row.dataset.session) setOpen(row.dataset.session);
   });
@@ -1657,7 +1655,7 @@
   /** The count per zone beside the session count, for the listed sessions (the scope, before the view's filters). */
   function renderZoneCounts(zoneCounts, data) {
     const counts = ZONES.map((z) => [z, Number.isFinite(zoneCounts[z]) ? zoneCounts[z] : 0]);
-    zoneCountsEl.textContent = "";
+    const items = [];
     for (const [z, n] of counts) {
       const item = zoned(el("span"), z);
       const b = el("b", "", String(n));
@@ -1665,9 +1663,63 @@
       item.appendChild(b);
       item.appendChild(document.createTextNode(` ${ZONE_NAME[z]}`));
       item.title = `${n} of ${sessionsWhere(data.count || 0, data)} ${n === 1 ? "is" : "are"} in the ${ZONE_NAME[z]} zone`;
-      zoneCountsEl.appendChild(item);
+      items.push(item);
     }
+    patchChildren(zoneCountsEl, items, new Map(), []);
   }
+
+  // ── Updating in place. A list comes after every change in Claude Code's folders and on a 30-second tick, and a
+  // native tooltip closes when the element under the pointer is replaced, so a busy session's tooltips would close
+  // within a second or two (#59). Every list is still built afresh by the functions above, and patch() then makes
+  // the live tree match it: a node that stays is kept, and only what changed in it is set. Rows are keyed by their
+  // session, headings by data-key and row containers by id, across the whole list, so a row that changes group is
+  // moved, not rebuilt; other nodes are matched in place by their tag. ──
+  const keyOf = (n) => {
+    if (n.nodeType !== 1) return null;
+    const session = n.getAttribute("data-session"), key = n.getAttribute("data-key");
+    return session ? `session:${session}` : key ? `key:${key}` : n.id ? `id:${n.id}` : null;
+  };
+  const sameKind = (a, b) => a.nodeType === b.nodeType && (a.nodeType !== 1 || (a.namespaceURI === b.namespaceURI && a.tagName === b.tagName));
+  /** The keyed elements under `root`, for patchChildren to take from wherever they are. */
+  function keyedIn(root) {
+    const keyed = new Map();
+    for (const e of root.querySelectorAll("[data-session], [data-key], [id]")) { const k = keyOf(e); if (k && !keyed.has(k)) keyed.set(k, e); }
+    return keyed;
+  }
+  /** `live` takes `next`'s attributes, inline style (through the CSSOM: the CSP blocks style attributes) and children. */
+  function patch(live, next, keyed, moved) {
+    if (live.nodeType !== 1) { if (live.nodeValue !== next.nodeValue) live.nodeValue = next.nodeValue; return; }
+    for (const { name, value } of [...next.attributes]) if (name !== "style" && live.getAttribute(name) !== value) live.setAttribute(name, value);
+    for (const { name } of [...live.attributes]) if (name !== "style" && !next.hasAttribute(name)) live.removeAttribute(name);
+    const props = new Set(Array.from({ length: next.style.length }, (_, i) => next.style[i]));
+    for (const prop of props) if (live.style.getPropertyValue(prop) !== next.style.getPropertyValue(prop)) live.style.setProperty(prop, next.style.getPropertyValue(prop));
+    for (const prop of Array.from({ length: live.style.length }, (_, i) => live.style[i])) if (!props.has(prop)) live.style.removeProperty(prop);
+    patchChildren(live, [...next.childNodes], keyed, moved);
+  }
+  /**
+   * `parent`'s children become `nodes`, in order: each takes the old node with its key (`keyed`, from anywhere) or
+   * the old one in its place with the same tag, else is put in itself, with its children patched in the same way.
+   * The old nodes left over are removed. A kept node that had to be moved is pushed on `moved`.
+   */
+  function patchChildren(parent, nodes, keyed, moved) {
+    let at = parent.firstChild;
+    for (const n of nodes) {
+      const k = keyOf(n);
+      let old = k ? keyed.get(k) : at && !keyOf(at) && sameKind(at, n) ? at : null;
+      if (old && !sameKind(old, n)) old = null;
+      if (k && old) keyed.delete(k);
+      if (old === at && old) { at = at.nextSibling; patch(old, n, keyed, moved); continue; }
+      if (old) { parent.insertBefore(old, at); moved.push(old); patch(old, n, keyed, moved); continue; }
+      const kids = [...n.childNodes];
+      for (const c of kids) n.removeChild(c);
+      parent.insertBefore(n, at);
+      patchChildren(n, kids, keyed, moved);
+    }
+    while (at) { const after = at.nextSibling; parent.removeChild(at); at = after; }
+  }
+  /** The text, set only when it changed: setting it replaces the text node even when it is the same. */
+  function setText(e, text) { if (e.textContent !== text) e.textContent = text; }
+  function setTitle(e, title) { if (e.title !== title) e.title = title; }
 
   // ── Refresh: the button asks the host for a full read; the icon spins until the next list arrives,
   // then "updated 12:04:31" shows for a few seconds (the only feedback under prefers-reduced-motion) ──
@@ -1694,58 +1746,58 @@
     refreshDone(data);
     drawDetail();
     requestDetail(); // the new list's turns, all of them, for the open session
-    countEl.textContent = String(data.count || 0);
+    setText(countEl, String(data.count || 0));
     renderZoneCounts(data.zoneCounts || {}, data);
     renderScope(data);
-    cacheCountsEl.title = `Prompt cache: how many of ${sessionsWhere(data.count || 0, data)} have a warm cache now, and how many went cold`;
+    setTitle(cacheCountsEl, `Prompt cache: how many of ${sessionsWhere(data.count || 0, data)} have a warm cache now, and how many went cold`);
     const cacheCounts = data.cacheCounts || {};
-    cacheWarmEl.textContent = String(Number.isFinite(cacheCounts.warm) ? cacheCounts.warm : 0);
-    cacheColdEl.textContent = String(Number.isFinite(cacheCounts.cold) ? cacheCounts.cold : 0);
+    setText(cacheWarmEl, String(Number.isFinite(cacheCounts.warm) ? cacheCounts.warm : 0));
+    setText(cacheColdEl, String(Number.isFinite(cacheCounts.cold) ? cacheCounts.cold : 0));
     startMedianEl.hidden = !Number.isFinite(data.baselineMedian);
     if (!startMedianEl.hidden) {
-      startMedianEl.firstChild.textContent = tokensText(data.baselineMedian);
+      setText(startMedianEl.firstChild, tokensText(data.baselineMedian));
       const n = data.baselineSessions;
-      startMedianEl.title = `Start cost: the median first turn of ${sessionsWhere(n, data)} that began fresh (not after a compaction). It is the fixed load (CLAUDE.md, memory, skill and tool listings) plus the first message, so a long first prompt raises it`;
+      setTitle(startMedianEl, `Start cost: the median first turn of ${sessionsWhere(n, data)} that began fresh (not after a compaction). It is the fixed load (CLAUDE.md, memory, skill and tool listings) plus the first message, so a long first prompt raises it`);
     }
     const abandoned = Number.isFinite(data.abandonedCount) ? data.abandonedCount : 0;
     abandonedEl.hidden = !abandoned;
-    abandonedEl.firstChild.textContent = String(abandoned);
-    abandonedEl.title = `${abandoned} of ${sessionsWhere(data.count || 0, data)} had no turn for more than an hour. ${ABANDONED_WHY}`;
-    errorsEl.textContent = "";
+    setText(abandonedEl.firstChild, String(abandoned));
+    setTitle(abandonedEl, `${abandoned} of ${sessionsWhere(data.count || 0, data)} had no turn for more than an hour. ${ABANDONED_WHY}`);
     errorsEl.hidden = !(data.errors && data.errors.length);
-    if (!errorsEl.hidden) for (const f of data.errors) errorsEl.appendChild(el("div", "kx-error", f));
+    patchChildren(errorsEl, errorsEl.hidden ? [] : data.errors.map((f) => el("div", "kx-error", f)), new Map(), []);
     const everyone = allSessions(data);
     renderControls(everyone);
     const shown = everyone.filter(passes).length;
     showingEl.hidden = shown === everyone.length;
-    showingEl.textContent = `showing ${shown} of ${everyone.length}`;
-    // the bar's width transition needs the fill to start where the previous render left it: the previous
-    // widths are kept per session, the new rows start there, and after a forced layout they move
-    const previous = new Map();
-    for (const row of listEl.querySelectorAll(".kx-session")) {
-      const fill = row.querySelector(".kx-fill");
-      if (fill) previous.set(row.dataset.session, fill.style.getPropertyValue("--p"));
-    }
-    listEl.textContent = "";
-    if (!data.count) { listEl.appendChild(el("p", "kx-message", "No live Claude sessions")); return; }
-    if (data.groups) {
+    setText(showingEl, `showing ${shown} of ${everyone.length}`);
+    const next = document.createDocumentFragment();
+    if (!data.count) next.appendChild(el("p", "kx-message", "No live Claude sessions"));
+    else if (data.groups) {
       for (const g of data.groups) {
         const project = g.project || "unknown";
         const heading = groupHeading(project, g.sessions.length, "folder", "kx-project", `project:${project}`);
-        listEl.appendChild(heading);
+        heading.dataset.key = `project:${project}`;
+        next.appendChild(heading);
         const rows = rowsFor(heading, `project:${project}`);
         if (!rows) continue;
         rows.appendChild(groupsFor(g.sessions, project));
-        listEl.appendChild(rows);
+        next.appendChild(rows);
       }
     } else {
-      listEl.appendChild(groupsFor(data.sessions));
+      next.appendChild(groupsFor(data.sessions));
     }
+    // a bar kept in place moves from its previous width by the style's transition; a moved row was taken out of
+    // the document for a moment and lost its previous style, so its fill starts at the old width and moves after
+    // a forced layout
+    const previous = new Map([...listEl.querySelectorAll(".kx-session")].map((row) => [row, (row.querySelector(".kx-fill") || row).style.getPropertyValue("--p")]));
+    const moved = [], focused = listEl.contains(document.activeElement) ? document.activeElement : null;
+    patchChildren(listEl, [...next.childNodes], keyedIn(listEl), moved);
+    // a moved node was out of the document for a moment, which takes the focus away: the row gets it back
+    if (focused && focused.isConnected && document.activeElement !== focused) focused.focus({ preventScroll: true });
     const moving = [];
-    for (const row of listEl.querySelectorAll(".kx-session")) {
-      const fill = row.querySelector(".kx-fill");
-      const from = previous.get(row.dataset.session);
-      if (!fill || from === undefined || from === fill.style.getPropertyValue("--p")) continue;
+    for (const row of moved.flatMap((m) => [...(m.matches(".kx-session") ? [m] : []), ...m.querySelectorAll(".kx-session")])) {
+      const fill = row.querySelector(".kx-fill"), from = previous.get(row);
+      if (!fill || !from || from === fill.style.getPropertyValue("--p")) continue;
       moving.push([fill, fill.style.getPropertyValue("--p")]);
       fill.style.setProperty("--p", from);
     }
