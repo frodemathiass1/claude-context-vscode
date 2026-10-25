@@ -10,12 +10,14 @@ const os = require("node:os");
 const path = require("node:path");
 
 // Quality warnings, not the window limit: absolute token counts from Matt Pocock's smart/dumb zone, checked against
-// his primary sources on 2026-10-25. Yellow is his dictionary's band, where the dumb zone "commonly begins around
-// 125K-150K tokens" (dictionary/Smart zone.md, since 2026-06-05); orange starts where his smart zone, "~150k tokens
-// on state-of-the-art models" (mattpocock/skills, ask-matt/SKILL.md and PHASE-BOUNDARIES.md, 2026-08-05), is spent.
-// 200K is the panel's own line: he gives no figure for how deep the dumb zone goes, and measurements find a gradient,
-// not a cliff (Chroma, "Context Rot", July 2025; Anthropic on context engineering, September 2025).
-const YELLOW_FROM = 125000, ORANGE_FROM = 150000, RED_ABOVE = 200000;
+// his primary sources on 2026-10-25. He has two zones with a gradual decline between them, so the panel has three:
+// green is his smart zone, up to his newest figure, "~150k tokens on state-of-the-art models" (mattpocock/skills,
+// ask-matt/SKILL.md and PHASE-BOUNDARIES.md, 2026-08-05); orange is the start of the dumb zone. His dictionary's
+// earlier band, where the dumb zone "commonly begins around 125K-150K tokens — though this is debated"
+// (dictionary/Smart zone.md, since 2026-06-05), is the same boundary, so it is not a line of its own. 200K is the
+// panel's own line: he gives no figure for how deep the dumb zone goes, and measurements find a gradient, not a cliff
+// (Chroma, "Context Rot", July 2025; Anthropic on context engineering, September 2025).
+const ORANGE_FROM = 150000, RED_ABOVE = 200000;
 // A session without a turn for an hour is dimmed. One that is neither busy nor waiting and had neither a turn nor its
 // process start for an hour is abandoned, and the panel folds it away: a closed VS Code chat tab keeps its process (NOTES.md,
 // "Closed chat tabs") and nothing tells it from an open tab, so a quiet hour is the only sign there is. The start
@@ -40,10 +42,10 @@ function projectSlug(cwd) {
   return String(cwd).replace(/[^A-Za-z0-9]/g, "-");
 }
 
-/** Zone for a token count: green below 125K, yellow below 150K, orange up to and including 200K, red above, null when unknown. */
+/** Zone for a token count: green below 150K, orange up to and including 200K, red above, null when unknown. */
 function zone(tokens) {
   if (!Number.isFinite(tokens)) return null;
-  return tokens < YELLOW_FROM ? "green" : tokens < ORANGE_FROM ? "yellow" : tokens <= RED_ABOVE ? "orange" : "red";
+  return tokens < ORANGE_FROM ? "green" : tokens <= RED_ABOVE ? "orange" : "red";
 }
 
 const SESSION_ID = /^[\w-]+$/; // a UUID as Claude Code writes it; never a path
@@ -288,8 +290,7 @@ function tokensText(tokens) {
 // Orange starts where the smart zone is spent, so only his first question is left: does the next phase need this one
 // as a primary source.
 const ZONE_ADVICE = Object.freeze({
-  yellow: "Plan to break at the next phase boundary.",
-  orange: "Break at the first phase boundary; continue only if the next phase needs this one verbatim.",
+  orange: "Break at the next phase boundary; continue only if the next phase needs this one verbatim.",
   red: "Do not start a new phase: /clear, /handoff, a subagent, or /compact.",
 });
 
@@ -297,8 +298,7 @@ const ZONE_ADVICE = Object.freeze({
 // with its bounds (`to` is null for red, which has none), its range as text, long and short (for a narrow band in the
 // header), and its advice. Orange includes RED_ABOVE itself (zone()); the texts leave that out.
 const ZONE_LIST = Object.freeze([
-  ["green", 0, YELLOW_FROM, `below ${tokensText(YELLOW_FROM)}`, `<${tokensText(YELLOW_FROM)}`],
-  ["yellow", YELLOW_FROM, ORANGE_FROM, `${tokensText(YELLOW_FROM)}–${tokensText(ORANGE_FROM)}`, `${tokensText(YELLOW_FROM)}+`],
+  ["green", 0, ORANGE_FROM, `below ${tokensText(ORANGE_FROM)}`, `<${tokensText(ORANGE_FROM)}`],
   ["orange", ORANGE_FROM, RED_ABOVE, `${tokensText(ORANGE_FROM)}–${tokensText(RED_ABOVE)}`, `${tokensText(ORANGE_FROM)}+`],
   ["red", RED_ABOVE, null, `above ${tokensText(RED_ABOVE)}`, `>${tokensText(RED_ABOVE)}`],
 ].map(([name, from, to, range, short]) => Object.freeze({ zone: name, from, to, range, short, advice: ZONE_ADVICE[name] || null })));
@@ -434,7 +434,7 @@ function buildSessions({ registry = [], transcripts = {}, now, workspaceFolders 
     for (const s of sessions) { if (!byProject.has(s.project)) byProject.set(s.project, []); byProject.get(s.project).push(s); }
     groups = [...byProject].map(([project, list]) => ({ project, sessions: list }));
   }
-  const zoneCounts = { green: 0, yellow: 0, orange: 0, red: 0 };
+  const zoneCounts = { green: 0, orange: 0, red: 0 };
   for (const s of sessions) if (s.zone) zoneCounts[s.zone] += 1;
   const cacheCounts = { warm: 0, cold: 0 };
   for (const s of sessions) if (s.cacheState) cacheCounts[s.cacheState] += 1;

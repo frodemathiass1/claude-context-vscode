@@ -90,7 +90,8 @@ describe("panel: the list", () => {
       session("b", { tokens: 170000, status: "waiting" }), session("a", { tokens: 50000, status: "busy" }),
     ]));
     expect(p.$("count").textContent).toBe("4");
-    expect(["green", "yellow", "orange", "red"].map((z) => p.$(`zone-${z}`).textContent)).toEqual(["1", "1", "1", "1"]);
+    expect(p.$$("zone-yellow")).toHaveLength(0);
+    expect(["green", "orange", "red"].map((z) => p.$(`zone-${z}`).textContent)).toEqual(["2", "1", "1"]);
     expect(p.rows()).toEqual(["a", "b", "d", "c"]); // busy, waiting, then the last turn newest first
     expect(p.$$("fold").map((b) => b.dataset.group)).toEqual(["busy", "waiting", "idle"]);
     expect(p.row("c").dataset.zone).toBe("red");
@@ -202,13 +203,13 @@ describe("panel: the zone scale", () => {
   it("draws the zones at their true widths on 0–300K with each range inside, and says what applies in each", () => {
     const p = panel();
     p.send(list([session("a")]));
-    const bands = ["green", "yellow", "orange", "red"].map((z) => p.$(`band-${z}`));
-    expect(bands.map((b) => b.style.getPropertyValue("--w"))).toEqual(["41.67", "8.33", "16.67", "33.33"]);
-    expect(bands.map((b) => b.querySelector(".kx-zlong").textContent)).toEqual(["below 125K", "125K–150K", "150K–200K", "above 200K"]);
-    expect(bands.map((b) => b.querySelector(".kx-zshort").textContent)).toEqual(["<125K", "125K+", "150K+", ">200K"]);
-    expect(p.$("band-green").title).toBe("green zone: below 125K");
-    expect(p.$("band-yellow").title).toBe("yellow zone: 125K–150K · Plan to break at the next phase boundary.");
-    expect(p.$("band-orange").title).toBe("orange zone: 150K–200K · Break at the first phase boundary; continue only if the next phase needs this one verbatim.");
+    const bands = ["green", "orange", "red"].map((z) => p.$(`band-${z}`));
+    expect(p.$("zone-scale").children).toHaveLength(3);
+    expect(bands.map((b) => b.style.getPropertyValue("--w"))).toEqual(["50", "16.67", "33.33"]);
+    expect(bands.map((b) => b.querySelector(".kx-zlong").textContent)).toEqual(["below 150K", "150K–200K", "above 200K"]);
+    expect(bands.map((b) => b.querySelector(".kx-zshort").textContent)).toEqual(["<150K", "150K+", ">200K"]);
+    expect(p.$("band-green").title).toBe("green zone: below 150K");
+    expect(p.$("band-orange").title).toBe("orange zone: 150K–200K · Break at the next phase boundary; continue only if the next phase needs this one verbatim.");
     expect(p.$("band-red").title).toMatch(/^red zone: above 200K · Do not start a new phase/);
   });
 
@@ -218,7 +219,7 @@ describe("panel: the zone scale", () => {
     expect(p.$$("band-green")).toHaveLength(1);
     expect(p.$("zone-scale").getAttribute("role")).toBe("img");
     expect(p.$("zone-scale").getAttribute("aria-label")).toBe(
-      "Zones on a 0–300K scale: green below 125K, yellow 125K–150K, orange 150K–200K and red above 200K");
+      "Zones on a 0–300K scale: green below 150K, orange 150K–200K and red above 200K");
   });
 
   it("keeps the count per zone beside the session count, for the scope", () => {
@@ -234,19 +235,19 @@ describe("panel: the zone scale", () => {
     const p = panel();
     const ticks = () => [...p.row("a").querySelectorAll(".kx-tick")].map((t) => t.style.getPropertyValue("--t"));
     p.send(list([session("a")]));
-    expect(ticks()).toEqual(["41.67", "50", "66.67"]);
+    expect(ticks()).toEqual(["50", "66.67"]);
     const built = list([session("a")]);
-    const bounds = [[0, 90000], [90000, 150000], [150000, 210000], [210000, null]];
+    const bounds = [[0, 90000], [90000, 210000], [210000, null]];
     p.send({ ...built, zones: built.zones.map((z, i) => ({ ...z, from: bounds[i][0], to: bounds[i][1] })) });
-    expect(["green", "yellow", "orange", "red"].map((z) => p.$(`band-${z}`).style.getPropertyValue("--w"))).toEqual(["30", "20", "20", "30"]);
-    expect(ticks()).toEqual(["30", "50", "70"]);
+    expect(["green", "orange", "red"].map((z) => p.$(`band-${z}`).style.getPropertyValue("--w"))).toEqual(["30", "40", "30"]);
+    expect(ticks()).toEqual(["30", "70"]);
   });
 
-  it("runs the row bar 0–300K with marks at 125K, 150K and 200K: only a count above 300K gets the hatched end", () => {
+  it("runs the row bar 0–300K with marks at 150K and 200K: only a count above 300K gets the hatched end", () => {
     const p = panel();
     p.send(list([session("a", { tokens: 250000 }), session("b", { tokens: 300000 }), session("c", { tokens: 320000 })]));
     const bar = (id) => p.row(id).querySelector('[data-testid="bar"]');
-    expect(bar("a").title).toMatch(/· scale 0–300K, marks at 125K, 150K and 200K/);
+    expect(bar("a").title).toMatch(/· scale 0–300K, marks at 150K and 200K/);
     expect(["a", "b", "c"].map((id) => bar(id).querySelector(".kx-over") !== null)).toEqual([false, false, true]);
     expect(["a", "b", "c"].map((id) => bar(id).getAttribute("aria-label"))).toEqual(["83 % of the 300K scale", "100 % of the 300K scale", "over the 300K scale"]);
   });
@@ -268,38 +269,38 @@ describe("panel: the zone scale", () => {
     p.send(list([session("a")]));
     const built = list([session("a")]);
     p.send({ ...built, zones: [built.zones[1], built.zones[0], ...built.zones.slice(2)] });
-    p.send({ ...built, zones: built.zones.map((z, i) => (i === 3 ? { ...z, from: 350000 } : z)) });
+    p.send({ ...built, zones: built.zones.map((z, i) => (i === 2 ? { ...z, from: 350000 } : z)) });
     expect(p.$("band-red").style.getPropertyValue("--w")).toBe("33.33");
   });
 
   it("builds the bands once for the same zones, so a band's tooltip survives the next list; a list without zones keeps them", () => {
     const p = panel();
     p.send(list([session("a")]));
-    const band = p.$("band-yellow");
+    const band = p.$("band-orange");
     p.send(list([session("a", { tokens: 120000 })]));
-    expect(p.$("band-yellow")).toBe(band);
+    expect(p.$("band-orange")).toBe(band);
     p.send({ ...list([session("a")]), zones: undefined });
-    expect(p.$("band-yellow")).toBe(band);
-    expect(p.row("a").querySelectorAll(".kx-tick")).toHaveLength(3);
+    expect(p.$("band-orange")).toBe(band);
+    expect(p.row("a").querySelectorAll(".kx-tick")).toHaveLength(2);
   });
 
   it("shows a band's long range when it fits, else the short one, else none, never a clipped label", () => {
     const p = panel();
     p.send(list([session("a")]));
     // jsdom has no layout: each band is given a width, and its content the width of the text it shows
-    const widths = { green: [160, 80, 40], yellow: [20, 68, 34], orange: [20, 68, 24] };
+    const widths = { green: [160, 80, 40], orange: [20, 68, 34], red: [20, 68, 24] };
     for (const [z, [client, long, short]] of Object.entries(widths)) {
       const band = p.$(`band-${z}`);
       Object.defineProperty(band, "clientWidth", { value: client, configurable: true });
       Object.defineProperty(band, "scrollWidth", { get: () => ({ long, short, none: 0 })[band.dataset.fit] });
     }
     p.resize();
-    expect(["green", "yellow", "orange"].map((z) => p.$(`band-${z}`).dataset.fit)).toEqual(["long", "none", "none"]);
-    Object.defineProperty(p.$("band-yellow"), "clientWidth", { value: 40 });
+    expect(["green", "orange", "red"].map((z) => p.$(`band-${z}`).dataset.fit)).toEqual(["long", "none", "none"]);
+    Object.defineProperty(p.$("band-orange"), "clientWidth", { value: 40 });
     p.send(list([session("a")])); // a list does not measure again: each try forces a layout
-    expect(p.$("band-yellow").dataset.fit).toBe("none");
+    expect(p.$("band-orange").dataset.fit).toBe("none");
     p.resize();
-    expect(p.$("band-yellow").dataset.fit).toBe("short");
+    expect(p.$("band-orange").dataset.fit).toBe("short");
   });
 });
 
@@ -435,6 +436,25 @@ describe("panel: the detail view", () => {
     p.send(list([session("a")]));
     expect(p.$("detail-title").textContent).toBe("Session a");
     expect(p.posted.at(-1)).toEqual({ type: "detail", sessionId: "a" });
+  });
+
+  it("labels the curve's axis at 150K and 200K when there is room, else only at 200K, never overlapping", () => {
+    const p = panel();
+    const axis = () => {
+      const field = p.$("detail-curve");
+      const labels = [...field.querySelectorAll(".kx-d-axis")];
+      return { narrow: field.dataset.axis, wide: field.dataset.axisWide, labels: labels.map((a) => a.textContent),
+        low: labels.filter((a) => a.classList.contains("kx-d-axis-low")).map((a) => a.textContent) };
+    };
+    p.send(list([session("a", { series: [30000, 120000, 250000] })]));
+    p.row("a").click();
+    // 0–300K: the limits are 50K apart, 25 px in the 150 px field
+    expect(axis()).toEqual({ narrow: "2", wide: "2", labels: ["150K", "200K", "300K"], low: ["150K"] });
+    // 0–900K: 8 px apart in the 150 px field, so 150K is hidden there; 12 px in the 220 px one, so both stay
+    p.send(list([session("a", { series: [30000, 400000, 900000] })]));
+    expect(axis()).toEqual({ narrow: "1", wide: "2", labels: ["150K", "200K", "900K"], low: ["150K"] });
+    p.send(list([session("a", { series: [30000, 900000, 2000000] })]));
+    expect(axis()).toMatchObject({ narrow: "1", wide: "1", low: ["150K"] });
   });
 
   it("the range shows a turn, with its growth from the turn before", () => {
