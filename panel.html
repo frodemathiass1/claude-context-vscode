@@ -865,7 +865,8 @@
     return bar;
   }
 
-  /** A badge: its icon and text, with an extra class ("kx-wait") and a tooltip when given; one markup for every badge. */
+  const WAITING_TEXT = "Waiting for you: a permission prompt, a question or a dialog in this session";
+  /** A badge: its icon and text, with an extra class ("kx-wait") and a tooltip when given; one markup for all. */
   function badgeEl(name, text, { className = "", title = "" } = {}) {
     const span = el("span", "kx-badge" + (className ? ` ${className}` : ""));
     if (title) span.title = title;
@@ -882,7 +883,7 @@
     const dot = el("span", "kx-dot" + (session.busy ? " kx-pulse" : ""));
     dot.title = `Zone: ${ZONE_NAME[session.zone] || "unknown"}`;
     if (session.busy) return { dot, badge: badgeEl("zap", "busy") };
-    if (session.waiting) return { dot, badge: badgeEl("bell", "waiting", { className: "kx-wait", title: "Waiting for you: a permission prompt, a question or a dialog in this session" }) };
+    if (session.waiting) return { dot, badge: badgeEl("bell", "waiting", { className: "kx-wait", title: WAITING_TEXT }) };
     return { dot, badge: null };
   }
 
