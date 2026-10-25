@@ -23,7 +23,8 @@
     --kx-orange: color-mix(in srgb, var(--kx-yellow) 50%, var(--kx-red));
     --kx-red: var(--vscode-charts-red, #cf222e);
     /* … and for fills (dot, context bar, curve, zone scale), so text and fill can differ per use.
-       Every zone in ZONES below has a pair --kx-<zone> / --kx-<zone>-fill; adding a zone adds a pair here. */
+       Every zone in ZONES below has a pair --kx-<zone> / --kx-<zone>-fill; adding a zone adds a pair here. Yellow is
+       no zone: it is the base orange is mixed from. */
     --kx-green-fill: var(--vscode-charts-green, var(--kx-green));
     --kx-yellow-fill: var(--vscode-charts-yellow, var(--kx-yellow));
     --kx-orange-fill: color-mix(in srgb, var(--kx-yellow-fill) 50%, var(--kx-red-fill));
@@ -79,7 +80,7 @@
   .kx-zband:first-child { border-radius: 4px 0 0 4px; }
   .kx-zband:last-child { border-radius: 0 4px 4px 0; }
   /* which range text the band has room for (fitBands measures it): the long one, the short one, or none; a clipped
-     label could read as another number ("125K+" cut to "25K") */
+     label could read as another number ("150K+" cut to "50K") */
   .kx-zband .kx-zshort, .kx-zband[data-fit="short"] .kx-zlong, .kx-zband[data-fit="none"] span { display: none; }
   .kx-zband[data-fit="short"] .kx-zshort { display: inline; }
   .kx-zband span { padding: 0 4px; } /* on the label, not the band: a padded band would no longer be its zone's true width */
@@ -279,7 +280,7 @@
     position: absolute; right: 4px; font-size: 0.7em; color: var(--kx-muted); font-variant-numeric: tabular-nums; line-height: 1;
     transform: translateY(-50%); pointer-events: none; background: color-mix(in srgb, var(--kx-surface) 80%, transparent); padding: 0 2px; border-radius: 2px;
   }
-  .kx-d-field[data-axis="2"] .kx-d-axis-mid, .kx-d-field[data-axis="1"] .kx-d-axis-mid, .kx-d-field[data-axis="1"] .kx-d-axis-low { display: none; }
+  .kx-d-field[data-axis="1"] .kx-d-axis-low { display: none; }
   .kx-d-hair { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--kx-fg); opacity: 0.6; pointer-events: none; display: none; }
   .kx-d-tip {
     position: absolute; top: 40px; max-width: min(260px, 80%); background: var(--kx-bg); border: 1px solid var(--kx-border-strong);
@@ -380,7 +381,7 @@
     .kx-d-ctx h2 .kx-num { font-size: 2em; }
     .kx-d-field { height: 220px; }
     .kx-d-field[data-axis] .kx-d-axis { display: block; }
-    .kx-d-field[data-axis-wide="2"] .kx-d-axis-mid, .kx-d-field[data-axis-wide="1"] .kx-d-axis-mid, .kx-d-field[data-axis-wide="1"] .kx-d-axis-low { display: none; }
+    .kx-d-field[data-axis-wide="1"] .kx-d-axis-low { display: none; }
     .kx-d-ofield { height: 110px; }
     .kx-d-pair { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 0 20px; align-items: start; } /* the curve and where the context went */
     .kx-d-facts { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
@@ -540,7 +541,7 @@
   // style above. LIMITS, taken from the core's zones (applyZones), are the boundaries drawn as dashed lines on the
   // curve, gaps on the context bar and labels on the axis; SCALE is the full width of the bar and the strip.
   // A new zone is one entry here, one in the core and one colour pair in the style. ─────────────────
-  const ZONES = ["green", "yellow", "orange", "red"];
+  const ZONES = ["green", "orange", "red"];
   const ZONE_NAME = Object.fromEntries(ZONES.map((z) => [z, z]));
   let LIMITS = [], ZONE_LIST = [], MARKS_TEXT = ""; // until the first list with zones: no limits drawn, no marks named
   // past red's 200K, so the red band is on the strip and few sessions run off the bar: of the owner's 395 sessions in
@@ -603,7 +604,7 @@
     return Number.isFinite(session.coldInMs) && session.coldInMs <= soon ? "soon" : "warm";
   }
 
-  /** "125K and 200K", "125K, 150K and 200K": the limits as words for tooltips. */
+  /** "200K", "150K and 200K", "a, b and c": the limits as words for tooltips. */
   function listText(items) {
     return items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
   }
@@ -1121,15 +1122,17 @@
     for (const c of compactions) svg.appendChild(svgEl("line", { class: "kx-compact", "data-turn": first + c.at, x1: num(x(c.at)), x2: num(x(c.at)), y1: 0, y2: D_H, "vector-effect": "non-scaling-stroke" }));
     field.appendChild(svg);
     // the axis labels: the limits and the top of the scale; when the scale runs far above 300K the limits sit
-    // close together, so the middle one goes first and then the lowest, and they never overlap. How many fit
-    // is decided for both field heights; the style shows data-axis below 620 px and data-axis-wide above
-    const room = LIMITS.length ? (y(LIMITS[0]) - y(LIMITS[LIMITS.length - 1])) / D_H : 1;
-    const fits = (h) => (room * h >= 2 * AXIS_GAP_PX ? 3 : room * h >= AXIS_GAP_PX ? 2 : 1);
+    // close together, so only the highest (red's) is labelled, and they never overlap. The top is at least 300K,
+    // a third of the field above the highest limit. How many fit is decided for both field heights, as the number
+    // of limits labelled; the style shows data-axis below 620 px and data-axis-wide above
+    const gaps = LIMITS.slice(1).map((g, i) => (y(LIMITS[i]) - y(g)) / D_H);
+    const room = gaps.length ? Math.min(...gaps) : 1;
+    const fits = (h) => (room * h >= AXIS_GAP_PX ? LIMITS.length : 1);
     field.dataset.axis = fits(D_FIELD_H.narrow);
     field.dataset.axisWide = fits(D_FIELD_H.wide);
-    const axisClass = { [LIMITS[0]]: " kx-d-axis-low", [LIMITS[1]]: " kx-d-axis-mid" };
     for (const g of [...LIMITS, top]) {
-      const a = el("span", `kx-d-axis${g === top ? "" : axisClass[g] || ""}`, tokensText(g));
+      const low = g !== top && g !== LIMITS[LIMITS.length - 1];
+      const a = el("span", `kx-d-axis${low ? " kx-d-axis-low" : ""}`, tokensText(g));
       a.setAttribute("aria-hidden", "true");
       a.style.top = `${pct(y(g) / D_H)}%`;
       field.appendChild(a);
@@ -1409,7 +1412,7 @@
 
   /**
    * The context box: "Context 169K · orange zone", what the zones measure (for a known zone) and the zone's advice
-   * (yellow, orange and red), then the named facts under it; the core gives the advice and the facts (contextFacts).
+   * (orange and red), then the named facts under it; the core gives the advice and the facts (contextFacts).
    */
   function contextBlock(session) {
     const frag = document.createDocumentFragment();
@@ -1427,7 +1430,7 @@
     const known = Boolean(ZONE_NAME[session.zone]);
     h.appendChild(el("span", "kx-d-zn", known ? `· ${ZONE_NAME[session.zone]} zone` : session.turns ? "· no count yet" : "· no turns yet"));
     box.appendChild(h);
-    // the zones are quality warnings, not the window limit (core.cjs, the comment at YELLOW_FROM)
+    // the zones are quality warnings, not the window limit (core.cjs, the comment at ORANGE_FROM)
     if (known && MARKS_TEXT) box.appendChild(el("p", "kx-d-why", `Zones warn about quality at ${MARKS_TEXT}, not about the window limit.`));
     if (session.advice) {
       const advice = el("p", "kx-d-advice", session.advice);

@@ -358,16 +358,16 @@ describe("dips", () => {
 });
 
 describe("zone", () => {
-  it("green below 125 000, yellow below 150 000, orange up to and including 200 000, red above, null without a number", () => {
+  it("green below 150 000, orange up to and including 200 000, red above, null without a number; no count is yellow", () => {
     expect(K.zone(0)).toBe("green");
-    expect(K.zone(124999)).toBe("green");
-    expect(K.zone(125000)).toBe("yellow");
-    expect(K.zone(149999)).toBe("yellow");
+    expect(K.zone(125000)).toBe("green");
+    expect(K.zone(149999)).toBe("green");
     expect(K.zone(150000)).toBe("orange");
     expect(K.zone(200000)).toBe("orange");
     expect(K.zone(200001)).toBe("red");
     expect(K.zone(null)).toBeNull();
     expect(K.zone(NaN)).toBeNull();
+    for (let t = 0; t <= 400000; t += 1000) expect(K.zone(t)).not.toBe("yellow");
   });
 });
 
@@ -517,7 +517,7 @@ describe("contextFacts", () => {
   });
 
   it("from the start: \"Session started at\", and no compactions row without a compaction", () => {
-    expect(K.contextFacts({ zone: "yellow", compactionCount: 0, baseline: 29589, baselineCause: "start" }, null).facts).toEqual([["Session started at", "30K"]]);
+    expect(K.contextFacts({ zone: "orange", compactionCount: 0, baseline: 29589, baselineCause: "start" }, null).facts).toEqual([["Session started at", "30K"]]);
   });
 
   it("a segment after a compaction: \"This segment started at\" and the session's compactions, one or more", () => {
@@ -531,18 +531,18 @@ describe("contextFacts", () => {
     expect(K.contextFacts({ zone: "green", baseline: 12000, baselineCause: "start" }, null).typicalStart).toBeNull();
   });
 
-  it("advice for yellow, orange and red as a sentence; none for green or an unknown zone", () => {
+  it("advice for orange and red as a sentence; none for green, yellow (no zone) or an unknown zone", () => {
     const advice = (zone) => K.contextFacts({ zone }, null).advice;
-    expect(advice("yellow")).toBe("Plan to break at the next phase boundary.");
-    expect(advice("orange")).toBe("Break at the first phase boundary; continue only if the next phase needs this one verbatim.");
+    expect(advice("orange")).toBe("Break at the next phase boundary; continue only if the next phase needs this one verbatim.");
     expect(advice("red")).toBe("Do not start a new phase: /clear, /handoff, a subagent, or /compact.");
     expect(advice("green")).toBeNull();
+    expect(advice("yellow")).toBeNull();
     expect(advice(null)).toBeNull();
     expect(advice("purple")).toBeNull();
   });
 
   it("never repeats the count or the zone, which the header carries, nor says what a break would give back", () => {
-    const all = ["green", "yellow", "orange", "red"].map((zone) => K.contextFacts({ zone, compactionCount: 2, baseline: 50000, baselineCause: "start" }, 40000));
+    const all = ["green", "orange", "red"].map((zone) => K.contextFacts({ zone, compactionCount: 2, baseline: 50000, baselineCause: "start" }, 40000));
     for (const { facts } of all) expect(JSON.stringify(facts)).not.toMatch(/zone|give back|free/i);
   });
 });
@@ -604,13 +604,14 @@ describe("buildSessions", () => {
   it("zones lists the zones in order with the limits zone() uses, their range texts and advice, frozen, also for an empty list", () => {
     const { zones } = K.buildSessions({ registry: [], now: NOW });
     expect(zones.map(({ zone, from, to, range, short }) => [zone, from, to, range, short])).toEqual([
-      ["green", 0, 125000, "below 125K", "<125K"], ["yellow", 125000, 150000, "125K–150K", "125K+"],
-      ["orange", 150000, 200000, "150K–200K", "150K+"], ["red", 200000, null, "above 200K", ">200K"],
+      ["green", 0, 150000, "below 150K", "<150K"], ["orange", 150000, 200000, "150K–200K", "150K+"],
+      ["red", 200000, null, "above 200K", ">200K"],
     ]);
     // just inside each end: orange includes 200K itself, so red starts above its `from`
     for (const z of zones) expect([K.zone(z.from + 1), K.zone(z.to === null ? 1e7 : z.to - 1)]).toEqual([z.zone, z.zone]);
     expect(zones[0].advice).toBeNull();
-    expect(zones[2].advice).toBe(K.contextFacts({ zone: "orange" }).advice);
+    expect(zones[1].advice).toBe("Break at the next phase boundary; continue only if the next phase needs this one verbatim.");
+    expect(zones[2].advice).toBe(K.contextFacts({ zone: "red" }).advice);
     expect(Object.isFrozen(zones) && zones.every(Object.isFrozen)).toBe(true);
   });
 
@@ -763,12 +764,12 @@ describe("buildSessions", () => {
     expect(r.sessions.find((s) => s.sessionId === "new")).toMatchObject({ facts: [["Session started at", "62K"]], typicalStart: "~51K" });
   });
 
-  it("the count per zone covers the listed sessions in all four zones, unknown is not counted, and with all projects everything shown is counted", () => {
-    expect(K.buildSessions({ registry, transcripts, now: NOW, workspaceFolders: [MINE], all: false }).zoneCounts).toEqual({ green: 1, yellow: 0, orange: 1, red: 1 });
-    expect(K.buildSessions({ registry, transcripts, now: NOW, workspaceFolders: [MINE], all: true }).zoneCounts).toEqual({ green: 2, yellow: 0, orange: 1, red: 1 });
-    const withYellow = { ...transcripts, without: tail(130000, NOW) };
-    expect(K.buildSessions({ registry, transcripts: withYellow, now: NOW, workspaceFolders: [MINE], all: false }).zoneCounts).toEqual({ green: 1, yellow: 1, orange: 1, red: 1 });
-    expect(K.buildSessions({ registry: [], transcripts: {}, now: NOW, workspaceFolders: [MINE], all: false }).zoneCounts).toEqual({ green: 0, yellow: 0, orange: 0, red: 0 });
+  it("the count per zone covers the listed sessions in exactly the three zones, unknown is not counted, and with all projects everything shown is counted", () => {
+    expect(K.buildSessions({ registry, transcripts, now: NOW, workspaceFolders: [MINE], all: false }).zoneCounts).toEqual({ green: 1, orange: 1, red: 1 });
+    expect(K.buildSessions({ registry, transcripts, now: NOW, workspaceFolders: [MINE], all: true }).zoneCounts).toEqual({ green: 2, orange: 1, red: 1 });
+    const withCount = { ...transcripts, without: tail(150000, NOW) }; // the unknown one gets a count, at orange's first token
+    expect(K.buildSessions({ registry, transcripts: withCount, now: NOW, workspaceFolders: [MINE], all: false }).zoneCounts).toEqual({ green: 1, orange: 2, red: 1 });
+    expect(K.buildSessions({ registry: [], transcripts: {}, now: NOW, workspaceFolders: [MINE], all: false }).zoneCounts).toEqual({ green: 0, orange: 0, red: 0 });
   });
 
   // the prompt cache per session: hit share of the last turn, the deadline the cache goes cold, and the state now
@@ -1025,7 +1026,7 @@ describe("demo (scripts/demo.cjs)", () => {
     expect(s.some((x) => x.waiting)).toBe(true);
     expect(s.some((x) => !x.busy && !x.waiting && !x.abandoned)).toBe(true);
     expect(s.some((x) => x.abandoned)).toBe(true);
-    expect(data.workspace.zoneCounts).toEqual({ green: expect.any(Number), yellow: expect.any(Number), orange: expect.any(Number), red: expect.any(Number) });
+    expect(data.workspace.zoneCounts).toEqual({ green: expect.any(Number), orange: expect.any(Number), red: expect.any(Number) });
     for (const n of Object.values(data.workspace.zoneCounts)) expect(n).toBeGreaterThan(0);
     expect(s.some((x) => x.compactionCount > 0)).toBe(true);
     expect(data.workspace.cacheCounts.warm).toBeGreaterThan(0);
