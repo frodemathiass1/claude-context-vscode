@@ -247,19 +247,29 @@ describe("server.cjs", () => {
     } finally { a.close(); b.close(); await srv.close(); }
   });
 
-  it("a scope no page is in loses its reader, after a switch and after the last page closed", async () => {
+  it("a scope no page is in keeps its reader and stops watching its folders; the next page in it gets the same reader, watched again", async () => {
     const srv = await start([MINE]);
+    const otherFolder = path.join(dir, "projects", K.projectSlug(OTHER));
     const p = await page(srv);
+    let q;
     try {
       await p.post({ type: "scope", all: true });
       await p.next("sessions");
-      expect([...srv.readers.keys()]).toEqual([true]);
+      const allReader = srv.readers.get(true);
+      expect(srv.watcher.watchers.has(otherFolder)).toBe(true);
       await p.post({ type: "scope", all: false });
       await p.next("sessions");
-      expect([...srv.readers.keys()]).toEqual([false]);
-      p.close();
-      await vi.waitFor(() => expect(srv.readers.size).toBe(0));
-    } finally { p.close(); await srv.close(); }
+      expect(srv.readers.get(true)).toBe(allReader);
+      expect(srv.watcher.watchers.has(otherFolder)).toBe(false);
+      q = await page(srv, { all: true });
+      await q.post({ type: "ready" });
+      expect((await q.next("sessions")).count).toBe(2);
+      expect(srv.readers.get(true)).toBe(allReader);
+      expect(srv.watcher.watchers.has(otherFolder)).toBe(true);
+      q.close();
+      await vi.waitFor(() => expect(srv.watcher.watchers.has(otherFolder)).toBe(false));
+      expect(srv.readers.size).toBe(2);
+    } finally { p.close(); q?.close(); await srv.close(); }
   });
 
   it("close() ends with a page's event stream and a keep-alive socket still open", async () => {

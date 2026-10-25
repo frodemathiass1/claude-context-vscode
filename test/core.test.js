@@ -1,6 +1,6 @@
 // test/core.test.js — the core behind the "Claude Context" panel (core.cjs): the registry of live Claude
 // sessions, the parsing of transcript tails, the zones and the list the panel shows.
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
@@ -489,6 +489,48 @@ describe("readTail", () => {
     expect(h.restarted).toBe(true);
     expect(K.readTail(file, { from: 0 }).restarted).toBe(false);
   });
+
+  it("a file over several chunks gives the same lines and offset as one read: lines and characters across a boundary, a half-written last line", () => {
+    const { mkdtempSync, writeFileSync, rmSync } = require("node:fs");
+    const MB = 1024 * 1024;
+    const line = (n, text) => JSON.stringify({ n, text });
+    // filler up to just before a boundary, then a line whose four-byte character sits on it, one longer than a
+    // chunk, and a last line still being written
+    const parts = [];
+    let bytes = 0;
+    const add = (l) => { parts.push(l + "\n"); bytes += Buffer.byteLength(l) + 1; };
+    for (let n = 0; bytes < MB - 300; n++) add(line(n, "x".repeat(90)));
+    const pad = MB - 2 - bytes - Buffer.byteLength('{"n":-1,"text":"'); // the character starts 2 bytes before the boundary
+    add(line(-1, "ø".repeat(Math.floor(pad / 2)) + "x".repeat(pad % 2) + "😀 across the first boundary"));
+    add(line(-2, "æ€".repeat(MB / 2))); // 2.5 MB: across the second and third boundary
+    for (let n = 0; n < 50; n++) add(line(n, "after"));
+    const whole = parts.join("") + '{"n":"half","te';
+    const dir = mkdtempSync(path.join(os.tmpdir(), "claude-context-tail-"));
+    const big = path.join(dir, "big.jsonl");
+    try {
+      writeFileSync(big, whole);
+      const buf = Buffer.from(whole);
+      expect(buf.indexOf("😀")).toBe(MB - 2);
+      // the reading before #68: one buffer, one string, one split
+      const once = (start, cut) => {
+        const last = buf.lastIndexOf(0x0a);
+        let text = buf.subarray(start, last + 1).toString("utf8");
+        if (cut) text = text.slice(text.indexOf("\n") + 1);
+        return { lines: text.split("\n").filter(Boolean), end: last + 1, missing: false, restarted: false };
+      };
+      const fromStart = K.readTail(big, { from: 0 });
+      expect(fromStart).toEqual(once(0, false));
+      expect(fromStart.lines.some((l) => l.includes("😀 across"))).toBe(true);
+      expect(fromStart.end).toBe(buf.length - Buffer.byteLength('{"n":"half","te'));
+      const offset = buf.indexOf("\n", MB - 1000) + 1;
+      expect(K.readTail(big, { from: offset })).toEqual(once(offset, false));
+      expect(K.readTail(big, { bytes: 3 * MB })).toEqual(once(buf.length - 3 * MB, true));
+      // readSync may give fewer bytes than asked: only those are used, and the next read starts after them
+      const fs = require("node:fs"), readSync = fs.readSync;
+      const short = vi.spyOn(fs, "readSync").mockImplementation((fd, b, off, len, at) => readSync(fd, b, off, Math.min(len, 1000), at));
+      try { expect(K.readTail(big, { from: 0 })).toEqual(once(0, false)); } finally { short.mockRestore(); }
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
 });
 
 describe("seriesFor", () => {
@@ -918,6 +960,43 @@ describe("SessionReader", () => {
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
+  it("a transcript outside the scope keeps its state while its session is in the registry, and loses it when the session leaves", () => {
+    const { dir } = rig();
+    try {
+      const OTHER = "/Users/me/Dev/other-project";
+      writeFileSync(path.join(dir, "sessions", "77.json"), JSON.stringify({ pid: 77, sessionId: "elsewhere", cwd: OTHER, status: "idle" }));
+      const otherFolder = path.join(dir, "projects", K.projectSlug(OTHER));
+      mkdirSync(otherFolder, { recursive: true });
+      const otherFile = path.join(otherFolder, "elsewhere.jsonl");
+      writeFileSync(otherFile, all.join("\n") + "\n");
+      let alive = [1303, 77];
+      const reader = new K.SessionReader(dir, { alive: (pid) => alive.includes(pid) });
+      reader.read({ workspaceFolders: [MINE], all: true });
+      reader.read({ workspaceFolders: [MINE], all: false });
+      expect(reader.cache.get(otherFile).end).toBe(Buffer.byteLength(all.join("\n") + "\n"));
+      // a marked state survives the switch back: read from the stored offset, not from byte 0
+      reader.cache.get(otherFile).state.tokens = 1;
+      // the same holds for what else the reader remembers of a session: its meta files and a folder found by searching
+      const otherMeta = path.join(otherFolder, "elsewhere", "subagents", "agent-x.meta.json");
+      reader.metas.set(otherMeta, { stamp: null, meta: {}, session: "elsewhere" });
+      reader.found.set("elsewhere", otherFolder);
+      reader.read({ workspaceFolders: [MINE], all: false });
+      expect(reader.metas.has(otherMeta)).toBe(true);
+      expect(reader.found.has("elsewhere")).toBe(true);
+      const back = reader.read({ workspaceFolders: [MINE], all: true });
+      expect(back.sessions.find((s) => s.sessionId === "elsewhere").tokens).toBe(1);
+      appendFileSync(otherFile, turn(3, 150000) + "\n");
+      expect(reader.read({ workspaceFolders: [MINE], all: true }).sessions.find((s) => s.sessionId === "elsewhere")).toMatchObject({ tokens: 150000, turns: 3 });
+      // the process ended: its state goes with the next read, whatever that read's scope
+      alive = [1303];
+      reader.read({ workspaceFolders: [MINE], all: false });
+      expect(reader.cache.has(otherFile)).toBe(false);
+      expect([...reader.cache.values()].map((c) => c.session)).toEqual(["aaaa-1"]);
+      expect(reader.metas.has(otherMeta)).toBe(false);
+      expect(reader.found.has("elsewhere")).toBe(false);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
   it("when the slug folder is missing, the folder in projects/ that holds the transcript is used and remembered", () => {
     const { dir } = rig({ withProjectFolder: false });
     try {
@@ -1184,6 +1263,22 @@ describe("SessionWatcher", () => {
       expect(watcher.watchers.size).toBe(0);
       expect(watcher.tick).toBeNull();
     } finally { watcher.stop(); rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it("a burst of changes does not hold the call back: one within 250 ms of the first change, and one after the burst", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    const calls = [];
+    const watcher = new K.SessionWatcher("/nowhere", () => calls.push(Date.now()));
+    try {
+      const t0 = Date.now();
+      for (let t = 0; t <= 1000; t += 100) { watcher.schedule(); vi.advanceTimersByTime(t < 1000 ? 100 : 0); }
+      vi.advanceTimersByTime(1000);
+      const at = calls.map((c) => c - t0);
+      expect(at[0]).toBeLessThanOrEqual(250);
+      expect(at[at.length - 1]).toBeGreaterThanOrEqual(1000); // the last change (at 1000 ms) is read
+      expect(at[at.length - 1]).toBeLessThanOrEqual(1250);
+      for (let i = 1; i < at.length; i++) expect(at[i] - at[i - 1]).toBeLessThanOrEqual(300);
+    } finally { watcher.stop(); vi.useRealTimers(); }
   });
 });
 
