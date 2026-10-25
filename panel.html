@@ -315,7 +315,7 @@
   .kx-d-sw-out { opacity: 0.35; }
   .kx-d-sw-think { opacity: 0.8; }
   .kx-d-tip .kx-d-tip-o { color: var(--kx-muted); }
-  /* the header: "Context 138K · orange zone", what the zones measure and the advice, edged and tinted in the zone colour */
+  /* the header: "Context 169K · orange zone", what the zones measure and the advice, edged and tinted in the zone colour */
   .kx-d-ctx {
     margin: 0 0 10px; padding: 8px 10px; border-left: 3px solid var(--kx-zone-fill, var(--kx-muted)); border-radius: 0 4px 4px 0;
     background: color-mix(in srgb, var(--kx-zone-fill, var(--kx-muted)) 8%, transparent);
@@ -543,7 +543,9 @@
   const ZONES = ["green", "yellow", "orange", "red"];
   const ZONE_NAME = Object.fromEntries(ZONES.map((z) => [z, z]));
   let LIMITS = [], ZONE_LIST = [], MARKS_TEXT = ""; // until the first list with zones: no limits drawn, no marks named
-  const SCALE = 300000; // past red's 200K, so the red band is on the strip and few sessions run off the bar (README, Zones)
+  // past red's 200K, so the red band is on the strip and few sessions run off the bar: of the owner's 395 sessions in
+  // the 60 days to 2026-10-25 (peak context, counts only), 18 % went above 200K and 7 % above 300K (#58)
+  const SCALE = 300000;
   // The prompt cache (core.cjs: cacheTtlMs, coldInMs, hitShare). The core decides warm or cold; "soon" is the
   // panel's marker for a warm cache within SOON_MS of its deadline (or half the TTL, so a 5-minute cache is
   // not "soon" from its first minute). The panel only shows the state; it never sends a turn.
@@ -1406,7 +1408,7 @@
   }
 
   /**
-   * The context box: "Context 138K · orange zone", what the zones measure (for a known zone) and the zone's advice
+   * The context box: "Context 169K · orange zone", what the zones measure (for a known zone) and the zone's advice
    * (yellow, orange and red), then the named facts under it; the core gives the advice and the facts (contextFacts).
    */
   function contextBlock(session) {
