@@ -603,18 +603,26 @@ describe("seriesFor", () => {
     compactions: [{ at: 1, trigger: "auto" }, { at: 3, trigger: "manual" }], baselineAt: 3 };
 
   it("without a limit it gives every turn, and the dips without the turns of a compaction", () => {
-    expect(K.seriesFor(state)).toEqual({ series: [10, 20, 30, 5, 40, 2], outputSeries: [1, 2, 3, 4, 5, 6], thinkingSeries: [0, 1, 0, 1, 0, 1],
+    expect(K.seriesFor(state)).toEqual({ series: [10, 20, 30, 5, 40, 2], firstTurn: 1, outputSeries: [1, 2, 3, 4, 5, 6], thinkingSeries: [0, 1, 0, 1, 0, 1],
       compactions: [{ at: 1, trigger: "auto" }, { at: 3, trigger: "manual" }], dips: [5], baselineAt: 3 });
   });
 
   it("cut to the last turns, the compactions and baselineAt move with the cut, and a cut one drops out or becomes null", () => {
-    expect(K.seriesFor(state, 4)).toEqual({ series: [30, 5, 40, 2], outputSeries: [3, 4, 5, 6], thinkingSeries: [0, 1, 0, 1],
+    expect(K.seriesFor(state, 4)).toEqual({ series: [30, 5, 40, 2], firstTurn: 1, outputSeries: [3, 4, 5, 6], thinkingSeries: [0, 1, 0, 1],
       compactions: [{ at: 1, trigger: "manual" }], dips: [3], baselineAt: 1 });
     expect(K.seriesFor(state, 2)).toMatchObject({ series: [40, 2], compactions: [], baselineAt: null });
   });
 
-  it("a state without the fields (older core, no transcript) gives empty lists and no baselineAt", () => {
-    expect(K.seriesFor({})).toEqual({ series: [], outputSeries: [], thinkingSeries: [], compactions: [], dips: [], baselineAt: null });
+  it("a state without the fields (older core, no transcript) gives empty lists, no baselineAt and turn 1 first", () => {
+    expect(K.seriesFor({})).toEqual({ series: [], firstTurn: 1, outputSeries: [], thinkingSeries: [], compactions: [], dips: [], baselineAt: null });
+  });
+
+  it("firstTurn is the turn number of the first point kept: 1 when nothing is cut, the turns before it plus 1 when cut", () => {
+    const of = (turns) => ({ turns, series: Array.from({ length: turns }, (_, i) => 1000 * (i + 1)) });
+    expect(K.seriesFor(of(150), 200).firstTurn).toBe(1);
+    expect(K.seriesFor(of(250), 200).firstTurn).toBe(51);
+    expect(K.seriesFor(of(250)).firstTurn).toBe(1); // the detail's, every turn
+    expect(K.seriesFor({ turns: 0, series: [] }, 200).firstTurn).toBe(1);
   });
 });
 
@@ -1171,8 +1179,10 @@ describe("SessionReader", () => {
       const list = reader.read({ workspaceFolders: [MINE], all: false });
       expect(list.sessions[0]).toMatchObject({ turns: 230, compactions: [], compactionCount: 1, baselineAt: null });
       expect(list.sessions[0].series.length).toBe(200);
+      expect(list.sessions[0].firstTurn).toBe(31);
       const d = reader.detail("aaaa-1");
       expect(d.turns).toBe(230);
+      expect(d.firstTurn).toBe(1);
       expect(d.series.length).toBe(230);
       expect(d.outputSeries.length).toBe(230);
       expect(d.compactions).toEqual([{ at: 10, trigger: "auto", preTokens: 9000, postTokens: 1000, durationMs: null }]);

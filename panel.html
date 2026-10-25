@@ -741,6 +741,9 @@
     for (const c of compactions) svg.appendChild(svgEl("line", { class: "kx-compact", "data-turn": turn(c.at), "data-trigger": c.trigger || "unknown", x1: num(x(c.at)), x2: num(x(c.at)), y1: 0, y2: h, "vector-effect": "non-scaling-stroke" }));
   }
 
+  /** The turn number of the series' first point (core.cjs firstTurn: the list keeps the last SERIES_MAX turns), 1 without a usable one. */
+  const firstTurnOf = (session) => (Number.isInteger(session.firstTurn) && session.firstTurn >= 1 ? session.firstTurn : 1);
+
   function curveFor(session) {
     // the core only pushes numbers, and dips index this very list, so it is drawn as it comes
     const series = Array.isArray(session.series) ? session.series : [];
@@ -755,7 +758,8 @@
       "data-testid": "curve", "data-points": series.length, "aria-label": label,
     });
     const title = svgEl("title", {});
-    const marks = compactions.map((c) => ` · turn ${c.at + 1}: ${compactionText(c)}`).join("");
+    const first = firstTurnOf(session);
+    const marks = compactions.map((c) => ` · turn ${first + c.at}: ${compactionText(c)}`).join("");
     title.textContent = `${label} · ${MARKS_TEXT ? `dashed lines at ${MARKS_TEXT}` : "no limits yet"}${marks}${dips.length ? " · dotted marks: drops without a compaction entry" : ""}`;
     svg.appendChild(title);
     drawCurve(svg, { series, dips, compactions, x, y, w: CURVE_W, h: CURVE_H, turn: (i) => i });
@@ -1155,13 +1159,13 @@
    * Hovering shows a hairline and "turn 2 · 60K · +9K from turn 1", with "output 1K · thinking 83" under it; the
    * output per turn has its own field under the curve, and hovering it shows the same turn. The range under both
    * does the same from the keyboard. Until the host's detail has come the series is the list's last SERIES_MAX turns (core.cjs), so
-   * its first point is turn `first`; with the detail it is every turn and `first` is 1.
+   * its first point is turn `first` (the core's firstTurn); with the detail it is every turn and `first` is 1.
    */
   function detailCurve(session) {
     const wrap = el("div", "kx-d-sec");
     const series = Array.isArray(session.series) ? session.series : [];
     const turns = Math.max(session.turns || 0, series.length);
-    const first = turns - series.length + 1, last = turns;
+    const first = firstTurnOf(session), last = turns;
     const { dips, compactions } = curveMarks(session, series);
     const lbl = el("div", "kx-d-lbl");
     const span = first > 1 ? `last ${series.length} of ${plural(turns, "turn", "turns")}` : plural(series.length, "turn", "turns");
