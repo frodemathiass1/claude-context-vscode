@@ -29,6 +29,9 @@ const DIM_AFTER_MS = 60 * 60 * 1000;
 // write costs 1.25× input, a 1-hour write 2×, a read 0.1× (0.025× on Fable and Mythos 5.1, 0.05× on Opus and
 // Sonnet 5.5). A session that went cold rewrites its whole context on the next turn.
 const TTL_1H_MS = 60 * 60 * 1000, TTL_5M_MS = 5 * 60 * 1000;
+// A warm cache is "soon" cold within SOON_MS of its deadline, or within half the TTL, so a 5-minute cache is not
+// "soon" from its first minute. The panel only shows it; it never sends a turn.
+const SOON_MS = 5 * 60 * 1000;
 const SERIES_MAX = 200; // the list keeps the last 200 turns per session, so its payload stays small; the detail view asks for all of them
 const DIP_BELOW = 0.7; // a turn is a dip when its context is below 70 % of the previous turn's
 // What an image weighs against text when a turn's growth is split by length. Measured in the owner's transcripts
@@ -494,10 +497,16 @@ function userText(content) {
  * first, unknown last. `waiting` is a session that waits for the user: a permission prompt, a question or a
  * dialog (the registry's status "waiting", NOTES.md "Session status"); any other status but "busy" counts as
  * idle. `zoneCounts` counts the listed sessions per zone; sessions with an unknown count are not counted. Per session the prompt cache: `hitShare` (cacheRead / tokens of the last turn), `coldAt` (the last
- * turn plus the TTL), `coldInMs` (until then, negative when past) and `cacheState` ("warm" or "cold", null
- * without a TTL); `cacheCounts` counts the listed sessions per state. `baselineMedian` is the median baseline
- * of the listed sessions whose segment is a start (after a compaction the baseline holds the summary too), null
- * when there are none, so a CLAUDE.md that grew shows as a higher start for every new session. The per-turn
+ * turn plus the TTL), `coldInMs` (until then, negative when past), `cacheState` ("warm" or "cold", null
+ * without a TTL) and `cacheSoon` (warm and within SOON_MS or half the TTL of going cold; false when warm otherwise or
+ * cold, null without a TTL); `cacheCounts` counts the listed sessions per state. `thinkingShare` is thinkingTotal /
+ * outputTotal, null without output; `lastOutput` and `lastThinking` are the last turn's output tokens and the thinking
+ * part of them, null before the first turn (`lastThinking` 0 when unknown beside a known output). `titleText` is
+ * the title as shown: the transcript's, else "new session" (no turns yet: a tab opened and not written to) or
+ * "untitled session" with the registry's name after " · " ("new session · my-project-08"), and `titleFallback` is
+ * true for those two. `baselineMedian` is the median baseline of the listed sessions whose segment is a start
+ * (after a compaction the baseline holds the summary too), null when there are none, so a CLAUDE.md that grew
+ * shows as a higher start for every new session. The per-turn
  * fields are kept to the last SERIES_MAX turns (seriesFor; SessionReader.detail gives all of them);
  * `compactionCount` counts the whole session's. `growth` is growthBySource as rows (growthRows); `advice`, `facts`
  * and `typicalStart` are what the detail view says under its header (contextFacts, with the list's baselineMedian).
@@ -529,14 +538,21 @@ function buildSessions({ registry = [], transcripts = {}, subagents = {}, now, w
       const busy = r.status === "busy", waiting = r.status === "waiting", dimmed = sinceMs !== null && sinceMs > DIM_AFTER_MS;
       const activeMs = Math.max(Number.isFinite(lastMs) ? lastMs : -Infinity, Number.isFinite(startedMs) ? startedMs : -Infinity);
       const quiet = Number.isFinite(activeMs) && Number.isFinite(nowMs) && nowMs - activeMs > DIM_AFTER_MS;
+      const cacheState = coldInMs === null ? null : coldInMs > 0 ? "warm" : "cold";
+      const soonMs = Math.min(SOON_MS, (cacheTtlMs ?? SOON_MS * 2) / 2);
+      const outputTotal = numOrNull(t.outputTotal), thinkingTotal = numOrNull(t.thinkingTotal);
+      const lastOutput = outputSeries.length ? numOrNull(outputSeries[outputSeries.length - 1]) : null;
+      const turns = t.turns || 0, name = r.name || null;
       return {
-        pid: r.pid, sessionId: r.sessionId, cwd: r.cwd, project: projectName(r.cwd), name: r.name || null,
+        pid: r.pid, sessionId: r.sessionId, cwd: r.cwd, project: projectName(r.cwd), name,
         startedAt: Number.isFinite(startedMs) ? new Date(startedMs).toISOString() : null, // the registry's epoch ms, as ISO like lastTurn
-        title: t.title || null, model: t.model || null, modelShort: modelShort(t.model),
-        tokens, zone: zone(tokens), turns: t.turns || 0, series, compactions, dips: drops,
+        title: t.title || null, titleText: t.title || [turns ? "untitled session" : "new session", name].filter(Boolean).join(" · "),
+        titleFallback: !t.title, model: t.model || null, modelShort: modelShort(t.model),
+        tokens, zone: zone(tokens), turns, series, compactions, dips: drops,
         compactionCount: Array.isArray(t.compactions) ? t.compactions.length : 0, // the whole session's, also those cut from the series
         lastTurn: t.lastTurn || null, sinceMs, outputSeries, thinkingSeries,
-        outputTotal: numOrNull(t.outputTotal), thinkingTotal: numOrNull(t.thinkingTotal),
+        outputTotal, thinkingTotal, thinkingShare: outputTotal > 0 && thinkingTotal !== null ? thinkingTotal / outputTotal : null,
+        lastOutput, lastThinking: lastOutput === null ? null : numOrNull(thinkingSeries[thinkingSeries.length - 1]) ?? 0,
         effort: typeof t.effort === "string" ? t.effort : null,
         baseline: numOrNull(t.baseline), baselineAt,
         baselineCause: t.baselineCause === "start" || t.baselineCause === "compaction" ? t.baselineCause : null,
@@ -544,7 +560,7 @@ function buildSessions({ registry = [], transcripts = {}, subagents = {}, now, w
         cacheTtlMs, cacheRead, cacheCreated: numOrNull(t.cacheCreated),
         hitShare: cacheRead !== null && tokens ? cacheRead / tokens : null,
         coldAt: Number.isFinite(coldMs) ? new Date(coldMs).toISOString() : null, coldInMs,
-        cacheState: coldInMs === null ? null : coldInMs > 0 ? "warm" : "cold",
+        cacheState, cacheSoon: cacheState === null ? null : cacheState === "warm" && coldInMs <= soonMs,
         busy, waiting, dimmed, abandoned: !busy && !waiting && quiet,
         subagents: subagentSummary(subagentRows(subagents[r.sessionId], { ends: t.agentEnds, startedMs: firstStart.get(r.sessionId) })),
         _lastMs: Number.isFinite(lastMs) ? lastMs : -Infinity,

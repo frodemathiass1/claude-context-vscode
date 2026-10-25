@@ -56,17 +56,20 @@ function panel({ state = null } = {}) {
   return p;
 }
 
-/** One live session: its registry entry and its parsed transcript, as SessionReader hands them to buildSessions. */
+/**
+ * One live session: its registry entry and its parsed transcript, as SessionReader hands them to buildSessions. Other
+ * options are transcript fields (`cacheTtlMs: null`, `compactions`), over the ones made here.
+ */
 function session(sessionId, { tokens = 50000, status = "idle", model = "claude-opus-5-5", title = `Session ${sessionId}`, turns = 3,
-  ago = MIN, startedAgo = 10 * MIN, cwd = MINE, series } = {}) {
+  ago = MIN, startedAgo = 10 * MIN, cwd = MINE, series, name = null, ...more } = {}) {
   const all = series || Array.from({ length: turns }, (_, i) => Math.round((tokens * (i + 1)) / turns));
   return {
-    registry: { pid: 1000 + sessionId.charCodeAt(0), sessionId, cwd, status, startedAt: NOW - startedAgo, name: null },
+    registry: { pid: 1000 + sessionId.charCodeAt(0), sessionId, cwd, status, startedAt: NOW - startedAgo, name },
     transcript: {
       tokens, model, title, turns, series: all, lastTurn: new Date(NOW - ago).toISOString(),
       outputSeries: all.map(() => 400), thinkingSeries: all.map(() => 100), outputTotal: 400 * all.length, thinkingTotal: 100 * all.length,
       cacheTtlMs: HOUR, cacheRead: Math.round(tokens * 0.9), cacheCreated: 1000, compactions: [],
-      baseline: all[0], baselineAt: 0, baselineCause: "start", growthBySource: { Bash: 5000, you: 1000 },
+      baseline: all[0], baselineAt: 0, baselineCause: "start", growthBySource: { Bash: 5000, you: 1000 }, ...more,
     },
   };
 }
@@ -787,6 +790,96 @@ describe("panel: the detail view", () => {
   });
 });
 
+describe("panel: what the core decides for it", () => {
+  /** The rows of the detail view's facts tables, as [key, value] texts. */
+  const facts = (p) => Object.fromEntries([...p.$("detail-facts").querySelectorAll("tr")].map((tr) => [tr.querySelector("th").textContent, tr.querySelector("td").textContent]));
+
+  it("the cache is warm, soon or cold as the core says, in the row and the detail view", () => {
+    const p = panel();
+    p.send(list([
+      session("w", { ago: MIN }), // 1h, 59 min left
+      session("s", { ago: 56 * MIN }), // 1h, 4 min left: within SOON_MS
+      session("f", { ago: MIN, cacheTtlMs: 5 * MIN }), // 5m, 4 min left: past half its TTL only from 2.5 min
+      session("t", { ago: 3 * MIN, cacheTtlMs: 5 * MIN }), // 5m, 2 min left
+      session("c", { ago: 10 * MIN, cacheTtlMs: 5 * MIN }),
+      session("n", { cacheTtlMs: null }),
+    ]));
+    const cache = (id) => p.row(id).querySelector('[data-testid="cache"]');
+    expect(["w", "s", "f", "t", "c"].map((id) => [cache(id).dataset.cache, cache(id).textContent])).toEqual([
+      ["warm", "warm · 59 min1h"], ["soon", "warm · 4 min1h"], ["warm", "warm · 4 min5m"], ["soon", "warm · 2 min5m"], ["cold", "cold5m"],
+    ]);
+    expect(cache("n")).toBeNull();
+    expect(cache("s").title).toMatch(/^Prompt cache: 1-hour TTL, cold at .+ unless a turn is sent \(in 4 min\) · last turn: 45K read from cache \(90 % of the context\), 1K written · /);
+    expect(cache("c").title).toMatch(/^Prompt cache: 5-minute TTL, cold since /);
+    p.row("s").click();
+    expect(facts(p)["Cache now"]).toMatch(/^warm · 4 min left \(cold at .+\)$/);
+    p.$("detail-back").click();
+    p.row("c").click();
+    expect(facts(p)["Cache now"]).toMatch(/^cold since /);
+    p.$("detail-back").click();
+    p.row("n").click();
+    expect(facts(p)["Cache now"]).toBe("unknown");
+  });
+
+  it("the output's tooltip and facts have the last turn and the thinking share", () => {
+    const p = panel();
+    p.send(list([
+      session("a"), // 3 turns of 400 out, 100 of them thinking
+      session("z", { ago: 2 * MIN, outputSeries: [0, 0, 0], thinkingSeries: [0, 0, 0], outputTotal: 0, thinkingTotal: 0 }),
+      session("u", { ago: 3 * MIN, outputSeries: [300, 500], thinkingSeries: [], thinkingTotal: null, outputTotal: 800 }),
+    ]));
+    const output = (id) => p.row(id).querySelector('[data-testid="output-total"]');
+    expect(output("a").textContent).toBe("1K out");
+    expect(output("a").title).toBe("Output: last turn 400 out, 100 thinking · session 1K out, 25 % thinking · what the model writes is read back as input on the next turn");
+    expect(output("z").title).toBe("Output: last turn 0 out, 0 thinking · session 0 out · what the model writes is read back as input on the next turn");
+    expect(output("u").title).toBe("Output: last turn 500 out, 0 thinking · session 800 out · what the model writes is read back as input on the next turn");
+    const rows = (id) => { p.row(id).click(); const f = facts(p); p.$("detail-back").click(); return [f["Output, whole session"], f["Of it thinking"], f["Output, last turn"]]; };
+    expect(rows("a")).toEqual(["1K", "300 (25 %)", "400 (100 thinking)"]);
+    expect(rows("z")).toEqual(["0", "unknown", "0 (0 thinking)"]);
+    expect(rows("u")).toEqual(["800", "unknown", "500 (0 thinking)"]);
+  });
+
+  it("before the first turn there is no output and no last turn", () => {
+    const p = panel();
+    p.send(list([session("e", { turns: 0, tokens: null, title: null, outputSeries: [], thinkingSeries: [], outputTotal: 0, thinkingTotal: 0 })]));
+    expect(p.row("e").querySelector('[data-testid="output-total"]')).toBeNull();
+    p.row("e").click();
+    expect(facts(p)["Output, last turn"]).toBe("unknown");
+    expect(facts(p)["Of it thinking"]).toBe("unknown");
+  });
+
+  it("a session without a title is a new or an untitled session, with the registry's name, in the row and the detail view", () => {
+    const p = panel();
+    p.send(list([
+      session("t", { name: "my-project-08" }),
+      session("n", { ago: 2 * MIN, turns: 0, tokens: null, title: null, name: "my-project-08", outputSeries: [], thinkingSeries: [] }),
+      session("u", { ago: 3 * MIN, title: null }),
+    ]));
+    const title = (id) => p.row(id).querySelector(".kx-title");
+    expect(["t", "n", "u"].map((id) => [title(id).textContent, title(id).hasAttribute("data-fallback")])).toEqual([
+      ["Session t", false], ["new session · my-project-08", true], ["untitled session", true],
+    ]);
+    expect(p.row("u").getAttribute("aria-label")).toBe("Open details: untitled session, 50K tokens, zone green");
+    p.row("n").click();
+    expect(p.$("detail-title").textContent).toBe("new session · my-project-08");
+    expect(p.$("detail-title").hasAttribute("data-fallback")).toBe(true);
+  });
+
+  it("a compaction at the first turn the list keeps shows on the row's curve and in the detail view", () => {
+    const compaction = { at: 0, trigger: "auto", preTokens: 900000, postTokens: 40000, durationMs: 60000 };
+    const a = session("a", { series: [40000, 60000, 80000], compactions: [compaction] });
+    const p = panel();
+    p.send(list([a]));
+    const marks = [...p.row("a").querySelectorAll('[data-testid="curve"] .kx-compact')];
+    expect(marks.map((m) => [m.dataset.turn, m.dataset.trigger])).toEqual([["0", "auto"]]);
+    expect(p.row("a").querySelector('[data-testid="curve"]').getAttribute("aria-label")).toBe("Tokens per turn, 3 turns, 1 compaction, 0 other drops");
+    expect(p.row("a").querySelector('[data-testid="curve"] title').textContent).toMatch(/ · turn 1: auto-compacted 900K → 40K \(1 min\)/);
+    p.row("a").click();
+    p.send(detailOf(a));
+    expect([...p.$("detail-curve").querySelectorAll(".kx-compact")].map((m) => m.dataset.turn)).toEqual(["1"]); // the detail view numbers turns from 1
+  });
+});
+
 describe("panel: what the host may send", () => {
   it("a payload with missing or wrongly typed fields renders without throwing", () => {
     const p = panel();
@@ -797,7 +890,7 @@ describe("panel: what the host may send", () => {
     p.send({ type: "sessions", count: 2, sessions: [{}, { sessionId: "x", series: "no", compactions: [null], dips: "no", growth: {}, tokens: "12", facts: [1] }] });
     expect(p.rows()).toEqual(["", "x"]);
     p.row("x").click();
-    expect(p.$("detail-title").textContent).toBe("new session");
+    expect(p.$("detail-title").textContent).toBe(""); // the core composes the title (titleText), and this payload has none
     p.send({ type: "detail", sessionId: "x", detail: "no" });
     p.send({ type: "detail" });
     p.send({ type: "sessions", count: 1, all: true, groups: [null, { project: "p", sessions: null }, { sessions: [{ sessionId: "y" }] }] });
