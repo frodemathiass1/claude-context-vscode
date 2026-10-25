@@ -215,10 +215,10 @@ One row per session:
 - Under the bar, an estimate of where the conversation's growth went ("≈ Bash 50K · output 46K · Read 27K"):
   per turn, what the model wrote first, the rest split by length over the tool results, your messages and
   attachments; every source in the tooltip.
-- A sparkline of tokens per turn, with a solid mark at every compaction Claude Code recorded (the tooltip says
-  whether it was automatic and the count before and after) and a dotted one at any other sharp drop (a
-  `/clear` starts a new transcript, so it starts a new curve). Thin bars under it show the output tokens per
-  turn, the thinking part drawn stronger.
+- A sparkline of tokens per turn, with a solid mark at every compaction Claude Code recorded, also one at the
+  first turn the row shows (the tooltip says whether it was automatic and the count before and after), and a
+  dotted one at any other sharp drop (a `/clear` starts a new transcript, so it starts a new curve). Thin bars
+  under it show the output tokens per turn, the thinking part drawn stronger.
 - The model with the effort of the last turn ("Opus 5.5 · xhigh"), the number of turns, the output tokens of
   the session ("44K out"; the tooltip has the last turn and the thinking share) and the time since the last turn.
 - The prompt cache: "warm · 47 min" counts down to the moment the cache goes cold (the last turn plus the TTL

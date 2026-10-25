@@ -578,10 +578,8 @@
   // past red's 200K, so the red band is on the strip and few sessions run off the bar: of the owner's 395 sessions in
   // the 60 days to 2026-10-25 (peak context, counts only), 18 % went above 200K and 7 % above 300K (#58)
   const SCALE = 300000;
-  // The prompt cache (core.cjs: cacheTtlMs, coldInMs, hitShare). The core decides warm or cold; "soon" is the
-  // panel's marker for a warm cache within SOON_MS of its deadline (or half the TTL, so a 5-minute cache is
-  // not "soon" from its first minute). The panel only shows the state; it never sends a turn.
-  const SOON_MS = 5 * 60000;
+  // The prompt cache (core.cjs: cacheTtlMs, coldInMs, hitShare). The core decides warm, cold and "soon"
+  // (cacheSoon); the panel only shows the state, it never sends a turn.
   const TTL_TEXT = { 3600000: "1h", 300000: "5m" };
 
   // ── Rendering (DOM API only, never innerHTML with data) ────────────────────
@@ -631,14 +629,6 @@
     return Number.isFinite(d.getTime()) ? CLOCK.format(d) : "";
   }
 
-  /** "warm", "soon" (warm, within SOON_MS or half the TTL of the deadline) or "cold"; null without a TTL. */
-  function cacheState(session) {
-    if (session.cacheState !== "warm" && session.cacheState !== "cold") return null;
-    if (session.cacheState === "cold") return "cold";
-    const soon = Math.min(SOON_MS, (Number.isFinite(session.cacheTtlMs) ? session.cacheTtlMs : SOON_MS * 2) / 2);
-    return Number.isFinite(session.coldInMs) && session.coldInMs <= soon ? "soon" : "warm";
-  }
-
   /** "200K", "150K and 200K", "a, b and c": the limits as words for tooltips. */
   function listText(items) {
     return items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
@@ -651,18 +641,10 @@
     return Number.isFinite(d.getTime()) ? `${DAY.format(d)} ${clockText(iso)}` : "unknown";
   }
 
-  /**
-   * The transcript's title, else "new session" (no turns yet: a tab opened and not written to) or "untitled
-   * session", with the registry's name ("new session · my-project-08"); `fallback` is true for both of these.
-   */
-  function titleOf(session) {
-    if (session.title) return { text: session.title, fallback: false };
-    return { text: [session.turns ? "untitled session" : "new session", session.name].filter(Boolean).join(" · "), fallback: true };
-  }
+  /** The title as the core composed it (titleText), marked when it is "new session" or "untitled session". */
   function titled(e, session) {
-    const t = titleOf(session);
-    e.textContent = t.text;
-    if (t.fallback) e.dataset.fallback = "";
+    e.textContent = session.titleText || "";
+    if (session.titleFallback) e.dataset.fallback = "";
     return e;
   }
   const startText = (session) => (session.startedAt ? `started ${clockText(session.startedAt)}` : "start unknown");
@@ -741,7 +723,7 @@
     const x = (i) => (i / (series.length - 1)) * CURVE_W;
     const y = (v) => CURVE_H - 1 - (v / top) * (CURVE_H - 2); // 1 px margin top and bottom for the stroke
     const dips = Array.isArray(session.dips) ? session.dips.filter((i) => i > 0 && i < series.length) : [];
-    const compactions = Array.isArray(session.compactions) ? session.compactions.filter((c) => c && c.at > 0 && c.at < series.length) : [];
+    const compactions = Array.isArray(session.compactions) ? session.compactions.filter((c) => c && c.at >= 0 && c.at < series.length) : [];
     const label = `Tokens per turn, ${plural(series.length, "turn", "turns")}, ${plural(compactions.length, "compaction", "compactions")}, ${plural(dips.length, "other drop", "other drops")}`;
     const svg = svgEl("svg", {
       class: "kx-curve", viewBox: `0 0 ${CURVE_W} ${CURVE_H}`, preserveAspectRatio: "none", role: "img",
@@ -791,9 +773,8 @@
     span.dataset.testid = "output-total";
     span.appendChild(icon("pen"));
     span.appendChild(document.createTextNode(`${tokensText(session.outputTotal)} out`));
-    const out = Array.isArray(session.outputSeries) ? session.outputSeries : [], th = Array.isArray(session.thinkingSeries) ? session.thinkingSeries : [];
-    const last = out.length ? `last turn ${tokensText(out[out.length - 1])} out, ${tokensText(th[th.length - 1] || 0)} thinking · ` : "";
-    const shareText = session.outputTotal > 0 && Number.isFinite(session.thinkingTotal) ? `, ${Math.round((session.thinkingTotal / session.outputTotal) * 100)} % thinking` : "";
+    const last = Number.isFinite(session.lastOutput) ? `last turn ${tokensText(session.lastOutput)} out, ${tokensText(session.lastThinking)} thinking · ` : "";
+    const shareText = Number.isFinite(session.thinkingShare) ? `, ${Math.round(session.thinkingShare * 100)} % thinking` : "";
     span.title = `Output: ${last}session ${tokensText(session.outputTotal)} out${shareText} · what the model writes is read back as input on the next turn`;
     return span;
   }
@@ -884,7 +865,7 @@
       // the whole row is the click target; clicks and keys are handled once on the list (openFromList)
       row.tabIndex = 0;
       row.setAttribute("role", "button");
-      row.setAttribute("aria-label", `Open details: ${titleOf(session).text}, ${countLabel(session)}`);
+      row.setAttribute("aria-label", `Open details: ${session.titleText || ""}, ${countLabel(session)}`);
     }
     const titleRow = el("div", "kx-row-title");
     const dot = el("span", "kx-dot" + (session.busy ? " kx-pulse" : ""));
@@ -962,7 +943,7 @@
    * ones about 2 ms (2026-10-25, #67). A new text in a row that depends on the time goes in here.
    */
   function rowKey(session) {
-    const cold = Number.isFinite(session.coldInMs) ? [leftText(session.coldInMs), cacheState(session)] : null;
+    const cold = Number.isFinite(session.coldInMs) ? leftText(session.coldInMs) : null;
     return `${zonesKey}|${JSON.stringify({ ...session, sinceMs: sinceText(session.sinceMs), coldInMs: cold })}`;
   }
 
@@ -972,8 +953,8 @@
    * without a TTL (a transcript from before Claude Code wrote usage.cache_creation).
    */
   function cacheFor(session) {
-    const state = cacheState(session);
-    if (!state) return null;
+    if (session.cacheState !== "warm" && session.cacheState !== "cold") return null; // no TTL
+    const state = session.cacheState === "cold" ? "cold" : session.cacheSoon ? "soon" : "warm";
     const span = el("span", "kx-cache");
     span.dataset.testid = "cache";
     span.dataset.cache = state;
@@ -1442,8 +1423,7 @@
     } else ttlEl.textContent = "unknown";
     const now = session.cacheState === "cold" ? `cold since ${clockText(session.coldAt)}`
       : session.cacheState === "warm" ? `warm · ${leftText(session.coldInMs)} left (cold at ${clockText(session.coldAt)})` : "unknown";
-    const thinking = session.outputTotal > 0 && Number.isFinite(session.thinkingTotal) ? `${tokensText(session.thinkingTotal)} (${Math.round((session.thinkingTotal / session.outputTotal) * 100)} %)` : "unknown";
-    const out = Array.isArray(session.outputSeries) ? session.outputSeries : [], th = Array.isArray(session.thinkingSeries) ? session.thinkingSeries : [];
+    const thinking = Number.isFinite(session.thinkingShare) ? `${tokensText(session.thinkingTotal)} (${Math.round(session.thinkingShare * 100)} %)` : "unknown";
     wrap.appendChild(table("Prompt cache and output", [
       ["Cache TTL", ttlEl],
       ["Cache now", now],
@@ -1451,7 +1431,7 @@
       ["Last turn written to cache", Number.isFinite(session.cacheCreated) ? tokensText(session.cacheCreated) : "unknown"],
       ["Output, whole session", Number.isFinite(session.outputTotal) ? tokensText(session.outputTotal) : "unknown"],
       ["Of it thinking", thinking],
-      ["Output, last turn", out.length ? `${tokensText(out[out.length - 1])} (${tokensText(th[th.length - 1] || 0)} thinking)` : "unknown"],
+      ["Output, last turn", Number.isFinite(session.lastOutput) ? `${tokensText(session.lastOutput)} (${tokensText(session.lastThinking)} thinking)` : "unknown"],
     ]));
     wrap.appendChild(table("Session", [
       ["Turns", String(session.turns || 0)],

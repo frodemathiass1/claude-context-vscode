@@ -910,6 +910,56 @@ describe("buildSessions", () => {
     expect(K.buildSessions({ registry: [], transcripts: {}, now: NOW, workspaceFolders: [MINE], all: false }).cacheCounts).toEqual({ warm: 0, cold: 0 });
   });
 
+  it("a warm cache is soon cold within 5 minutes of its deadline or half its TTL; false when cold, null without a TTL", () => {
+    const ago = (min) => new Date(Date.parse(NOW) - min * 60000).toISOString();
+    const cases = {
+      h1Early: tail(1000, ago(54), { cacheTtlMs: H1 }), // 6 min left
+      h1Soon: tail(1000, ago(56), { cacheTtlMs: H1 }), // 4 min left
+      h1Edge: tail(1000, ago(55), { cacheTtlMs: H1 }), // exactly 5 min left
+      m5Early: tail(1000, ago(1), { cacheTtlMs: M5 }), // 4 min left, but a 5-minute cache is soon only from half its TTL
+      m5Soon: tail(1000, ago(3), { cacheTtlMs: M5 }), // 2 min left
+      cold: tail(1000, ago(70), { cacheTtlMs: H1 }),
+      noTtl: tail(1000, ago(1)),
+    };
+    const r = K.buildSessions({ registry: Object.keys(cases).map((id, i) => reg(i + 1, id, MINE, "idle")), transcripts: cases, now: NOW, workspaceFolders: [MINE] });
+    const by = Object.fromEntries(r.sessions.map((s) => [s.sessionId, [s.cacheState, s.cacheSoon]]));
+    expect(by).toEqual({ h1Early: ["warm", false], h1Soon: ["warm", true], h1Edge: ["warm", true], m5Early: ["warm", false],
+      m5Soon: ["warm", true], cold: ["cold", false], noTtl: [null, null] });
+    expect(r.cacheCounts).toEqual({ warm: 5, cold: 1 }); // soon is still warm in the header's counters
+  });
+
+  it("the thinking share of the whole session, and the last turn's output and thinking", () => {
+    const cases = {
+      some: tail(1000, NOW, { outputSeries: [300, 400], thinkingSeries: [0, 100], outputTotal: 700, thinkingTotal: 175 }),
+      none: tail(1000, NOW, { outputSeries: [0], thinkingSeries: [0], outputTotal: 0, thinkingTotal: 0 }),
+      unknownThinking: tail(1000, NOW, { outputSeries: [300, 500], thinkingSeries: [], outputTotal: 800, thinkingTotal: null }),
+      noTurns: { title: null, turns: 0, outputSeries: [], thinkingSeries: [], outputTotal: 0, thinkingTotal: 0 },
+    };
+    const r = K.buildSessions({ registry: Object.keys(cases).map((id, i) => reg(i + 1, id, MINE, "idle")), transcripts: cases, now: NOW, workspaceFolders: [MINE] });
+    const by = Object.fromEntries(r.sessions.map((s) => [s.sessionId, [s.thinkingShare, s.lastOutput, s.lastThinking]]));
+    expect(by).toEqual({ some: [0.25, 400, 100], none: [null, 0, 0], unknownThinking: [null, 500, 0], noTurns: [null, null, null] });
+    expect(r.sessions.find((s) => s.sessionId === "without")).toBeUndefined();
+    const without = K.buildSessions({ registry: [reg(1, "x", MINE, "idle")], transcripts: {}, now: NOW, workspaceFolders: [MINE] }).sessions[0];
+    expect(without).toMatchObject({ outputTotal: null, thinkingShare: null, lastOutput: null, lastThinking: null });
+  });
+
+  it("the shown title is the transcript's, else a new or an untitled session with the registry's name; title stays the transcript's", () => {
+    const cases = {
+      titled: tail(1000, NOW, { title: "Fix the importer" }),
+      new: { title: null, turns: 0 },
+      untitled: tail(1000, NOW, { title: null }),
+    };
+    const registry = Object.keys(cases).map((id, i) => ({ ...reg(i + 1, id, MINE, "idle"), name: "my-project-08" }));
+    const named = K.buildSessions({ registry, transcripts: cases, now: NOW, workspaceFolders: [MINE] });
+    const unnamed = K.buildSessions({ registry: registry.map((r) => ({ ...r, name: null })), transcripts: cases, now: NOW, workspaceFolders: [MINE] });
+    const of = (r) => Object.fromEntries(r.sessions.map((s) => [s.sessionId, [s.title, s.titleText, s.titleFallback]]));
+    expect(of(named)).toEqual({
+      titled: ["Fix the importer", "Fix the importer", false], new: [null, "new session · my-project-08", true],
+      untitled: [null, "untitled session · my-project-08", true],
+    });
+    expect(of(unnamed)).toEqual({ titled: ["Fix the importer", "Fix the importer", false], new: [null, "new session", true], untitled: [null, "untitled session", true] });
+  });
+
   it("a session in a subfolder of the workspace folder belongs to the window, one in a folder with the same prefix does not", () => {
     const r = K.buildSessions({
       registry: [reg(1, "below", `${MINE}/packages/app`, "idle"), reg(2, "prefix", `${MINE}2`, "idle")],
