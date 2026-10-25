@@ -2,15 +2,12 @@
 // records what the panel posts and keeps its state, and the host's messages come as `message` events with lists
 // from the real buildSessions, so the panel is fed what the hosts send it.
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import path from "node:path";
 const require = createRequire(import.meta.url);
 const K = require("../core.cjs");
 const { JSDOM, VirtualConsole } = require("jsdom");
 
-const PANEL = readFileSync(fileURLToPath(new URL("../panel.html", import.meta.url)), "utf8");
 const NOW = Date.parse("2026-10-24T12:00:00.000Z");
 const MIN = 60000, HOUR = 60 * MIN;
 // resolved, so the registry's cwd and the workspace folder compare as native paths on Windows too
@@ -29,7 +26,7 @@ afterEach(() => {
  * the page gets a stand-in whose callbacks `resize()` calls, as a browser does when an observed element changes size.
  */
 function panel({ state = null } = {}) {
-  const html = PANEL.replace("<!-- csp -->", `<meta http-equiv="Content-Security-Policy" content="${K.pageCsp("n")}">`).replace(/\{\{nonce\}\}/g, "n");
+  const html = K.panelPage({ nonce: "n" });
   const posted = [], errors = [], resizers = [];
   let saved = state;
   const virtualConsole = new VirtualConsole();

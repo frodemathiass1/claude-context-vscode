@@ -23,7 +23,6 @@ const path = require("node:path");
 const { spawn } = require("node:child_process");
 const core = require("./core.cjs");
 
-const PANEL = path.join(__dirname, "panel.html");
 // A fixed port by default, not any free one: localStorage, where the page keeps its choices, belongs to the
 // origin, port included, so a new port on every start would forget them. A free one is taken when it is busy.
 const DEFAULT_PORT = 7419;
@@ -74,11 +73,9 @@ function browserPage({ theme, host, connect = false, nonce = core.randomNonce() 
     const api = (${host})(deliver);
     window.acquireVsCodeApi = () => api;
   })();`;
-  const head = `<meta http-equiv="Content-Security-Policy" content="${core.pageCsp(nonce, connect)}">
-<style nonce="${nonce}">${themeCss(theme)}</style>
+  const head = `<style nonce="${nonce}">${themeCss(theme)}</style>
 <script nonce="${nonce}">${standIn}</script>`;
-  // a function, so a "$&" in the host's source is not a replacement pattern
-  return fs.readFileSync(PANEL, "utf8").replace("<!-- csp -->", () => head).replace(/\{\{nonce\}\}/g, nonce);
+  return core.panelPage({ nonce, connect, head });
 }
 
 /**
@@ -193,12 +190,10 @@ async function startServer({ claudeDir, folders = [], port = null, alive, tickMs
   /** Reads each scope the pages are in (or only `client`'s) and sends the list to every page in it, as extension.js does. */
   function refresh({ client = null, full = false } = {}) {
     for (const all of new Set((client ? [client] : [...clients.values()]).map((c) => c.all))) {
-      // called from the watcher's timers too: an exception there would end the server, so the pages keep their last list
-      let payload;
-      try { payload = readerFor(all).read({ workspaceFolders: folders, all, full }); }
-      catch (e) { console.error("Claude Context: reading the sessions failed", e); continue; }
-      watched.set(all, payload.projectFolders);
-      for (const c of clients.values()) if (c.all === all) push(c, { type: "sessions", ...payload, full: full && c === client }); // full: the requester's refresh receipt
+      const list = core.readSessions(readerFor(all), { workspaceFolders: folders, all, full });
+      if (!list) continue; // the pages keep their last list
+      watched.set(all, list.projectFolders);
+      for (const c of clients.values()) if (c.all === all) push(c, { ...list, full: full && c === client }); // full: the requester's refresh receipt
     }
     prune();
   }
@@ -214,14 +209,12 @@ async function startServer({ claudeDir, folders = [], port = null, alive, tickMs
   }
 
   function onMessage(client, msg) {
-    if (!msg || typeof msg !== "object") return;
-    if (msg.type === "ready") refresh({ client });
-    if (msg.type === "refresh") refresh({ client, full: true }); // the panel's button: forget the parsed state, read everything again
-    if (msg.type === "scope") { client.all = !!msg.all; refresh({ client }); }
-    // the detail view asks for every turn of the open session after each list; the answer is the last read's of its scope
-    if (msg.type === "detail" && typeof msg.sessionId === "string") {
-      push(client, { type: "detail", sessionId: msg.sessionId, detail: readerFor(client.all).detail(msg.sessionId) });
-    }
+    core.answerPanel(msg, {
+      refresh: (full) => refresh({ client, full }),
+      keepScope: (all) => { client.all = all; },
+      reader: () => readerFor(client.all),
+      post: (m) => push(client, m),
+    });
   }
 
   let own = null; // the port, known once listening; server.address() is null again once close() has begun

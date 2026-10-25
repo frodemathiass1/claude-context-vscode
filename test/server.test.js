@@ -124,6 +124,9 @@ describe("server.cjs", () => {
       expect(ok.body).toContain("function browserHost(deliver)");
       expect(ok.body).toContain("@media (prefers-color-scheme: dark)");
       expect(ok.body).not.toContain("{{nonce}}");
+      const nonce = /script-src 'nonce-([^']+)'/.exec(ok.body)[1];
+      expect(ok.body).toBe(S.browserPage({ theme: "auto", host: S.browserHost.toString(), connect: true, nonce })); // the one builder, with connect-src and its head
+      expect(ok.headers["content-security-policy"]).toContain(`'nonce-${nonce}'`);
       expect(ok.headers["content-security-policy"]).toContain("connect-src 'self'");
       expect(ok.headers["content-security-policy"]).toContain("frame-ancestors 'none'");
       expect(ok.headers["access-control-allow-origin"]).toBeUndefined();
@@ -333,8 +336,11 @@ describe("the browser stand-in, shared by server.cjs and scripts/demo.cjs", () =
     expect(page).toContain("connect-src 'self';");
   });
 
-  it("a $ pattern in the host's source is kept as it is", () => {
+  it("a $ pattern in the host's source is kept as it is, and the page is the core's with the stand-in as its head", () => {
     expect(S.browserPage({ theme: "light", host: "() => ({ x: \"$&$'\" })" })).toContain("x: \"$&$'\"");
+    const page = S.browserPage({ theme: "light", host: "() => ({})", nonce: "n" });
+    const head = page.slice(page.indexOf('<style nonce="n">'), page.indexOf("</script>", page.indexOf("acquireVsCodeApi")) + "</script>".length);
+    expect(page).toBe(K.panelPage({ nonce: "n", head }));
   });
 });
 
