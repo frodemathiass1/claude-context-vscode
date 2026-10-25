@@ -27,10 +27,10 @@ A rule that both hosts, or the core and the panel, need has **one copy**.
   with stand-ins for what the browser gives it.
 - `panel.html`, `panel.css`, `panel.js`: the webview's markup, style and script, joined by `panelPage` into one
   page on every load. `panel.js` gets the source of a core function listed in `PANEL_FROM_CORE` by writing
-  `/* core: <name> */`. The page cannot read files, and the CSP allows only nonce'd inline style and script (in the browser also
-  `connect-src 'self'`), so nothing is loaded and no file is served on its own. The panel only draws; what can
-  be computed belongs in `core.cjs`. Tested in jsdom (`test/panel.test.js`) as a host loads it, fed lists from
-  the real `buildSessions`. Its words fit both hosts.
+  `/* core: <name> */`. The page cannot read files, and the CSP allows only nonce'd inline style and script
+  (in the browser also `connect-src 'self'`), so nothing is loaded and no file is served on its own. The panel
+  only draws; what can be computed belongs in `core.cjs`. Tested in jsdom (`test/panel.test.js`) as a host
+  loads it, fed lists from the real `buildSessions`. Its words fit both hosts.
 
 ## Commands
 
@@ -52,8 +52,8 @@ A rule that both hosts, or the core and the panel, need has **one copy**.
   ("unknown"), never an error. A new fact about the format is measured on real files and written in
   `NOTES.md` with the date and the Claude Code version. Record field names and counts, not content: the
   transcripts hold the owner's conversations.
-- **Windows is a first-class platform**, and CI runs the tests there. Tests build paths with `path.join`; paths from the registry can
-  carry `\` and a lower-case drive letter (`NOTES.md`, "Windows").
+- **Windows is a first-class platform**, and CI runs the tests there. Tests build paths with `path.join`;
+  paths from the registry can carry `\` and a lower-case drive letter (`NOTES.md`, "Windows").
 - **Fixtures are hand-made** and anonymised (`test/fixtures/README.md`), one rule per transcript.
 - **Comments say why**, with the measurement or source behind a constant, as the existing ones do.
 - **README is prose** that says what the panel shows and why; a change the user can see updates it.
