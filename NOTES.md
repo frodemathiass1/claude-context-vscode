@@ -193,3 +193,21 @@ So the core calls a subagent "finished" when `finished` is in its meta file or t
 end (the agent id from a result or a task notification, or the Agent call's id from a `tool_result` that is not a
 launch receipt), "running" when neither does and its transcript was written since the session's process started
 (a subagent runs inside that process), and "unknown" otherwise.
+
+## Bookkeeping entries (surveyed 2026-10-25, Claude Code 2.1.310, macOS)
+
+`/facts` over the seven registry entries and the 40 transcripts of the last seven days found nothing the core
+reads missing. The entry types no other section names were counted over all 435 main transcripts (field names
+only); each is as old as the oldest transcript (2.1.259) unless a version is given, and none has `usage`:
+
+- `atis-latch` (`atis`), `mode` (`mode`, only `normal` seen), `permission-mode` (`permissionMode`, 7 entries, all
+  2.1.273), `pr-link` (`prNumber`, `prUrl`, `prRepository`, from 2.1.267), `file-history-delta` (`trackingPath`,
+  `backup`, from 2.1.267), `api-request-shape` (`shapeHash`, `shape` with `system` and `tools`, from 2.1.301).
+- `cost-state` (514 entries in 407 files): the session's running totals, `totalCostUSD`, durations, lines added
+  and removed, and `modelUsage` per model id with `inputTokens`, `outputTokens`, `thinkingTokens`,
+  `cacheReadInputTokens`, `cacheCreationInputTokens`, `webSearchRequests` and `costUSD`. They are sums over the
+  session, not the last turn, so they say nothing about the context.
+- `fallback_credit` is now in every assistant entry's `message.usage` (4 069 of 4 069; 3 436 of 3 667 on
+  2026-10-24).
+
+So the core reads 2.1.310 without a change.
