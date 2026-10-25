@@ -601,6 +601,12 @@ describe("buildSessions", () => {
     expect(K.buildSessions({ registry, transcripts, now: NOW, workspaceFolders: ["c:\\Develop\\elsewhere"], all: false })).toMatchObject({ count: 0, hiddenCount: 5, workspaceNames: ["elsewhere"] });
   });
 
+  it("zoneAdvice carries the advice for every zone but green, the same the sessions get, also for an empty list", () => {
+    const { zoneAdvice } = K.buildSessions({ registry: [], now: NOW });
+    expect(Object.keys(zoneAdvice)).toEqual(["yellow", "orange", "red"]);
+    expect(zoneAdvice.orange).toBe(K.contextFacts({ zone: "orange" }).advice);
+  });
+
   it("per session: zone, short model name, time since the last turn, dimming after one hour and busy", () => {
     const r = K.buildSessions({ registry, transcripts, now: NOW, workspaceFolders: [MINE], all: false });
     const [busy, fresh, old, without] = r.sessions;

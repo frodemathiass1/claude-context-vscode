@@ -280,7 +280,7 @@ function tokensText(tokens) {
 }
 
 // What to do at the next phase boundary, per zone (Matt Pocock's PHASE-BOUNDARIES.md, not in this repo): the detail view shows it under the
-// count, the list's bar in its tooltip. Green has none: a session there is in the smart zone.
+// count, the list's bar and the header's zone band in their tooltips. Green has none: a session there is in the smart zone.
 const ZONE_ADVICE = {
   yellow: "Plan to break at the next phase boundary.",
   orange: `Break at the first phase boundary; continue only if the next phase fits under ${tokensText(RED_ABOVE)}.`,
@@ -369,7 +369,8 @@ function userText(content) {
  * DIM_AFTER_MS ago (an empty session by its start alone);
  * `abandonedCount` counts them. `hiddenCount` is how many live sessions the scope leaves out (0 with `all` or without
  * workspace folders), counted from the registry alone, and `workspaceNames` the last folder name of each workspace
- * folder, so the panel can name the scope ("This workspace · my-project · 4 more in other projects").
+ * folder, so the panel can name the scope ("This workspace · my-project · 4 more in other projects"). `zoneAdvice` is
+ * ZONE_ADVICE, for the header's zone scale to say what applies in each zone.
  */
 function buildSessions({ registry = [], transcripts = {}, now, workspaceFolders = [], all = false }) {
   const nowMs = typeof now === "number" ? now : Date.parse(now);
@@ -427,7 +428,7 @@ function buildSessions({ registry = [], transcripts = {}, now, workspaceFolders 
   for (const s of sessions) Object.assign(s, contextFacts(s, baselineMedian));
   return { sessions, groups, count: sessions.length, zoneCounts, cacheCounts, baselineMedian, baselineSessions: starts.length,
     abandonedCount: sessions.filter((s) => s.abandoned).length, hiddenCount: registry.length - sessions.length,
-    workspaceNames: workspaceFolders.map(projectName).filter(Boolean) };
+    workspaceNames: workspaceFolders.map(projectName).filter(Boolean), zoneAdvice: ZONE_ADVICE };
 }
 
 /**

@@ -22,14 +22,14 @@
        a third-opaque orange that reads brown over a dark side bar. Halfway between the theme's yellow and red instead. */
     --kx-orange: color-mix(in srgb, var(--kx-yellow) 50%, var(--kx-red));
     --kx-red: var(--vscode-charts-red, #cf222e);
-    /* … and for fills (dot, context bar, curve, meter segments), so text and fill can differ per use.
+    /* … and for fills (dot, context bar, curve, zone scale), so text and fill can differ per use.
        Every zone in ZONES below has a pair --kx-<zone> / --kx-<zone>-fill; adding a zone adds a pair here. */
     --kx-green-fill: var(--vscode-charts-green, var(--kx-green));
     --kx-yellow-fill: var(--vscode-charts-yellow, var(--kx-yellow));
     --kx-orange-fill: color-mix(in srgb, var(--kx-yellow-fill) 50%, var(--kx-red-fill));
     --kx-red-fill: var(--vscode-charts-red, var(--kx-red));
     --kx-grid: var(--vscode-charts-lines, color-mix(in srgb, var(--kx-muted) 55%, transparent)); /* limit lines, marks */
-    --kx-track: color-mix(in srgb, var(--kx-fg) 10%, transparent); /* the track behind the bar and the meter */
+    --kx-track: color-mix(in srgb, var(--kx-fg) 10%, transparent); /* the track behind the bar */
     --kx-badge-bg: var(--vscode-badge-background, var(--vscode-focusBorder, #0969da));
     --kx-badge-fg: var(--vscode-badge-foreground, #ffffff);
     --kx-heading: var(--vscode-sideBarSectionHeader-foreground, var(--kx-muted));
@@ -47,7 +47,7 @@
     container-type: inline-size; /* the layout below follows the panel's width, not the window's */
   }
 
-  /* ── Header: the count, the zone meter and the counters ── */
+  /* ── Header: the count, the zone scale and the counters ── */
   header {
     display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;
     padding: 10px 12px; border-bottom: 1px solid var(--kx-border);
@@ -67,14 +67,27 @@
   .kx-toggle[aria-pressed="true"] { color: var(--kx-fg); background: var(--kx-row-hover); border-color: var(--kx-border-strong); }
   .kx-refresh[aria-busy="true"] svg { animation: kx-spin 0.8s linear infinite; } /* spins until the next list arrives */
   @keyframes kx-spin { to { transform: rotate(360deg); } }
-  /* one segment per zone, width = that zone's share of the sessions with a known zone; the legend repeats the numbers */
-  .kx-meter { flex: 1 1 160px; min-width: 140px; display: flex; flex-direction: column; gap: 4px; }
-  .kx-meter-bar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: var(--kx-track); }
-  .kx-meter-bar span { display: block; height: 100%; background: var(--kx-zone-fill, var(--kx-muted)); }
-  .kx-meter-leg { display: flex; font-size: 0.82em; font-variant-numeric: tabular-nums; color: var(--kx-muted); white-space: nowrap; }
+  /* The zone scale: a thick strip across the header, the row bar's 0–200K with each zone as a band at its true width
+     and its range written inside, so the limits are in view before any row. Tinted, with the text in the zone colour,
+     so it reads in light and dark themes. */
+  .kx-zscale { flex: 1 1 100%; container-type: inline-size; display: flex; gap: 2px; height: 22px; }
+  .kx-zband {
+    flex: var(--w) 1 0; min-width: 0; overflow: hidden; display: flex; align-items: center; justify-content: center;
+    background: color-mix(in srgb, var(--kx-zone-fill, var(--kx-muted)) 24%, var(--kx-bg)); color: var(--kx-zone-text, var(--kx-muted));
+    font-size: 0.8em; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
+  .kx-zband:first-child { border-radius: 4px 0 0 4px; }
+  .kx-zband:last-child { border-radius: 0 4px 4px 0; }
+  /* the yellow and orange bands are 12.5 % of the strip and "100K–125K" needs about 66 px: the long ranges from
+     about 560 px, "100K+" (about 34 px) below, a smaller size under about 280 px */
+  .kx-zshort { display: none; }
+  @container (max-width: 559px) { .kx-zlong { display: none; } .kx-zshort { display: inline; } }
+  @container (max-width: 279px) { .kx-zband { font-size: 0.7em; } }
+  /* the count per zone, beside the session count */
+  .kx-meter-leg { display: inline-flex; flex-wrap: wrap; font-size: 0.82em; font-variant-numeric: tabular-nums; color: var(--kx-muted); white-space: nowrap; }
   .kx-meter-leg span + span::before { content: "·"; margin: 0 6px; }
   .kx-meter-leg b { font-weight: 600; color: var(--kx-zone-text, inherit); }
-  /* the prompt-cache counters: warm and cold, beside the zone legend */
+  /* the prompt-cache counters: warm and cold, beside the zone counts */
   .kx-cache-counts { font-size: 0.82em; font-variant-numeric: tabular-nums; color: var(--kx-muted); white-space: nowrap; display: inline-flex; align-items: center; }
   .kx-cache-counts b { font-weight: 600; color: var(--kx-fg); }
   .kx-cache-counts span + span::before { content: "·"; margin: 0 6px; }
@@ -393,10 +406,7 @@
 <header>
   <h1><span class="kx-n" data-testid="count" aria-live="polite">0</span> live Claude sessions</h1>
   <span class="kx-showing" data-testid="showing" hidden></span>
-  <div class="kx-meter" data-testid="zones">
-    <div class="kx-meter-bar" role="img" aria-label="no sessions"></div>
-    <div class="kx-meter-leg"></div>
-  </div>
+  <span class="kx-meter-leg" data-testid="zones"></span>
   <span class="kx-start-median" data-testid="start-median" hidden><b></b> start</span>
   <span class="kx-abandoned" data-testid="abandoned-count" hidden title="A closed VS Code chat tab keeps its process running until Developer: Reload Window or VS Code quits, and the panel cannot tell a closed tab from an open one, so some of these are probably closed tabs"><b></b> idle over an hour</span>
   <span class="kx-cache-counts" data-testid="cache-counts" title="Prompt cache: how many of the listed sessions have a warm cache now, and how many went cold"><span><b data-testid="cache-warm">0</b> warm</span><span><b data-testid="cache-cold">0</b> cold</span></span>
@@ -405,6 +415,7 @@
     <button type="button" class="kx-toggle" data-testid="compact" aria-pressed="false" aria-label="Compact rows"></button>
     <button type="button" class="kx-refresh" data-testid="refresh" aria-label="Refresh" title="Read the registry and every transcript again now"></button>
   </div>
+  <div class="kx-zscale" data-testid="zone-scale" role="img"></div>
 </header>
 <div class="kx-controls" data-testid="controls">
   <div class="kx-scope" data-testid="scope">
@@ -442,7 +453,7 @@
   const scopeMoreEl = document.querySelector('[data-testid="scope-more"]');
   const errorsEl = document.querySelector('[data-testid="errors"]');
   const listEl = document.querySelector('[data-testid="list"]');
-  const meterBarEl = document.querySelector(".kx-meter-bar");
+  const zoneScaleEl = document.querySelector('[data-testid="zone-scale"]');
   const meterLegEl = document.querySelector(".kx-meter-leg");
   const cacheWarmEl = document.querySelector('[data-testid="cache-warm"]');
   const cacheColdEl = document.querySelector('[data-testid="cache-cold"]');
@@ -524,7 +535,7 @@
   }
 
   // ── The zones and the scale, as data. The core decides a session's zone (core.cjs zone()); this list
-  // orders the zones in the meter and the legend, names them, and picks the colour pair --kx-<zone> (text)
+  // orders the zones in the zone scale and its legend, names them, and picks the colour pair --kx-<zone> (text)
   // and --kx-<zone>-fill (fills) defined in the style above. LIMITS are the boundaries drawn as dashed lines
   // on the curve, gaps on the context bar and labels on the axis; SCALE is the full width of the bar.
   // A new zone is one entry here, one limit there and one colour pair in the style. ─────────────────
@@ -1588,16 +1599,36 @@
     return `${n === 1 ? "the 1 session" : `the ${n} sessions`} ${where}`;
   }
 
+  /** Where a zone runs, from LIMITS: "below 100K", "100K–125K", "above 150K"; `short` for a narrow band: "<100K", "100K+", ">150K". */
+  function zoneRange(i, short) {
+    const last = LIMITS.length;
+    if (i === 0) return short ? `<${tokensText(LIMITS[0])}` : `below ${tokensText(LIMITS[0])}`;
+    if (i >= last) return short ? `>${tokensText(LIMITS[last - 1])}` : `above ${tokensText(LIMITS[last - 1])}`;
+    return short ? `${tokensText(LIMITS[i - 1])}+` : `${tokensText(LIMITS[i - 1])}–${tokensText(LIMITS[i])}`;
+  }
+
+  /**
+   * The header's zone scale, the bands from 0 to SCALE split at LIMITS with each zone's range inside (the same
+   * on every list, but drawn from ZONES and LIMITS, so a new limit moves it), and the count per zone beside the
+   * session count. A band's tooltip says what applies there (the core's zoneAdvice).
+   */
   function renderMeter(zoneCounts, data) {
     const counts = ZONES.map((z) => [z, Number.isFinite(zoneCounts[z]) ? zoneCounts[z] : 0]);
-    const known = counts.reduce((sum, [, n]) => sum + n, 0);
-    meterBarEl.textContent = "";
+    const advice = data.zoneAdvice || {};
+    zoneScaleEl.textContent = "";
     meterLegEl.textContent = "";
-    meterBarEl.setAttribute("aria-label", known ? counts.map(([z, n]) => `${n} ${ZONE_NAME[z]}`).join(", ") : "no sessions with a known zone");
+    zoneScaleEl.setAttribute("aria-label", `Zones on a ${SCALE_TEXT} scale: ${listText(ZONES.map((z, i) => `${ZONE_NAME[z]} ${zoneRange(i)}`))}`);
+    const edges = [0, ...LIMITS, SCALE];
+    ZONES.forEach((z, i) => {
+      const band = zoned(el("span", "kx-zband"), z);
+      band.dataset.testid = `band-${z}`;
+      band.style.setProperty("--w", pct((edges[i + 1] - edges[i]) / SCALE));
+      band.title = `${ZONE_NAME[z]} zone: ${zoneRange(i)}${advice[z] ? ` · ${advice[z]}` : ""}`;
+      band.appendChild(el("span", "kx-zlong", zoneRange(i)));
+      band.appendChild(el("span", "kx-zshort", zoneRange(i, true)));
+      zoneScaleEl.appendChild(band);
+    });
     for (const [z, n] of counts) {
-      const seg = zoned(el("span"), z);
-      seg.style.width = known ? `${pct(n / known)}%` : "0";
-      meterBarEl.appendChild(seg);
       const item = zoned(el("span"), z);
       const b = el("b", "", String(n));
       b.dataset.testid = `zone-${z}`;

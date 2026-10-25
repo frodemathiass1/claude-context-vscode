@@ -79,7 +79,7 @@ function list(sessions, { all = false, full = false, errors = [], workspaceFolde
 }
 
 describe("panel: the list", () => {
-  it("posts ready at start, and a list renders its count, its zone meter and its rows in the core's order", () => {
+  it("posts ready at start, and a list renders its count, its zone counts and its rows in the core's order", () => {
     const p = panel();
     expect(p.posted).toEqual([{ type: "ready" }]);
     p.send(list([
@@ -192,6 +192,38 @@ describe("panel: the list", () => {
     p.send(list([]));
     expect(p.$("count").textContent).toBe("0");
     expect(p.$("list").textContent).toBe("No live Claude sessions");
+  });
+});
+
+describe("panel: the zone scale", () => {
+  it("draws the zones at their true widths on 0–200K with each range inside, and says what applies in each", () => {
+    const p = panel();
+    p.send(list([session("a")]));
+    const bands = ["green", "yellow", "orange", "red"].map((z) => p.$(`band-${z}`));
+    expect(bands.map((b) => b.style.getPropertyValue("--w"))).toEqual(["50", "12.5", "12.5", "25"]);
+    expect(bands.map((b) => b.querySelector(".kx-zlong").textContent)).toEqual(["below 100K", "100K–125K", "125K–150K", "above 150K"]);
+    expect(bands.map((b) => b.querySelector(".kx-zshort").textContent)).toEqual(["<100K", "100K+", "125K+", ">150K"]);
+    expect(p.$("band-green").title).toBe("green zone: below 100K");
+    expect(p.$("band-yellow").title).toBe("yellow zone: 100K–125K · Plan to break at the next phase boundary.");
+    expect(p.$("band-red").title).toMatch(/^red zone: above 150K · Do not start a new phase/);
+  });
+
+  it("is the same with no sessions, and one image to assistive technology, its label naming the limits", () => {
+    const p = panel();
+    p.send(list([]));
+    expect(p.$$("band-green")).toHaveLength(1);
+    expect(p.$("zone-scale").getAttribute("role")).toBe("img");
+    expect(p.$("zone-scale").getAttribute("aria-label")).toBe(
+      "Zones on a 0–200K scale: green below 100K, yellow 100K–125K, orange 125K–150K and red above 150K");
+  });
+
+  it("keeps the count per zone beside the session count, for the scope", () => {
+    const p = panel();
+    const mine = session("a", { tokens: 39000 }), other = session("b", { tokens: 130000, cwd: OTHER });
+    p.send(list([mine, other], { workspaceFolders: [MINE] }));
+    expect(["green", "orange"].map((z) => p.$(`zone-${z}`).textContent)).toEqual(["1", "0"]);
+    p.send(list([mine, other], { workspaceFolders: [MINE], all: true }));
+    expect(["green", "orange"].map((z) => p.$(`zone-${z}`).textContent)).toEqual(["1", "1"]);
   });
 });
 
