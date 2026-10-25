@@ -542,6 +542,18 @@ const detailOf = (s) => ({ type: "detail", sessionId: s.registry.sessionId,
   detail: { turns: s.transcript.turns, ...K.seriesFor(s.transcript), subagentList: K.subagentRows(s.agents, { ends: [], startedMs: s.registry.startedAt, now: NOW }) } });
 
 describe("panel: subagents", () => {
+  it("the subagent table's running badge has the class and the icon of a row's busy badge", () => {
+    const a = { ...session("a", { status: "busy" }), agents: agents([["x1", 90000, { finished: false }], ["x2", 40000]]) };
+    const p = panel();
+    p.send(list([a]));
+    const busy = p.row("a").querySelector(".kx-badge");
+    p.row("a").click();
+    p.send(detailOf(a));
+    const running = p.$$("subagent").map((r) => r.querySelector(".kx-badge")).filter(Boolean);
+    expect(running.map((b) => b.textContent)).toEqual(["running"]);
+    expect([busy.textContent, running[0].className, running[0].querySelector("svg").outerHTML]).toEqual(["busy", busy.className, busy.querySelector("svg").outerHTML]);
+  });
+
   it("a row shows the mark only with subagents, with the running count, in the colour of the highest zone when it is orange or red", () => {
     const p = panel();
     p.send(list([
