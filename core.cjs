@@ -312,7 +312,9 @@ function dips(series) {
  * The per-turn fields of a parsed transcript, kept to the last `max` turns: `series`, and `outputSeries` and
  * `thinkingSeries` aligned to its right end; the compactions and `baselineAt` move with the cut (a compaction
  * whose turn is cut drops out, a cut first turn makes baselineAt null; the baseline itself stays); `dips` of
- * what is kept, without the turns of a compaction (those are marked as such). Without `max`, every turn.
+ * what is kept, without the turns of a compaction (those are marked as such); `firstTurn`, the turn number of the
+ * first point kept (1 when nothing is cut, or without turns), so a mark at index `at` is turn `firstTurn + at`.
+ * Without `max`, every turn.
  */
 function seriesFor(t, max = Infinity) {
   const all = Array.isArray(t.series) ? t.series : [];
@@ -322,8 +324,8 @@ function seriesFor(t, max = Infinity) {
   const compactions = (Array.isArray(t.compactions) ? t.compactions : []).map((c) => ({ ...c, at: c.at - cut })).filter((c) => c.at >= 0);
   const compactedAt = new Set(compactions.map((c) => c.at));
   const baselineAt = Number.isFinite(t.baselineAt) && t.baselineAt >= cut ? t.baselineAt - cut : null;
-  return { series, outputSeries: last(t.outputSeries), thinkingSeries: last(t.thinkingSeries), compactions,
-    dips: dips(series).filter((i) => !compactedAt.has(i)), baselineAt };
+  return { series, firstTurn: Math.max(1, (t.turns || 0) - series.length + 1), outputSeries: last(t.outputSeries),
+    thinkingSeries: last(t.thinkingSeries), compactions, dips: dips(series).filter((i) => !compactedAt.has(i)), baselineAt };
 }
 
 /** The panel's number format ("850", "43K", "1.2M", "unknown"), for the facts below; panel.html has the same rule, since the webview cannot require this file, and test/panel.test.js keeps the two equal. */
@@ -507,7 +509,8 @@ function userText(content) {
  * true for those two. `baselineMedian` is the median baseline of the listed sessions whose segment is a start
  * (after a compaction the baseline holds the summary too), null when there are none, so a CLAUDE.md that grew
  * shows as a higher start for every new session. The per-turn
- * fields are kept to the last SERIES_MAX turns (seriesFor; SessionReader.detail gives all of them);
+ * fields are kept to the last SERIES_MAX turns (seriesFor; SessionReader.detail gives all of them), and `firstTurn` is
+ * the turn number of the first point of `series`;
  * `compactionCount` counts the whole session's. `growth` is growthBySource as rows (growthRows); `advice`, `facts`
  * and `typicalStart` are what the detail view says under its header (contextFacts, with the list's baselineMedian).
  * `abandoned` is a session that is neither busy nor waiting and whose last turn and process start are both more than
@@ -527,7 +530,7 @@ function buildSessions({ registry = [], transcripts = {}, subagents = {}, now, w
     .map((r) => {
       const t = transcripts[r.sessionId] || {};
       const tokens = numOrNull(t.tokens);
-      const { series, outputSeries, thinkingSeries, compactions, dips: drops, baselineAt } = seriesFor(t, SERIES_MAX);
+      const { series, firstTurn, outputSeries, thinkingSeries, compactions, dips: drops, baselineAt } = seriesFor(t, SERIES_MAX);
       const lastMs = t.lastTurn ? Date.parse(t.lastTurn) : NaN;
       const sinceMs = Number.isFinite(lastMs) && Number.isFinite(nowMs) ? Math.max(0, nowMs - lastMs) : null;
       const cacheTtlMs = numOrNull(t.cacheTtlMs);
@@ -548,7 +551,7 @@ function buildSessions({ registry = [], transcripts = {}, subagents = {}, now, w
         startedAt: Number.isFinite(startedMs) ? new Date(startedMs).toISOString() : null, // the registry's epoch ms, as ISO like lastTurn
         title: t.title || null, titleText: t.title || [turns ? "untitled session" : "new session", name].filter(Boolean).join(" · "),
         titleFallback: !t.title, model: t.model || null, modelShort: modelShort(t.model),
-        tokens, zone: zone(tokens), turns, series, compactions, dips: drops,
+        tokens, zone: zone(tokens), turns, series, firstTurn, compactions, dips: drops,
         compactionCount: Array.isArray(t.compactions) ? t.compactions.length : 0, // the whole session's, also those cut from the series
         lastTurn: t.lastTurn || null, sinceMs, outputSeries, thinkingSeries,
         outputTotal, thinkingTotal, thinkingShare: outputTotal > 0 && thinkingTotal !== null ? thinkingTotal / outputTotal : null,
@@ -757,8 +760,8 @@ class SessionReader {
   }
 
   /**
-   * Every turn of one session, for the detail view: `turns`, and `series`, `outputSeries`, `thinkingSeries`,
-   * `compactions`, `dips` and `baselineAt` as in the list but not cut to SERIES_MAX, and `subagentList`, a row per
+   * Every turn of one session, for the detail view: `turns`, and `series`, `firstTurn`, `outputSeries`,
+   * `thinkingSeries`, `compactions`, `dips` and `baselineAt` as in the list but not cut to SERIES_MAX, and `subagentList`, a row per
    * subagent (subagentRows). Taken from the state the last read parsed, without reading again, so it is the same
    * transcript as the list the panel shows; null for a session that read did not parse (outside the scope, gone, or
    * its transcript missing).

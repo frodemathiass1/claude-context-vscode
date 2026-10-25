@@ -755,7 +755,8 @@
       "data-testid": "curve", "data-points": series.length, "aria-label": label,
     });
     const title = svgEl("title", {});
-    const marks = compactions.map((c) => ` · turn ${c.at + 1}: ${compactionText(c)}`).join("");
+    const first = session.firstTurn || 1; // the list keeps the last SERIES_MAX turns, so its first point is that turn (core.cjs)
+    const marks = compactions.map((c) => ` · turn ${first + c.at}: ${compactionText(c)}`).join("");
     title.textContent = `${label} · ${MARKS_TEXT ? `dashed lines at ${MARKS_TEXT}` : "no limits yet"}${marks}${dips.length ? " · dotted marks: drops without a compaction entry" : ""}`;
     svg.appendChild(title);
     drawCurve(svg, { series, dips, compactions, x, y, w: CURVE_W, h: CURVE_H, turn: (i) => i });
@@ -1155,13 +1156,13 @@
    * Hovering shows a hairline and "turn 2 · 60K · +9K from turn 1", with "output 1K · thinking 83" under it; the
    * output per turn has its own field under the curve, and hovering it shows the same turn. The range under both
    * does the same from the keyboard. Until the host's detail has come the series is the list's last SERIES_MAX turns (core.cjs), so
-   * its first point is turn `first`; with the detail it is every turn and `first` is 1.
+   * its first point is turn `first` (the core's firstTurn); with the detail it is every turn and `first` is 1.
    */
   function detailCurve(session) {
     const wrap = el("div", "kx-d-sec");
     const series = Array.isArray(session.series) ? session.series : [];
     const turns = Math.max(session.turns || 0, series.length);
-    const first = turns - series.length + 1, last = turns;
+    const first = session.firstTurn || 1, last = turns;
     const { dips, compactions } = curveMarks(session, series);
     const lbl = el("div", "kx-d-lbl");
     const span = first > 1 ? `last ${series.length} of ${plural(turns, "turn", "turns")}` : plural(series.length, "turn", "turns");

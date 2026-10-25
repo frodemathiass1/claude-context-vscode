@@ -893,6 +893,20 @@ describe("panel: what the core decides for it", () => {
     p.send(detailOf(a));
     expect([...p.$("detail-curve").querySelectorAll(".kx-compact")].map((m) => m.dataset.turn)).toEqual(["1"]); // the detail view numbers turns from 1
   });
+
+  it("past the list's 200 turns the row's curve and the detail view name a compaction by the session's turn number", () => {
+    const compaction = { at: 229, trigger: "auto", preTokens: 900000, postTokens: 40000, durationMs: 60000 };
+    const a = session("a", { tokens: 90000, turns: 250, compactions: [compaction] }); // turn 230 is index 229 of every turn
+    const p = panel();
+    p.send(list([a]));
+    expect(p.row("a").querySelector('[data-testid="curve"] title').textContent).toMatch(/ · turn 230: auto-compacted 900K → 40K/);
+    p.row("a").click();
+    const mark = () => p.$("detail-curve").querySelector('[data-testid="detail-compaction"]').title;
+    expect(mark()).toBe("turn 230: auto-compacted 900K → 40K (1 min)"); // the list's 200 turns, from turn 51
+    p.send(detailOf(a));
+    expect(p.$("detail-curve-label").textContent).toMatch(/^Tokens per turn · 250 turns · /);
+    expect(mark()).toBe("turn 230: auto-compacted 900K → 40K (1 min)"); // every turn, from turn 1
+  });
 });
 
 describe("panel: what the host may send", () => {
