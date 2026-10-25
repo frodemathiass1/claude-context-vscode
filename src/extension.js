@@ -1,4 +1,4 @@
-// extension.js — the extension host side of the "Claude Context" panel. Reads the data with core.cjs
+// src/extension.js — the extension host side of the "Claude Context" panel. Reads the data with core.cjs
 // and watches Claude Code's sessions/ and projects/ folders with it (SessionReader and SessionWatcher),
 // and pushes the list to the webview with postMessage (the webview cannot read files itself), and answers
 // the detail view's request for every turn of one session.

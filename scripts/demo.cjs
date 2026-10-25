@@ -15,8 +15,8 @@ const os = require("node:os");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 const { pathToFileURL } = require("node:url");
-const core = require("../core.cjs");
-const { THEMES, browserPage } = require("../server.cjs");
+const core = require("../src/core.cjs");
+const { THEMES, browserPage } = require("../src/server.cjs");
 
 const ROOT = path.join(__dirname, "..");
 const MIN = 60 * 1000;

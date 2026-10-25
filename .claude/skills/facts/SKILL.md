@@ -1,6 +1,6 @@
 ---
 name: facts
-description: Check Claude Code's live registry and transcripts on this machine against what core.cjs reads and what NOTES.md records, after a Claude Code update or when the panel shows "unknown". Use when the user says "/facts", asks whether a new Claude Code version changed the format, or a row shows unknown values.
+description: Check Claude Code's live registry and transcripts on this machine against what src/core.cjs reads and what NOTES.md records, after a Claude Code update or when the panel shows "unknown". Use when the user says "/facts", asks whether a new Claude Code version changed the format, or a row shows unknown values.
 ---
 
 # Facts
@@ -18,7 +18,7 @@ to look elsewhere or wider (`node .claude/skills/facts/scripts/survey.cjs --days
 
 ## Task
 
-Compare the survey with `NOTES.md` and `core.cjs`, and report in a few lines:
+Compare the survey with `NOTES.md` and `src/core.cjs`, and report in a few lines:
 
 1. **What core reads and now misses.** Every line marked `<-- check`, any null in the "CORE" section, and
    models that `modelShort` shows raw. These are the findings that matter: say which panel value goes

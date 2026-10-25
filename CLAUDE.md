@@ -7,7 +7,8 @@ on the machine. What the panel shows and why is in `README.md`; facts measured a
 ## The four files
 
 No dependencies, no build step, and it stays that way: VS Code loads the folder as it is, and Node runs the
-server as it is.
+server as it is. The code is in `src/`, one flat folder; the root keeps the docs and config, `package.json` among
+them (its `main` and `bin` point into `src/`), so the repo folder is still what VS Code installs.
 
 - `core.cjs`: pure functions and the two classes that touch the disk (`SessionReader`, `SessionWatcher`).
   No `vscode` import, so the tests can run all of it. Everything that can be computed belongs here, and what
@@ -33,7 +34,7 @@ server as it is.
 - `npm test`: Vitest over `test/`. The same suite runs on Ubuntu and Windows in GitHub Actions.
 - Try a change in VS Code: **Developer: Install Extension from Location…** on the repo folder once, then
   **Developer: Reload Window** after every change. Claude cannot judge the panel; the owner does.
-- Try it in a browser: `node server.cjs` (`--help` for the flags); stop it and start it again after a change.
+- Try it in a browser: `node src/server.cjs` (`--help` for the flags); stop it and start it again after a change.
 - `node scripts/demo.cjs --shoot`: the README's screenshots in `media/`, from invented sessions read by the real
   `SessionReader`, with a headless Chrome. Run it after any change the user can see, or the images go stale; the
   owner judges them. Never take a README image from real sessions: their titles are the owner's conversations.

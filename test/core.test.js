@@ -1,4 +1,4 @@
-// test/core.test.js — the core behind the "Claude Context" panel (core.cjs): the registry of live Claude
+// test/core.test.js — the core behind the "Claude Context" panel (src/core.cjs): the registry of live Claude
 // sessions, the parsing of transcript tails, the zones and the list the panel shows.
 import { describe, it, expect, vi } from "vitest";
 import { readFileSync } from "node:fs";
@@ -7,7 +7,7 @@ import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 const require = createRequire(import.meta.url);
-const K = require("../core.cjs");
+const K = require("../src/core.cjs");
 
 const FIX = fileURLToPath(new URL("./fixtures/", import.meta.url));
 const lines = (name) => readFileSync(`${FIX}transcripts/${name}.jsonl`, "utf8").split("\n");

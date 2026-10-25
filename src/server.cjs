@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// server.cjs — the browser host of the "Claude Context" panel, beside the VS Code one (extension.js): the same
+// src/server.cjs — the browser host of the "Claude Context" panel, beside the VS Code one (extension.js): the same
 // SessionReader and SessionWatcher from core.cjs and the same panel.html, served to this machine only. The page
 // talks to it with the panel's messages: `ready`, `refresh`, `scope` and `detail` come in as POST /message,
 // `sessions` and `detail` go out as Server-Sent Events on GET /events (fetch and EventSource need no library; a
@@ -10,7 +10,7 @@
 // and a Host of 127.0.0.1 or localhost with the server's port (DNS rebinding); a POST must come from the server's
 // own Origin. No CORS headers are sent.
 //
-//   node server.cjs [folder…] [--port <n>] [--claude-dir <dir>] [--no-open]
+//   node src/server.cjs [folder…] [--port <n>] [--claude-dir <dir>] [--no-open]
 //
 // This file also holds the browser stand-in for the webview (the --vscode-* theme variables and acquireVsCodeApi),
 // which scripts/demo.cjs uses for its pages too.
@@ -28,7 +28,7 @@ const core = require("./core.cjs");
 const DEFAULT_PORT = 7419;
 const BODY_MAX = 64 * 1024; // the largest message the panel sends is a few dozen bytes
 const CLIENT_ID = /^[0-9a-f]{32}$/; // made by the page, see browserHost
-const USAGE = `Usage: node server.cjs [folder…] [--port <n>] [--claude-dir <dir>] [--no-open]
+const USAGE = `Usage: node src/server.cjs [folder…] [--port <n>] [--claude-dir <dir>] [--no-open]
 
   folder…            the folders that make up "This workspace"; none: every live session is listed
   --port <n>         the port on 127.0.0.1; 0 for any free one (default ${DEFAULT_PORT}, or a free one when it is taken)

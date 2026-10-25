@@ -1,4 +1,4 @@
-// core.cjs — pure functions behind the "Claude Context" panel. No VS Code dependency: the extension
+// src/core.cjs — pure functions behind the "Claude Context" panel. No VS Code dependency: the extension
 // hosts (extension.js, server.cjs) and the tests (test/core.test.js) all require this file. The transcript format is
 // Claude Code's internal one and may change between versions, so a missing field yields null
 // ("unknown"), never an error.
