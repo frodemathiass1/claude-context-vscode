@@ -101,9 +101,11 @@ function readTail(file, { from, bytes } = {}) {
 
 /**
  * The last assistant entry with usage outside a sidechain (subagent) gives tokens, model and timestamp,
- * and the prompt cache's counters of that turn (`cacheRead`, `cacheCreated`). `cacheTtlMs` is the TTL of
- * the last turn that created cache, read from `usage.cache_creation` (ephemeral_1h_input_tokens or
- * ephemeral_5m_input_tokens above zero); a turn that created nothing says nothing, and it is null until seen.
+ * and the prompt cache's counters of that turn (`cacheRead`, `cacheCreated`). A subagent writes a file of its
+ * own, so the sidechain filter is a guard: no main transcript on record mixes its entries in (NOTES.md,
+ * "Subagents and isSidechain"). `cacheTtlMs` is the TTL of the last turn that created cache, read from
+ * `usage.cache_creation` (ephemeral_1h_input_tokens or ephemeral_5m_input_tokens above zero); a turn that
+ * created nothing says nothing, and it is null until seen.
  * A turn is one API call: Claude Code writes one entry per content block of a response, all sharing
  * message.id, so turns are counted per id. `series` is the token count per turn, oldest first, over the whole
  * transcript (the list payload keeps the last SERIES_MAX, see seriesFor). `compactions` are the compact_boundary entries Claude Code writes, each at `at`, the
