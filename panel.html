@@ -576,6 +576,7 @@
   // The prompt cache (core.cjs: cacheTtlMs, coldInMs, hitShare). The core decides warm, cold and "soon"
   // (cacheSoon); the panel only shows the state, it never sends a turn.
   const TTL_TEXT = { 3600000: "1h", 300000: "5m" };
+  const TTL_WORDS = { "1h": "1-hour", "5m": "5-minute" };
   /** The TTL as a pill ("1h", or "5m" in orange), for the row's cache item and the detail's facts; null for another or none. */
   function ttlPill(session) {
     const ttl = TTL_TEXT[session.cacheTtlMs];
@@ -761,12 +762,6 @@
     return svg;
   }
 
-  /**
-   * Output per turn as bars under the curve, one per turn of the series (the output series is aligned to its
-   * right end, so an older state with a shorter one still lines up), scaled to the session's own largest turn.
-   * The thinking part of each bar is drawn over it, from the bottom. Nothing when no turn wrote anything. The
-   * row's strip; the detail view draws its own field (detailCurve).
-   */
   const OUT_H = 8;
   /**
    * The output bars into `svg`, for the row's strip and the detail's field: per turn its output (faint) and the
@@ -780,6 +775,12 @@
     svg.appendChild(svgEl("path", { class: "kx-out-think", d: output.map((v, o) => bar(o, Math.min(thinking[o] || 0, v || 0))).join(" ") || "M0,0" }));
   }
 
+  /**
+   * Output per turn as bars under the curve, one per turn of the series (the output series is aligned to its
+   * right end, so an older state with a shorter one still lines up), scaled to the session's own largest turn.
+   * The thinking part of each bar is drawn over it, from the bottom. Nothing when no turn wrote anything. The
+   * row's strip; the detail view has its own field around the same bars (detailCurve).
+   */
   function outputFor(session) {
     const series = Array.isArray(session.series) ? session.series : [];
     const output = Array.isArray(session.outputSeries) ? session.outputSeries.slice(-series.length) : [];
@@ -992,7 +993,7 @@
     const hit = Number.isFinite(session.hitShare) ? `${Math.round(session.hitShare * 100)} %` : "unknown";
     const read = Number.isFinite(session.cacheRead) ? tokensText(session.cacheRead) : "unknown";
     const written = Number.isFinite(session.cacheCreated) ? tokensText(session.cacheCreated) : "unknown";
-    const ttlText = ttl === "1h" ? "1-hour" : ttl === "5m" ? "5-minute" : "unknown";
+    const ttlText = TTL_WORDS[ttl] || "unknown";
     const when = state === "cold" ? `cold since ${clockText(session.coldAt)}` : `cold at ${clockText(session.coldAt)} unless a turn is sent (in ${leftText(session.coldInMs)})`;
     span.title = `Prompt cache: ${ttlText} TTL, ${when} · last turn: ${read} read from cache (${hit} of the context), ${written} written · a cold cache rewrites the whole context on the next turn`;
     return span;
@@ -1431,7 +1432,7 @@
     const ttlEl = el("span");
     if (pill) {
       ttlEl.appendChild(pill);
-      ttlEl.appendChild(document.createTextNode(pill.dataset.ttl === "1h" ? " 1-hour" : " 5-minute"));
+      ttlEl.appendChild(document.createTextNode(` ${TTL_WORDS[pill.dataset.ttl]}`));
     } else ttlEl.textContent = "unknown";
     const now = session.cacheState === "cold" ? `cold since ${clockText(session.coldAt)}`
       : session.cacheState === "warm" ? `warm · ${leftText(session.coldInMs)} left (cold at ${clockText(session.coldAt)})` : "unknown";
