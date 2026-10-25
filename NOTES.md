@@ -143,12 +143,14 @@ end an open tab).
 - **A subagent's transcript** is its own file, `<sessionId>/subagents/agent-<agentId>.jsonl` (279 files under 197
   sessions). Every message entry carries `isSidechain: true`, the parent's `sessionId` and an `agentId`; only
   the `api-request*` entries lack the field. Its assistant entries have the same `message.usage` as the main
-  session's: a subagent has a context window of its own (the two measured ended near 70K tokens).
+  session's: a subagent has a context window of its own. Its last turn (input, cache read and cache creation)
+  over the 280 files: from 3.6K to 426K tokens, median 72K, 90th percentile 151K; 29 above 150K, 18 above 200K.
 - **Next to it, `agent-<agentId>.meta.json`**, with the fields on how many of the 279 files: `agentType` 279,
   `requestShape` 279, `requestNonInteractive` 279, `spawnDepth` 274 (1, or 2 for a subagent's subagent, which
   then has `parentAgentId`, 4), `description` 88, `toolUseId` 88, `isBuiltIn` 52, `finished` 26,
-  `launchedWithDefaults` 19, `spawnMode` 13, `model` 1. `finished` is first seen in 2.1.301, and from then on 26 of 103 files have it (11
-  of 42 in 2.1.310), so a file without it is not known to be running.
+  `launchedWithDefaults` 19, `spawnMode` 13, `model` 1. `finished` is only ever `true`; it is first seen in
+  2.1.301, and from then on 26 of 103 files have it (11 of 42 in 2.1.310), so a file without it is not known to
+  be running.
 
 So the core reads `<sessionId>.jsonl` only and never counts a subagent's tokens, which is right: what a subagent
 adds to the main context is its report, a `tool_result` of the Agent call, which `growthBySource` counts under
