@@ -15,8 +15,8 @@
   --kx-orange: color-mix(in srgb, var(--kx-yellow) 50%, var(--kx-red));
   --kx-red: var(--vscode-charts-red, #cf222e);
   /* … and for fills (dot, context bar, curve, zone scale), so text and fill can differ per use.
-     Every zone in ZONES below has a pair --kx-<zone> / --kx-<zone>-fill; adding a zone adds a pair here. Yellow is
-     no zone: it is the base orange is mixed from. */
+     Every zone in ZONES (panel.js) has a pair --kx-<zone> / --kx-<zone>-fill; adding a zone adds a pair here.
+     Yellow is no zone: it is the base orange is mixed from. */
   --kx-green-fill: var(--vscode-charts-green, var(--kx-green));
   --kx-yellow-fill: var(--vscode-charts-yellow, var(--kx-yellow));
   --kx-orange-fill: color-mix(in srgb, var(--kx-yellow-fill) 50%, var(--kx-red-fill));

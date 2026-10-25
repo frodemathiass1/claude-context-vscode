@@ -90,10 +90,10 @@
 
   // ── The zones and the scale, as data. The core decides a session's zone (core.cjs zone()) and sends the zones
   // with every list (core.cjs ZONE_LIST): their limits, range texts and advice. This list orders the zones in the
-  // counts, names them, and picks the colour pair --kx-<zone> (text) and --kx-<zone>-fill (fills) defined in the
-  // style above. LIMITS, taken from the core's zones (applyZones), are the boundaries drawn as dashed lines on the
+  // counts, names them, and picks the colour pair --kx-<zone> (text) and --kx-<zone>-fill (fills) defined in
+  // panel.css. LIMITS, taken from the core's zones (applyZones), are the boundaries drawn as dashed lines on the
   // curve, gaps on the context bar and labels on the axis; SCALE is the full width of the bar and the strip.
-  // A new zone is one entry here, one in the core and one colour pair in the style. ─────────────────
+  // A new zone is one entry here, one in the core and one colour pair in panel.css. ─────────────────
   const ZONES = ["green", "orange", "red"];
   const ZONE_NAME = Object.fromEntries(ZONES.map((z) => [z, z]));
   let LIMITS = [], ZONE_LIST = [], MARKS_TEXT = ""; // until the first list with zones: no limits drawn, no marks named
@@ -662,7 +662,7 @@
   // draw. The list has the last 200 turns of a session; on open and after every list the panel asks the host for all
   // of them (core.cjs SessionReader.detail), and the answer draws it. ──
   const D_W = 100, D_H = 100; // the large curve's viewBox, stretched to its field like the sparkline's
-  const D_FIELD_H = { narrow: 150, wide: 220 }; // the field's height in the style (.kx-d-field), below and above 620 px
+  const D_FIELD_H = { narrow: 150, wide: 220 }; // the field's height in panel.css (.kx-d-field), below and above 620 px
   const D_OUT_H = 100, D_OUT_TOP = 94; // the output field's viewBox height, and the tallest bar's, so it does not touch the edge
   const AXIS_GAP_PX = 11; // an axis label is about 10 px tall; neighbours closer than this would overlap
   const COPIED_MS = 2000;
