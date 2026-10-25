@@ -241,7 +241,31 @@ describe("panel: lists update in place", () => {
     p.send(list(next, { all: true, workspaceFolders: [MINE] }));
     expect(p.row("b")).toBe(b);
     expect(p.row("c")).toBe(c);
-    expect(b.closest(".kx-rows").id).toBe("kx-rows-my-project_busy");
+    expect(b.closest(".kx-rows").id).toBe("kx-rows-my-project_2f_busy");
+  });
+
+  it("a row that leaves takes only itself out: the rows after it are never out of the document", () => {
+    const p = panel();
+    p.send(list([session("a", { ago: MIN }), session("b", { ago: 2 * MIN }), session("c", { ago: 3 * MIN })]));
+    const rows = p.row("b").parentNode;
+    const seen = new p.window.MutationObserver(() => {});
+    seen.observe(rows, { childList: true });
+    p.send(list([session("b", { ago: 2 * MIN }), session("c", { ago: 3 * MIN }), session("old", { ago: 2 * HOUR, startedAgo: 3 * HOUR })]));
+    expect(p.rows()).toEqual(["b", "c"]); // "old" is in the folded idle-over-an-hour group
+    const records = seen.takeRecords();
+    expect(records.flatMap((r) => [...r.removedNodes]).map((n) => n.dataset.session)).toEqual(["a"]);
+    expect(records.flatMap((r) => [...r.addedNodes])).toEqual([]);
+  });
+
+  it("a project named like a group gets ids and keys of its own", () => {
+    const p = panel();
+    const one = session("a", { cwd: path.join(path.sep, "dev", "busy") }), two = session("b", { status: "busy", cwd: path.join(path.sep, "dev", "project") });
+    p.send(list([one, two], { all: true }));
+    const ids = [...p.doc.querySelectorAll(".kx-rows")].map((r) => r.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    const [a, b] = [p.row("a"), p.row("b")];
+    p.send(list([one, two], { all: true }));
+    expect([p.row("a") === a, p.row("b") === b]).toEqual([true, true]);
   });
 
   it("the focus on a row survives a list, and folding, the sort, the filters and compact rows give the rows they gave", () => {

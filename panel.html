@@ -952,7 +952,9 @@
   function rowsFor(heading, idKey) {
     if (heading.firstChild.getAttribute("aria-expanded") !== "true") return null;
     const rows = el("div", "kx-rows");
-    rows.id = `kx-rows-${idKey.replace(/[^\w-]+/g, "_")}`;
+    rows.dataset.key = `rows:${idKey}`;
+    // every other character as its code, so no two keys share an id (a project named "busy" against the busy group of "project")
+    rows.id = `kx-rows-${idKey.replace(/[^A-Za-z0-9-]/g, (c) => `_${c.charCodeAt(0).toString(16)}_`)}`;
     heading.firstChild.setAttribute("aria-controls", rows.id);
     return rows;
   }
@@ -1672,18 +1674,18 @@
   // native tooltip closes when the element under the pointer is replaced, so a busy session's tooltips would close
   // within a second or two (#59). Every list is still built afresh by the functions above, and patch() then makes
   // the live tree match it: a node that stays is kept, and only what changed in it is set. Rows are keyed by their
-  // session, headings by data-key and row containers by id, across the whole list, so a row that changes group is
-  // moved, not rebuilt; other nodes are matched in place by their tag. ──
+  // session, headings and row containers by data-key, across the whole list, so a row that changes group is moved,
+  // not rebuilt; other nodes are matched in place by their tag. ──
   const keyOf = (n) => {
     if (n.nodeType !== 1) return null;
     const session = n.getAttribute("data-session"), key = n.getAttribute("data-key");
-    return session ? `session:${session}` : key ? `key:${key}` : n.id ? `id:${n.id}` : null;
+    return session ? `session:${session}` : key ? `key:${key}` : null;
   };
   const sameKind = (a, b) => a.nodeType === b.nodeType && (a.nodeType !== 1 || (a.namespaceURI === b.namespaceURI && a.tagName === b.tagName));
   /** The keyed elements under `root`, for patchChildren to take from wherever they are. */
   function keyedIn(root) {
     const keyed = new Map();
-    for (const e of root.querySelectorAll("[data-session], [data-key], [id]")) { const k = keyOf(e); if (k && !keyed.has(k)) keyed.set(k, e); }
+    for (const e of root.querySelectorAll("[data-session], [data-key]")) { const k = keyOf(e); if (k && !keyed.has(k)) keyed.set(k, e); }
     return keyed;
   }
   /** `live` takes `next`'s attributes, inline style (through the CSSOM: the CSP blocks style attributes) and children. */
@@ -1699,11 +1701,15 @@
   /**
    * `parent`'s children become `nodes`, in order: each takes the old node with its key (`keyed`, from anywhere) or
    * the old one in its place with the same tag, else is put in itself, with its children patched in the same way.
-   * The old nodes left over are removed. A kept node that had to be moved is pushed on `moved`.
+   * The old nodes left over are removed. A kept node that had to be moved is pushed on `moved`. An old keyed node
+   * that has no place among `nodes` is taken out before the next is placed, or every node after it would be moved
+   * past it, out of the document for a moment, and lose its tooltip and focus.
    */
   function patchChildren(parent, nodes, keyed, moved) {
+    const here = new Set(nodes.map(keyOf).filter(Boolean));
     let at = parent.firstChild;
     for (const n of nodes) {
+      while (at && keyOf(at) && !here.has(keyOf(at))) { const gone = at; at = at.nextSibling; parent.removeChild(gone); } // still in `keyed`, for a place elsewhere
       const k = keyOf(n);
       let old = k ? keyed.get(k) : at && !keyOf(at) && sameKind(at, n) ? at : null;
       if (old && !sameKind(old, n)) old = null;
