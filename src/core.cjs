@@ -52,7 +52,8 @@ function zone(tokens) {
 }
 
 const SESSION_ID = /^[\w-]+$/; // a UUID as Claude Code writes it; never a path
-const PANEL = path.join(__dirname, "panel.html"); // read for every page (panelPage), so a reload shows a change
+// the panel's markup, style and script, read for every page (panelPage), so a reload shows a change
+const PANEL = Object.freeze(Object.fromEntries(["html", "css", "js"].map((ext) => [ext, path.join(__dirname, `panel.${ext}`)])));
 // a cold read of an invented 38 MB transcript as one buffer, one string and one split held about 83 MB at its end,
 // in 1 MB chunks 44 MB (the lines alone are 42), and took 50 ms instead of 39 with ASCII text, about the same where
 // decoding other characters dominates (Node 22, 2026-10-25, #68); the largest of 412 transcripts here is 34.7 MB
@@ -328,7 +329,7 @@ function seriesFor(t, max = Infinity) {
     thinkingSeries: last(t.thinkingSeries), compactions, dips: dips(series).filter((i) => !compactedAt.has(i)), baselineAt };
 }
 
-/** The panel's number format ("850", "43K", "1.2M", "unknown"), for the facts below; panel.html has the same rule, since the webview cannot require this file, and test/panel.test.js keeps the two equal. */
+/** The panel's number format ("850", "43K", "1.2M", "unknown"), for the facts below and for the panel, which gets this source in its script (PANEL_FROM_CORE), since the webview cannot require this file. */
 function tokensText(tokens) {
   if (!Number.isFinite(tokens)) return "unknown";
   if (tokens < 1000) return String(tokens);
@@ -646,15 +647,27 @@ function randomNonce() {
   return crypto.randomBytes(16).toString("base64");
 }
 
+// The core's functions the panel's script uses, put in place of `/* core: <name> */` in panel.js as their source, so the
+// rule has one copy. Only pure functions that call nothing else of the core's: the page has nothing else of it.
+const PANEL_FROM_CORE = Object.freeze({ tokensText });
+
 /**
  * The panel's page, one copy for both hosts, the demo and the panel's tests: panel.html with the CSP for `nonce`
  * (pageCsp, with `connect`) in place of `<!-- csp -->`, followed by `head` (the browser stand-in's theme style and
- * script, see server.cjs), and the nonce set.
+ * script, see server.cjs), and panel.css and panel.js inline in their nonce'd tags in place of their markers, so the
+ * page stays one document that loads nothing: the source is three files only for the editor.
  */
 function panelPage({ nonce = randomNonce(), connect = false, head = "" } = {}) {
+  const read = (ext) => fs.readFileSync(PANEL[ext], "utf8");
+  const script = read("js").replace(/\/\* core: (\w+) \*\//g, (marker, name) => {
+    if (!Object.hasOwn(PANEL_FROM_CORE, name)) throw new Error(`panel.js asks for ${name}, which is not in PANEL_FROM_CORE`);
+    return PANEL_FROM_CORE[name].toString();
+  });
   const csp = `<meta http-equiv="Content-Security-Policy" content="${pageCsp(nonce, connect)}">`;
-  // a function, so a "$&" in the head is not a replacement pattern
-  return fs.readFileSync(PANEL, "utf8").replace("<!-- csp -->", () => (head ? `${csp}\n${head}` : csp)).replace(/\{\{nonce\}\}/g, nonce);
+  const parts = { csp: head ? `${csp}\n${head}` : csp, "panel.css": `<style nonce="${nonce}">\n${read("css")}</style>`,
+    "panel.js": `<script nonce="${nonce}">\n${script}</script>` };
+  // one pass with a function, so neither a "$&" nor a marker in the head or the files is read as one
+  return read("html").replace(/<!-- (csp|panel\.css|panel\.js) -->/g, (marker, name) => parts[name]);
 }
 
 /**

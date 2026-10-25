@@ -1,0 +1,421 @@
+/* Own variables, set from --vscode-* (light/dark follows the editor), each with a plain fallback. No
+   external CSS here, no theme button. Classes carry the kx- prefix. */
+:root {
+  --kx-bg: var(--vscode-sideBar-background, #ffffff);
+  --kx-fg: var(--vscode-foreground, #1f2328);
+  --kx-muted: var(--vscode-descriptionForeground, #6e7781);
+  --kx-border: var(--vscode-sideBarSectionHeader-border, var(--vscode-widget-border, rgba(128, 128, 128, 0.25)));
+  --kx-border-strong: var(--vscode-editorWidget-border, rgba(128, 128, 128, 0.45)); /* the outlines of the controls: select, chips, switches, pills, copy */
+  --kx-row-hover: var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.08));
+  /* the zone colours for text (the count, the legend numbers) … */
+  --kx-green: var(--vscode-charts-green, #1a7f37);
+  --kx-yellow: var(--vscode-charts-yellow, #9a6700);
+  /* not --vscode-charts-orange: VS Code derives it from editor.findMatchHighlightBackground (#EA5C0055),
+     a third-opaque orange that reads brown over a dark side bar. Halfway between the theme's yellow and red instead. */
+  --kx-orange: color-mix(in srgb, var(--kx-yellow) 50%, var(--kx-red));
+  --kx-red: var(--vscode-charts-red, #cf222e);
+  /* … and for fills (dot, context bar, curve, zone scale), so text and fill can differ per use.
+     Every zone in ZONES (panel.js) has a pair --kx-<zone> / --kx-<zone>-fill; adding a zone adds a pair here.
+     Yellow is no zone: it is the base orange is mixed from. */
+  --kx-green-fill: var(--vscode-charts-green, var(--kx-green));
+  --kx-yellow-fill: var(--vscode-charts-yellow, var(--kx-yellow));
+  --kx-orange-fill: color-mix(in srgb, var(--kx-yellow-fill) 50%, var(--kx-red-fill));
+  --kx-red-fill: var(--vscode-charts-red, var(--kx-red));
+  --kx-grid: var(--vscode-charts-lines, color-mix(in srgb, var(--kx-muted) 55%, transparent)); /* limit lines, marks */
+  --kx-track: color-mix(in srgb, var(--kx-fg) 10%, transparent); /* the track behind the bar */
+  --kx-badge-bg: var(--vscode-badge-background, var(--vscode-focusBorder, #0969da));
+  --kx-badge-fg: var(--vscode-badge-foreground, #ffffff);
+  --kx-heading: var(--vscode-sideBarSectionHeader-foreground, var(--kx-muted));
+  --kx-accent: var(--vscode-focusBorder, #0969da);
+  --kx-surface: var(--vscode-editorWidget-background, #f6f8fa); /* the field behind the detail view's curve */
+  --kx-font: var(--vscode-font-family, system-ui, sans-serif);
+  --kx-font-size: var(--vscode-font-size, 13px);
+  --kx-mono: var(--vscode-editor-font-family, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--kx-bg); color: var(--kx-fg);
+  font-family: var(--kx-font); font-size: var(--kx-font-size); line-height: 1.4;
+  container-type: inline-size; /* the layout below follows the panel's width, not the window's */
+}
+
+/* ── Header: the count, the zone scale and the counters ── */
+header {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;
+  padding: 10px 12px; border-bottom: 1px solid var(--kx-border);
+}
+header h1 { margin: 0; font-size: 1em; font-weight: 600; display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+header h1 .kx-n { font-family: var(--kx-mono); font-size: 1.35em; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+/* the "updated 12:04:31" note and the refresh button, pushed to the right end of the header */
+.kx-tools { display: inline-flex; align-items: center; gap: 10px; margin-left: auto; }
+.kx-refreshed { font-size: 0.82em; color: var(--kx-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.kx-refresh, .kx-toggle {
+  display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; margin: 0;
+  border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--kx-muted); cursor: pointer;
+}
+.kx-refresh:hover, .kx-toggle:hover { background: var(--kx-row-hover); color: var(--kx-fg); }
+.kx-refresh:focus-visible, .kx-toggle:focus-visible { outline: 1px solid var(--kx-accent); outline-offset: 1px; }
+.kx-refresh svg, .kx-toggle svg { width: 14px; height: 14px; }
+.kx-toggle[aria-pressed="true"] { color: var(--kx-fg); background: var(--kx-row-hover); border-color: var(--kx-border-strong); }
+.kx-refresh[aria-busy="true"] svg { animation: kx-spin 0.8s linear infinite; } /* spins until the next list arrives */
+@keyframes kx-spin { to { transform: rotate(360deg); } }
+/* The zone scale: a thick strip across the header, the row bar's 0–300K with each zone as a band at its true width
+   and its range written inside, so the limits are in view before any row. Tinted, with the text in the zone colour,
+   so it reads in light and dark themes. */
+.kx-zscale { flex: 1 1 100%; display: flex; gap: 2px; height: 22px; }
+.kx-zband {
+  flex: var(--w) 1 0; min-width: 0; overflow: hidden; display: flex; align-items: center; justify-content: center;
+  background: color-mix(in srgb, var(--kx-zone-fill, var(--kx-muted)) 24%, var(--kx-bg)); color: var(--kx-zone-text, var(--kx-muted));
+  font-size: 0.8em; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.kx-zband:first-child { border-radius: 4px 0 0 4px; }
+.kx-zband:last-child { border-radius: 0 4px 4px 0; }
+/* which range text the band has room for (fitBands measures it): the long one, the short one, or none; a clipped
+   label could read as another number ("150K+" cut to "50K") */
+.kx-zband .kx-zshort, .kx-zband[data-fit="short"] .kx-zlong, .kx-zband[data-fit="none"] span { display: none; }
+.kx-zband[data-fit="short"] .kx-zshort { display: inline; }
+.kx-zband span { padding: 0 4px; } /* on the label, not the band: a padded band would no longer be its zone's true width */
+/* the header's counters beside the session count: the count per zone, the median start of the sessions that began
+   fresh, how many sit in the folded "Idle over an hour" group (processes left running, most likely closed tabs), and
+   the prompt cache's warm and cold; a bold number each, "·" between the parts of one */
+.kx-counter { font-size: 0.82em; font-variant-numeric: tabular-nums; color: var(--kx-muted); white-space: nowrap; }
+.kx-counter b { font-weight: 600; color: var(--kx-fg); }
+.kx-counter span + span::before { content: "·"; margin: 0 6px; }
+.kx-zone-counts { display: inline-flex; flex-wrap: wrap; }
+.kx-zone-counts b { color: var(--kx-zone-text, inherit); }
+.kx-cache-counts { display: inline-flex; align-items: center; }
+
+/* "showing 4 of 10" beside the count while a filter hides sessions */
+.kx-showing { font-size: 0.82em; color: var(--kx-muted); white-space: nowrap; }
+
+/* ── Controls: the sort and the filters, under the header; wraps to more lines in the narrow layout ── */
+.kx-controls {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 6px 12px;
+  border-bottom: 1px solid var(--kx-border); font-size: 0.86em; color: var(--kx-muted);
+}
+.kx-controls label { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.kx-controls select {
+  font: inherit; color: var(--kx-fg); background: var(--kx-bg); border: 1px solid var(--kx-border-strong);
+  border-radius: 4px; padding: 1px 4px; max-width: 160px;
+}
+.kx-chip {
+  font: inherit; display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 10px;
+  border: 1px solid var(--kx-border-strong); background: transparent; color: var(--kx-muted); cursor: pointer; white-space: nowrap;
+}
+.kx-chip:hover { color: var(--kx-fg); }
+.kx-chip[aria-pressed="true"] { background: var(--kx-badge-bg); color: var(--kx-badge-fg); border-color: transparent; }
+.kx-chip:focus-visible, .kx-controls select:focus-visible, .kx-reset:focus-visible { outline: 1px solid var(--kx-accent); outline-offset: 1px; }
+.kx-models { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.kx-reset { font: inherit; background: none; border: 0; padding: 0; color: var(--kx-accent); cursor: pointer; text-decoration: underline; }
+/* the scope: which sessions the list, and every counter above it, is about; a line of its own at the top of the row */
+.kx-scope { flex: 1 0 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; min-width: 0; }
+.kx-seg { display: inline-flex; border: 1px solid var(--kx-border-strong); border-radius: 4px; overflow: hidden; }
+.kx-seg button {
+  font: inherit; margin: 0; padding: 1px 9px; border: 0; background: transparent; color: var(--kx-muted); cursor: pointer; white-space: nowrap;
+}
+.kx-seg button + button { border-left: 1px solid var(--kx-border-strong); }
+.kx-seg button:hover { color: var(--kx-fg); }
+.kx-seg button[aria-pressed="true"] { background: var(--kx-badge-bg); color: var(--kx-badge-fg); }
+.kx-seg button:focus-visible { outline: 1px solid var(--kx-accent); outline-offset: -2px; } /* inside: the group clips what is outside */
+.kx-scope-name { color: var(--kx-fg); font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kx-scope-more { font: inherit; background: none; border: 0; padding: 0; color: var(--kx-accent); cursor: pointer; text-decoration: underline; white-space: nowrap; }
+.kx-scope-more:focus-visible { outline: 1px solid var(--kx-accent); outline-offset: 1px; }
+.kx-hidden-all { padding: 6px 4px 10px; color: var(--kx-muted); font-style: italic; font-size: 0.9em; }
+
+main { padding: 8px 12px 14px; }
+.kx-message { padding: 18px 4px; color: var(--kx-muted); text-align: center; }
+.kx-error { padding: 8px 12px; color: var(--kx-red); border-bottom: 1px solid var(--kx-border); font-size: 0.92em; }
+
+/* ── Groups: "Working now · n", "Waiting for you · n", "Idle · n", "Idle over an hour · n" and, with all projects, the project above them ── */
+.kx-group {
+  margin: 10px 0 4px; font-size: 0.78em; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--kx-heading); display: flex; align-items: center; gap: 6px;
+}
+.kx-group svg { width: 12px; height: 12px; }
+.kx-group .kx-gn { font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--kx-muted); }
+.kx-group::after { content: ""; flex: 1; height: 1px; background: var(--kx-border); }
+.kx-group.kx-project { margin-top: 16px; }
+/* the whole heading is the fold button; the chevron points right when folded, down when open */
+.kx-group .kx-fold {
+  display: inline-flex; align-items: center; gap: 6px; padding: 1px 4px 1px 0; margin: 0 0 0 -2px; border: 0; border-radius: 4px;
+  background: transparent; font: inherit; text-transform: inherit; letter-spacing: inherit; color: inherit; cursor: pointer;
+}
+.kx-group .kx-fold:hover { color: var(--kx-fg); }
+.kx-group .kx-fold:focus-visible { outline: 1px solid var(--kx-accent); outline-offset: 1px; }
+.kx-group .kx-chev { transition: transform 0.15s ease; }
+.kx-group .kx-fold[aria-expanded="true"] .kx-chev { transform: rotate(90deg); }
+.kx-ico { width: 13px; height: 13px; flex: none; vertical-align: -2px; }
+
+/* ── Row: stacked under 620 px (title row, bar, curve, meta), four columns from 620 px ── */
+.kx-session {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "title num" "bar bar" "curve curve" "meta meta";
+  gap: 3px 10px; padding: 8px 4px; border-bottom: 1px solid var(--kx-border); align-items: center;
+}
+.kx-session:last-child { border-bottom: none; }
+.kx-session:hover { background: var(--kx-row-hover); }
+.kx-session.kx-dimmed { opacity: 0.72; } /* 0.5 took the red count below 3:1 on a light surface */
+.kx-row-title { grid-area: title; display: flex; align-items: center; gap: 8px; min-width: 0; }
+.kx-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.kx-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--kx-zone-fill, var(--kx-muted)); position: relative; flex: none; }
+/* the dot pulses while the session is busy: a ring in the dot's own colour grows and fades */
+.kx-dot.kx-pulse::after {
+  content: ""; position: absolute; inset: 0; border-radius: 50%; background: inherit;
+  animation: kx-pulse 1.6s ease-out infinite;
+}
+@keyframes kx-pulse { from { transform: scale(1); opacity: 0.7; } to { transform: scale(2.6); opacity: 0; } }
+.kx-badge {
+  display: inline-flex; align-items: center; gap: 3px; padding: 0 6px; border-radius: 9px;
+  font-size: 0.78em; font-weight: 600; line-height: 1.6; background: var(--kx-badge-bg); color: var(--kx-badge-fg); flex: none;
+}
+.kx-badge svg { width: 10px; height: 10px; }
+/* waiting for the user: the same pill as busy, outlined instead of filled, and nothing moves */
+.kx-badge.kx-wait { background: transparent; color: var(--kx-fg); box-shadow: inset 0 0 0 1px var(--kx-badge-bg); }
+/* the count in the zone's text colour, the zone name under it */
+.kx-count { grid-area: num; display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+.kx-num {
+  font-family: var(--kx-mono); font-variant-numeric: tabular-nums; font-weight: 700; line-height: 1; white-space: nowrap;
+  font-size: 1.25em; color: var(--kx-zone-text, var(--kx-muted));
+}
+.kx-num[data-zone="unknown"] { font-family: inherit; font-size: 1em; font-weight: 500; }
+/* a title the transcript did not give (core.cjs titleFallback), muted so it is not read as a message */
+.kx-title[data-fallback], .kx-d-head h1[data-fallback] { color: var(--kx-muted); font-weight: 500; }
+.kx-zone-txt { font-size: 0.78em; line-height: 1; color: var(--kx-muted); }
+/* the context bar: a track scaled 0–300K, the fill in the zone's fill colour, a gap at every limit */
+.kx-bar-col { grid-area: bar; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.kx-bar { position: relative; height: 10px; border-radius: 5px; background: var(--kx-track); overflow: hidden; }
+.kx-fill {
+  position: absolute; inset: 0 auto 0 0; width: calc(var(--p) * 1%); border-radius: 5px;
+  background: var(--kx-zone-fill, var(--kx-muted)); transition: width 0.5s ease; overflow: hidden;
+}
+/* the segment's fixed load (its first turn) as a muted shade at the start of the fill; the rest is the conversation */
+.kx-base { position: absolute; inset: 0 auto 0 0; width: calc(var(--b) * 1%); background: color-mix(in srgb, var(--kx-zone-fill, var(--kx-muted)) 45%, var(--kx-bg)); }
+/* a slow sheen moves over the fill while the session is busy */
+/* moved by transform, not background-position, so it runs on the compositor instead of repainting the bar every frame */
+.kx-fill.kx-busy::after {
+  content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 120px;
+  background: linear-gradient(90deg, transparent 0, rgba(255, 255, 255, 0.35) 50%, transparent 100%);
+  animation: kx-sheen 1.8s linear infinite;
+}
+@keyframes kx-sheen { from { transform: translateX(-120px); } to { transform: translateX(120px); } }
+.kx-tick { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--kx-bg); left: calc(var(--t) * 1%); }
+.kx-over { position: absolute; right: 0; top: 0; bottom: 0; width: 14px; background: repeating-linear-gradient(135deg, transparent 0 3px, var(--kx-bg) 3px 5px); }
+/* under the bar: the top sources of the conversation's growth, an estimate */
+.kx-growth { font-size: 0.8em; color: var(--kx-muted); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* the sparkline fills its column; strokes stay 1 px although the viewBox is stretched */
+.kx-curve-wrap { grid-area: curve; min-width: 0; }
+.kx-curve { display: block; width: 100%; height: 18px; overflow: visible; color: var(--kx-zone-fill, var(--kx-muted)); }
+.kx-limit { stroke: var(--kx-grid); stroke-width: 1; stroke-dasharray: 3 3; }
+.kx-area { fill: currentColor; opacity: 0.18; stroke: none; }
+.kx-line { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+/* a compaction (read from the transcript) is a solid mark; a dip (a guessed drop) is dotted */
+.kx-compact { stroke: var(--kx-fg); stroke-width: 1.5; opacity: 0.85; }
+.kx-dip { stroke: var(--kx-fg); stroke-width: 1; opacity: 0.7; stroke-dasharray: 2 2; }
+.kx-nocurve { font-size: 0.82em; color: var(--kx-muted); font-style: italic; }
+/* output per turn under the curve, on its own scale: the whole bar faint, the thinking part of it stronger */
+.kx-out { display: block; width: 100%; height: 7px; margin-top: 2px; color: var(--kx-muted); }
+.kx-out-all { fill: currentColor; opacity: 0.35; }
+.kx-out-think { fill: currentColor; opacity: 0.8; }
+.kx-meta { grid-area: meta; display: flex; flex-wrap: wrap; gap: 3px 10px; color: var(--kx-muted); font-size: 0.86em; min-width: 0; }
+.kx-meta span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.kx-meta svg { width: 12px; height: 12px; opacity: 0.8; }
+/* the prompt cache: "warm · 47 min" with the TTL as a small outlined pill; a few minutes from cold the
+   text turns orange, so the user can send a turn before the deadline; cold is plain */
+.kx-cache[data-cache="soon"] { color: var(--kx-orange); font-weight: 600; }
+.kx-cache[data-cache="soon"] svg { opacity: 1; }
+.kx-cache[data-cache="cold"] { color: var(--kx-fg); }
+.kx-ttl {
+  font-size: 0.82em; font-weight: 600; line-height: 1.4; padding: 0 4px; border-radius: 4px;
+  border: 1px solid var(--kx-border-strong); color: var(--kx-muted); font-variant-numeric: tabular-nums;
+}
+.kx-ttl[data-ttl="5m"] { color: var(--kx-orange); border-color: currentColor; } /* a drop from 1h is the thing to notice */
+/* the subagents mark: muted, in the zone's colour when the largest of them is orange or red */
+.kx-agents[data-zone="orange"] { color: var(--kx-orange); font-weight: 600; }
+.kx-agents[data-zone="red"] { color: var(--kx-red); font-weight: 600; }
+.kx-agents[data-zone="orange"] svg, .kx-agents[data-zone="red"] svg { opacity: 1; }
+/* the axis line above each group: column names and the marks of the bar; only in the wide layout */
+.kx-axis { display: none; }
+/* the whole row opens the session's detail view */
+.kx-session[tabindex] { cursor: pointer; }
+.kx-session[tabindex]:focus-visible { outline: 1px solid var(--kx-accent); outline-offset: -1px; }
+/* compact rows: the title line and the bar at every width. The parts are hidden, not left out, so a
+   render keeps one row builder; the selector outweighs the four-column layout in the container query below */
+main[data-compact] .kx-session { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "title num" "bar bar"; gap: 4px 10px; padding: 6px 4px; }
+main[data-compact] :is(.kx-zone-txt, .kx-growth, .kx-curve-wrap, .kx-meta, .kx-axis) { display: none; }
+
+/* ── Detail view of one session: replaces the header, the controls and the list. Top bar, header, meta
+   line, the context box and named facts, the large curve with output bars under it, where the context
+   went, the facts tables; stacked under 620 px ── */
+.kx-detail { padding: 8px 12px 16px; }
+.kx-d-top { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; }
+.kx-d-back {
+  display: inline-flex; align-items: center; gap: 4px; font: inherit; font-size: 0.92em; color: var(--kx-muted);
+  background: transparent; border: 1px solid transparent; border-radius: 4px; padding: 2px 8px 2px 4px; cursor: pointer;
+}
+.kx-d-back:hover { background: var(--kx-row-hover); color: var(--kx-fg); }
+.kx-d-back:focus-visible, .kx-d-copy:focus-visible, .kx-d-turn:focus-visible { outline: 1px solid var(--kx-accent); outline-offset: 1px; }
+.kx-d-back svg { width: 14px; height: 14px; }
+.kx-d-esc { margin-left: auto; font-size: 0.78em; color: var(--kx-muted); font-family: var(--kx-mono); }
+.kx-d-head { display: flex; align-items: center; gap: 8px; min-width: 0; margin: 4px 0 2px; }
+.kx-d-head h1 { margin: 0; font-size: 1.15em; font-weight: 600; line-height: 1.3; min-width: 0; overflow-wrap: anywhere; }
+.kx-d-head .kx-dot { width: 12px; height: 12px; }
+.kx-d-meta { display: flex; flex-wrap: wrap; gap: 3px 12px; color: var(--kx-muted); font-size: 0.86em; margin: 0 0 8px; }
+.kx-d-meta span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; min-width: 0; }
+.kx-d-meta svg { width: 12px; height: 12px; opacity: 0.8; }
+.kx-d-sec { margin: 0 0 12px; }
+/* the curve: a field with the zone bands, the axis at the right edge, a hairline and a tooltip per turn */
+.kx-d-field { position: relative; height: 150px; border: 1px solid var(--kx-border); border-radius: 6px; background: var(--kx-surface); overflow: hidden; }
+.kx-d-curve { position: absolute; inset: 0; width: 100%; height: 100%; display: block; overflow: visible; color: var(--kx-zone-fill, var(--kx-muted)); }
+.kx-d-band { fill: var(--kx-band, transparent); opacity: 0.09; }
+.kx-d-axis {
+  position: absolute; right: 4px; font-size: 0.7em; color: var(--kx-muted); font-variant-numeric: tabular-nums; line-height: 1;
+  transform: translateY(-50%); pointer-events: none; background: color-mix(in srgb, var(--kx-surface) 80%, transparent); padding: 0 2px; border-radius: 2px;
+}
+.kx-d-field[data-axis="1"] .kx-d-axis-low { display: none; }
+.kx-d-hair { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--kx-fg); opacity: 0.6; pointer-events: none; display: none; }
+.kx-d-tip {
+  position: absolute; top: 40px; max-width: min(260px, 80%); background: var(--kx-bg); border: 1px solid var(--kx-border-strong);
+  border-radius: 4px; padding: 4px 8px; font-size: 0.8em; line-height: 1.35; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18); pointer-events: none; display: none;
+}
+.kx-d-tip b { font-family: var(--kx-mono); font-variant-numeric: tabular-nums; }
+.kx-d-field.kx-d-hover .kx-d-hair, .kx-d-field.kx-d-hover .kx-d-tip { display: block; }
+/* the compaction's label on its own row under the top axis label, the segment's start at the bottom */
+.kx-d-mark {
+  position: absolute; top: 22px; font-size: 0.7em; color: var(--kx-fg); background: var(--kx-bg); border: 1px solid var(--kx-border-strong);
+  border-radius: 3px; padding: 0 4px; white-space: nowrap; transform: translateX(-50%); pointer-events: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis;
+}
+.kx-d-mark.kx-d-start { top: auto; bottom: 4px; color: var(--kx-muted); }
+.kx-d-lbl { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; font-size: 0.8em; color: var(--kx-muted); margin: 0 0 4px; }
+.kx-d-leg { display: inline-flex; align-items: center; gap: 4px; }
+.kx-d-leg i { display: inline-block; width: 12px; height: 0; border-top: 2px solid var(--kx-fg); }
+.kx-d-leg i.kx-d-dash { border-top-style: dashed; border-top-width: 1px; border-color: var(--kx-grid); }
+/* the turn chooser: the keyboard's way to the same tooltip */
+.kx-d-turn-row { display: flex; align-items: center; gap: 8px; margin: 6px 0 0; font-size: 0.82em; color: var(--kx-muted); }
+.kx-d-turn { flex: 1 1 auto; min-width: 0; accent-color: var(--kx-accent); margin: 0; height: 18px; }
+.kx-d-turn-val { font-family: var(--kx-mono); font-variant-numeric: tabular-nums; white-space: nowrap; min-width: 9ch; text-align: right; }
+/* output per turn in its own field under the curve, half its height and on the same x-axis; the turn's column is
+   marked while the curve shows the turn. The tones are the list's (.kx-out-all, .kx-out-think), and so are the swatches */
+.kx-d-ofield { position: relative; height: 75px; margin-top: 4px; border: 1px solid var(--kx-border); border-radius: 6px; background: var(--kx-surface); overflow: hidden; color: var(--kx-muted); }
+.kx-d-obars { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.kx-d-ofield .kx-d-axis { top: 9px; }
+.kx-d-ocol {
+  position: absolute; top: 0; bottom: 0; pointer-events: none; display: none;
+  background: color-mix(in srgb, var(--kx-fg) 14%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--kx-fg) 45%, transparent);
+}
+.kx-d-ofield.kx-d-hover .kx-d-ocol { display: block; }
+.kx-d-sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: -1px; background: var(--kx-muted); }
+.kx-d-sw-out { opacity: 0.35; }
+.kx-d-sw-think { opacity: 0.8; }
+.kx-d-tip .kx-d-tip-o { color: var(--kx-muted); }
+/* the header: "Context 169K · orange zone", what the zones measure and the advice, edged and tinted in the zone colour */
+.kx-d-ctx {
+  margin: 0 0 10px; padding: 8px 10px; border-left: 3px solid var(--kx-zone-fill, var(--kx-muted)); border-radius: 0 4px 4px 0;
+  background: color-mix(in srgb, var(--kx-zone-fill, var(--kx-muted)) 8%, transparent);
+}
+.kx-d-ctx h2 { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 6px; font-size: 1em; font-weight: 600; line-height: 1.25; }
+.kx-d-ctx h2 .kx-num { font-size: 1.6em; }
+.kx-d-ctx h2 .kx-d-zn { color: var(--kx-zone-text, var(--kx-muted)); }
+.kx-d-why { margin: 3px 0 0; font-size: 0.8em; color: var(--kx-muted); }
+.kx-d-advice {
+  margin: 6px 0 0; padding: 6px 0 0; border-top: 1px solid color-mix(in srgb, var(--kx-zone-fill, var(--kx-muted)) 30%, transparent);
+  font-size: 0.95em; font-weight: 600;
+}
+/* the named facts under it, key muted and value in mono */
+.kx-d-named { display: flex; flex-wrap: wrap; gap: 2px 16px; margin: 0 0 10px; font-size: 0.9em; }
+.kx-d-named div { display: flex; align-items: baseline; gap: 6px; }
+.kx-d-named dt { color: var(--kx-muted); }
+.kx-d-named dd { margin: 0; font-family: var(--kx-mono); font-variant-numeric: tabular-nums; font-weight: 600; }
+/* where the context went: name · bar · tokens · share per source, the bars scaled to the largest; the caveat once under them */
+.kx-d-bars { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 4px 10px; align-items: center; font-size: 0.9em; font-variant-numeric: tabular-nums; }
+.kx-d-bar { height: 10px; border-radius: 5px; background: var(--kx-track); overflow: hidden; }
+.kx-d-bar i { display: block; height: 100%; width: calc(var(--p) * 1%); background: var(--kx-zone-fill, var(--kx-muted)); border-radius: 5px; }
+.kx-d-bar-n { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 16ch; } /* a long MCP name must not squeeze the bars */
+.kx-d-bar-v { font-family: var(--kx-mono); white-space: nowrap; }
+.kx-d-bar-s { color: var(--kx-muted); white-space: nowrap; min-width: 4ch; text-align: right; }
+.kx-d-note { margin: 6px 0 0; font-size: 0.8em; color: var(--kx-muted); font-style: italic; }
+/* the facts: two tables, key over value in the narrow layout so a long path never overflows */
+.kx-d-facts { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px 20px; }
+.kx-d-facts table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 0.9em; }
+.kx-d-facts caption { text-align: left; font-size: 0.78em; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--kx-heading); padding: 0 0 4px; }
+.kx-d-facts tr { display: block; padding: 4px 0; border-bottom: 1px solid var(--kx-border); }
+.kx-d-facts th, .kx-d-facts td { display: block; text-align: left; padding: 0; border: 0; vertical-align: top; overflow-wrap: anywhere; }
+.kx-d-facts th { font-weight: 500; font-size: 0.86em; color: var(--kx-muted); }
+.kx-d-facts td { font-variant-numeric: tabular-nums; }
+.kx-d-facts td code { font-family: var(--kx-mono); font-size: 0.9em; overflow-wrap: anywhere; }
+.kx-d-copy {
+  font: inherit; font-size: 0.8em; color: var(--kx-muted); background: transparent; border: 1px solid var(--kx-border-strong);
+  border-radius: 4px; padding: 0 6px; margin-left: 6px; cursor: pointer; vertical-align: 1px;
+}
+.kx-d-copy:hover { color: var(--kx-fg); background: var(--kx-row-hover); }
+.kx-d-copy[data-done] { color: var(--kx-green); border-color: currentColor; }
+/* the subagents: a table from 620 px; below it each subagent is two lines, its status, what it is and its bar
+   over the turns, output, model and last turn */
+.kx-d-agents .kx-d-why { margin: 0 0 6px; }
+.kx-d-agents table { width: 100%; border-collapse: collapse; font-size: 0.9em; font-variant-numeric: tabular-nums; }
+.kx-d-agents thead { display: none; }
+.kx-d-agents tr { display: grid; grid-template-columns: 6.5em auto minmax(0, 1fr) auto; /* a fixed first column, so every description starts at one place */ gap: 2px 10px; align-items: center; padding: 5px 0; border-bottom: 1px solid var(--kx-border); }
+.kx-d-agents td { padding: 0; white-space: nowrap; }
+.kx-d-a-who { grid-column: 2 / 4; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.kx-d-a-who b { font-weight: 600; }
+.kx-d-a-who span { color: var(--kx-muted); }
+.kx-d-a-ctx { width: 130px; }
+.kx-d-a-ctx > div { display: flex; align-items: center; gap: 6px; }
+.kx-d-a-ctx .kx-bar { flex: 1 1 auto; min-width: 50px; height: 8px; }
+.kx-d-a-ctx .kx-num { font-size: 1em; min-width: 4.5ch; text-align: right; }
+.kx-d-a-fact { color: var(--kx-muted); }
+.kx-d-a-st { font-size: 0.86em; color: var(--kx-muted); }
+.kx-d-a-st[data-status="running"] .kx-badge { font-size: 1em; }
+.kx-d-a-st[data-status="unknown"] { font-style: italic; }
+
+@container (min-width: 620px) {
+  .kx-session {
+    grid-template-columns: minmax(0, 1.2fr) minmax(160px, 1fr) minmax(140px, 0.8fr) minmax(72px, auto);
+    grid-template-areas: "title bar curve num" "meta bar curve num";
+    gap: 2px 14px; padding: 8px 6px;
+  }
+  .kx-num { font-size: 1.45em; }
+  .kx-curve { height: 26px; }
+  .kx-out { height: 9px; }
+  .kx-axis {
+    display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(160px, 1fr) minmax(140px, 0.8fr) minmax(72px, auto);
+    gap: 0 14px; padding: 2px 6px 4px; font-size: 0.74em; color: var(--kx-muted); text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .kx-axis .kx-scale { position: relative; height: 1em; }
+  .kx-axis .kx-scale span { position: absolute; top: 0; transform: translateX(-50%); left: calc(var(--t) * 1%); font-variant-numeric: tabular-nums; }
+  .kx-axis .kx-scale span:first-child { transform: none; }
+  .kx-axis .kx-scale span:last-child { transform: translateX(-100%); }
+  .kx-axis .kx-r { text-align: right; }
+  .kx-detail { padding: 10px 16px 20px; }
+  .kx-d-head h1 { font-size: 1.35em; }
+  .kx-d-ctx h2 .kx-num { font-size: 2em; }
+  .kx-d-field { height: 220px; }
+  .kx-d-field[data-axis] .kx-d-axis { display: block; }
+  .kx-d-field[data-axis-wide="1"] .kx-d-axis-low { display: none; }
+  .kx-d-ofield { height: 110px; }
+  .kx-d-pair { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 0 20px; align-items: start; } /* the curve and where the context went */
+  .kx-d-facts { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .kx-d-facts tr { display: table-row; padding: 0; border: 0; }
+  .kx-d-facts th, .kx-d-facts td { display: table-cell; padding: 3px 6px 3px 0; border-bottom: 1px solid var(--kx-border); }
+  .kx-d-facts th { width: 42%; font-size: 1em; }
+  .kx-d-agents thead { display: table-header-group; }
+  .kx-d-agents tr { display: table-row; }
+  .kx-d-agents th, .kx-d-agents td { display: table-cell; padding: 4px 12px 4px 0; border-bottom: 1px solid var(--kx-border); text-align: left; vertical-align: middle; white-space: nowrap; }
+  .kx-d-agents th { font-weight: 500; font-size: 0.86em; color: var(--kx-muted); }
+  .kx-d-agents .kx-d-r { text-align: right; }
+  .kx-d-a-who { width: 100%; max-width: 0; } /* takes what the other columns leave, cut with an ellipsis */
+  .kx-d-a-ctx .kx-bar { flex: none; width: 120px; } /* a table cell gives a flexible bar no width: the description column takes it */
+  .kx-d-u { display: none; } /* "turns", "out": the column heads say it */
+}
+/* with five marks the labels need about 240 px; until the bar column is that wide (a container of about
+   880 px), every second label drops to a second row so neighbours never overlap */
+@container (min-width: 620px) and (max-width: 879px) {
+  .kx-axis .kx-scale { height: 2em; }
+  .kx-axis .kx-scale span:nth-child(even) { top: 1em; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kx-dot.kx-pulse::after, .kx-fill.kx-busy::after, .kx-refresh[aria-busy="true"] svg { animation: none; }
+  .kx-fill, .kx-group .kx-chev { transition: none; }
+}
+[hidden] { display: none !important; }

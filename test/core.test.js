@@ -419,6 +419,17 @@ describe("what both hosts share: the page and the messages", () => {
     expect(K.panelPage()).not.toContain(nonce);
   });
 
+  it("the page is one document: panel.css and panel.js inline in one nonce'd style and one nonce'd script, nothing loaded", () => {
+    const page = K.panelPage({ nonce: "n" });
+    expect(page.match(/<style\b[^>]*>/g)).toEqual(['<style nonce="n">']);
+    expect(page.match(/<script\b[^>]*>/g)).toEqual(['<script nonce="n">']);
+    for (const left of ["src=", "<link", "<!-- panel.css -->", "<!-- panel.js -->", "/* core: "]) expect(page).not.toContain(left);
+    const src = (ext) => readFileSync(path.join(path.dirname(require.resolve("../src/core.cjs")), `panel.${ext}`), "utf8");
+    expect(page).toContain(src("css"));
+    expect(page).toContain(K.tokensText.toString()); // the core's source, in place of its marker in panel.js
+    expect(page).toContain(src("js").split("/* core: tokensText */")[1]);
+  });
+
   it("readSessions gives the read as the sessions message with full; a read that throws gives null and the log line", () => {
     const payload = { sessions: [], count: 0, all: true, projectFolders: ["/p"] };
     const calls = [];

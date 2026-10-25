@@ -1,7 +1,8 @@
-// test/panel.test.js — the webview (src/panel.html), run in jsdom as a host loads it: a stand-in for acquireVsCodeApi
-// records what the panel posts and keeps its state, and the host's messages come as `message` events with lists from
-// the real buildSessions, so the panel is fed what the hosts send it.
+// test/panel.test.js — the webview (src/panel.html, .css, .js), run in jsdom as a host loads it: a stand-in for
+// acquireVsCodeApi records what the panel posts and keeps its state, and the host's messages come as `message` events
+// with lists from the real buildSessions, so the panel is fed what the hosts send it.
 import { describe, it, expect, afterEach, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 const require = createRequire(import.meta.url);
@@ -21,11 +22,13 @@ afterEach(() => {
 });
 
 /**
- * panel.html loaded as extension.js loads it (the CSP, the nonce), with `state` as the webview state it starts
- * with. The page's timers are the test's, so vi.useFakeTimers() moves them. jsdom has no layout and no ResizeObserver:
- * the page gets a stand-in whose callbacks `resize()` calls, as a browser does when an observed element changes size.
+ * The panel's page (core.cjs panelPage) loaded as extension.js loads it (the CSP, the nonce), with `state` as the
+ * webview state it starts with. The page's timers are the test's, so vi.useFakeTimers() moves them. jsdom has no
+ * layout and no ResizeObserver: the page gets a stand-in whose callbacks `resize()` calls, as a browser does when an
+ * observed element changes size.
+ * `utc`: the clock times in en-US and UTC whatever the machine's zone and locale, for a recorded DOM.
  */
-function panel({ state = null } = {}) {
+function panel({ state = null, utc = false } = {}) {
   const html = K.panelPage({ nonce: "n" });
   const posted = [], errors = [], resizers = [];
   let saved = state;
@@ -38,6 +41,10 @@ function panel({ state = null } = {}) {
       w.acquireVsCodeApi = () => ({ getState: () => saved, setState: (s) => { saved = s; }, postMessage: (m) => posted.push(m) });
       for (const name of ["setTimeout", "clearTimeout"]) w[name] = (...a) => globalThis[name](...a);
       w.ResizeObserver = class { constructor(cb) { resizers.push(cb); } observe() {} disconnect() {} };
+      if (utc) { // a page Intl over the real one, so only this page's clock changes
+        const Clock = w.Intl.DateTimeFormat;
+        w.Intl = Object.create(w.Intl, { DateTimeFormat: { value: function (_, options) { return new Clock("en-US", { ...options, timeZone: "UTC" }); } } });
+      }
     },
   });
   const doc = window.document;
@@ -98,7 +105,8 @@ describe("panel: the list", () => {
     expect(p.row("c").dataset.zone).toBe("red");
   });
 
-  it("the panel's tokensText agrees with the core's, around 1 000 and 1 000 000 too", () => {
+  it("the panel shows the core's tokensText, around 1 000 and 1 000 000 too, and has no copy of its own", () => {
+    expect(readFileSync(path.join(path.dirname(require.resolve("../src/core.cjs")), "panel.js"), "utf8")).not.toMatch(/function tokensText|tokensText =/);
     const counts = [0, 850, 999, 1000, 1499, 1500, 43000, 999499, 999500, 1000000, 1234567, 25000000];
     const p = panel();
     p.send(list(counts.map((tokens, i) => session(String.fromCharCode(65 + i), { tokens }))));
@@ -939,5 +947,29 @@ describe("panel: what the host may send", () => {
     p.send({ type: "sessions", count: 1, all: true, groups: [null, { project: "p", sessions: null }, { sessions: [{ sessionId: "y" }] }] });
     p.send(null);
     p.send({ type: "unknown" });
+  });
+});
+
+describe("panel: the demo sessions", () => {
+  // The DOM the demo's invented sessions draw, recorded in __snapshots__: a change to how the panel's source is laid
+  // out (one file or three, #84) must leave it as it is. The clock is fixed, since the reader measures every age
+  // against it.
+  it("draw the recorded list, all-projects list and detail", () => {
+    vi.useFakeTimers({ now: NOW, toFake: ["Date"] });
+    try {
+      const data = require("../scripts/demo.cjs").demoData();
+      const p = panel({ utc: true });
+      p.send({ type: "sessions", ...data.workspace, full: false });
+      expect(p.$("list").outerHTML).toMatchSnapshot("workspace list");
+      const id = data.workspace.sessions[0].sessionId;
+      p.row(id).click();
+      p.send({ type: "detail", sessionId: id, detail: data.details[id] });
+      expect(p.$("detail").outerHTML).toMatchSnapshot("detail");
+      p.$("detail-back").click();
+      p.$("scope-all").click();
+      p.send({ type: "sessions", ...data.all, full: false });
+      expect(p.$("list").outerHTML).toMatchSnapshot("all-projects list");
+      expect(p.doc.querySelector("header").outerHTML).toMatchSnapshot("header");
+    } finally { vi.useRealTimers(); }
   });
 });
