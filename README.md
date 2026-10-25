@@ -136,7 +136,7 @@ side of the window, or right-click it → **Move To** → **Secondary Side Bar**
 ## A tour
 
 <p align="center">
-  <img src="media/list.png" width="380" alt="The panel in the sidebar: a header with the zone meter, the scope switch, and the sessions under Working now, Waiting for you and Idle">
+  <img src="media/list.png" width="380" alt="The panel in the sidebar: a header with the zone scale, the scope switch, and the sessions under Working now, Waiting for you and Idle">
   &nbsp;
   <img src="media/compact.png" width="380" alt="The same list as compact rows: each session as its title, count and context bar">
 </p>
@@ -163,11 +163,15 @@ next phase boundary, the whole curve with every compaction, where the context we
 Every session is in a zone by its token count: green below 100K, yellow below 125K, orange up to 150K, red
 above. The zones are absolute token counts, not a share of the model's window: they follow Matt Pocock's
 smart zone and dumb zone, where the dumb zone "commonly begins around 125K-150K tokens". They warn about
-quality, not about the window limit.
+quality, not about the window limit. The header draws them, so the limits are in view before any row.
 
 ### Header
 
-The count of live sessions and a zone meter (how many sessions are in each zone); the warm and cold prompt
+The count of live sessions and the zone scale: the row bar's 0–200K with each zone as a band at its true width,
+the limits labelled under it, and a dot per listed session at its count, in its zone colour, so you see at once
+where the limits are and how close each session is to the next one. Point at a band for what to do at the next
+phase boundary in that zone, at a dot for the session and its count; under the scale, how many sessions are in
+each zone. Then the warm and cold prompt
 caches; the median start of the sessions that began fresh, so a CLAUDE.md that grew shows at a glance; and
 "3 idle over an hour" when there are such sessions. While a filter hides sessions it says "showing 4 of 10".
 At the right end, the compact switch and the refresh button: refresh reads the registry and every transcript

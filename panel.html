@@ -22,14 +22,14 @@
        a third-opaque orange that reads brown over a dark side bar. Halfway between the theme's yellow and red instead. */
     --kx-orange: color-mix(in srgb, var(--kx-yellow) 50%, var(--kx-red));
     --kx-red: var(--vscode-charts-red, #cf222e);
-    /* … and for fills (dot, context bar, curve, meter segments), so text and fill can differ per use.
+    /* … and for fills (dot, context bar, curve, zone scale), so text and fill can differ per use.
        Every zone in ZONES below has a pair --kx-<zone> / --kx-<zone>-fill; adding a zone adds a pair here. */
     --kx-green-fill: var(--vscode-charts-green, var(--kx-green));
     --kx-yellow-fill: var(--vscode-charts-yellow, var(--kx-yellow));
     --kx-orange-fill: color-mix(in srgb, var(--kx-yellow-fill) 50%, var(--kx-red-fill));
     --kx-red-fill: var(--vscode-charts-red, var(--kx-red));
     --kx-grid: var(--vscode-charts-lines, color-mix(in srgb, var(--kx-muted) 55%, transparent)); /* limit lines, marks */
-    --kx-track: color-mix(in srgb, var(--kx-fg) 10%, transparent); /* the track behind the bar and the meter */
+    --kx-track: color-mix(in srgb, var(--kx-fg) 10%, transparent); /* the track behind the bar */
     --kx-badge-bg: var(--vscode-badge-background, var(--vscode-focusBorder, #0969da));
     --kx-badge-fg: var(--vscode-badge-foreground, #ffffff);
     --kx-heading: var(--vscode-sideBarSectionHeader-foreground, var(--kx-muted));
@@ -47,7 +47,7 @@
     container-type: inline-size; /* the layout below follows the panel's width, not the window's */
   }
 
-  /* ── Header: the count, the zone meter and the counters ── */
+  /* ── Header: the count, the zone scale and the counters ── */
   header {
     display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;
     padding: 10px 12px; border-bottom: 1px solid var(--kx-border);
@@ -67,14 +67,35 @@
   .kx-toggle[aria-pressed="true"] { color: var(--kx-fg); background: var(--kx-row-hover); border-color: var(--kx-border-strong); }
   .kx-refresh[aria-busy="true"] svg { animation: kx-spin 0.8s linear infinite; } /* spins until the next list arrives */
   @keyframes kx-spin { to { transform: rotate(360deg); } }
-  /* one segment per zone, width = that zone's share of the sessions with a known zone; the legend repeats the numbers */
-  .kx-meter { flex: 1 1 160px; min-width: 140px; display: flex; flex-direction: column; gap: 4px; }
-  .kx-meter-bar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: var(--kx-track); }
-  .kx-meter-bar span { display: block; height: 100%; background: var(--kx-zone-fill, var(--kx-muted)); }
-  .kx-meter-leg { display: flex; font-size: 0.82em; font-variant-numeric: tabular-nums; color: var(--kx-muted); white-space: nowrap; }
+  /* The zone scale: the row bar's 0–200K with each zone as a band at its true width, the limits labelled under it, and a
+     dot per listed session at its count; the legend counts the sessions per zone. No fixed min-width: the item is at
+     least as wide as its legend, so the counters beside it wrap to the next line instead of drawing over it. */
+  .kx-meter { flex: 1 1 240px; max-width: 520px; display: flex; flex-direction: column; gap: 3px; } /* at full width a wider strip only spreads the dots */
+  /* padded by half a dot, so a dot at 0 or at the end stays inside the header */
+  .kx-zscale { container-type: inline-size; padding: 0 5px; }
+  /* the dots sit over the track, which clips the bands and the hatched end to its rounded corners */
+  .kx-zbands { position: relative; height: 6px; margin: 3px 0; }
+  .kx-ztrack { position: relative; display: flex; height: 100%; border-radius: 3px; overflow: hidden; }
+  /* the bands are muted so a dot in its own zone's colour stands out on them; a gap at every limit, as on the row bar */
+  .kx-zband { height: 100%; width: calc(var(--w) * 1%); background: color-mix(in srgb, var(--kx-zone-fill, var(--kx-muted)) 40%, var(--kx-bg)); }
+  .kx-zband + .kx-zband { border-left: 2px solid var(--kx-bg); }
+  .kx-zmark {
+    position: absolute; top: 50%; left: calc(var(--t) * 1%); width: 10px; height: 10px; border-radius: 50%;
+    transform: translate(-50%, -50%); background: var(--kx-zone-fill, var(--kx-muted)); box-shadow: 0 0 0 2px var(--kx-bg);
+  }
+  .kx-zlabels { position: relative; height: 1em; font-size: 0.74em; line-height: 1; color: var(--kx-muted); font-variant-numeric: tabular-nums; }
+  .kx-zlabels span { position: absolute; top: 0; left: calc(var(--t) * 1%); transform: translateX(-50%); white-space: nowrap; }
+  .kx-zlabels span:first-child { transform: none; }
+  .kx-zlabels span:last-child { transform: translateX(-100%); }
+  /* 100K, 125K and 150K sit 12.5 % apart and "125K" is about 26 px wide; under about 280 px every second label drops a row */
+  @container (max-width: 279px) {
+    .kx-zlabels { height: 2em; }
+    .kx-zlabels span:nth-child(even) { top: 1em; }
+  }
+  .kx-meter-leg { display: flex; flex-wrap: wrap; font-size: 0.82em; font-variant-numeric: tabular-nums; color: var(--kx-muted); white-space: nowrap; }
   .kx-meter-leg span + span::before { content: "·"; margin: 0 6px; }
   .kx-meter-leg b { font-weight: 600; color: var(--kx-zone-text, inherit); }
-  /* the prompt-cache counters: warm and cold, beside the zone legend */
+  /* the prompt-cache counters: warm and cold, beside the zone scale */
   .kx-cache-counts { font-size: 0.82em; font-variant-numeric: tabular-nums; color: var(--kx-muted); white-space: nowrap; display: inline-flex; align-items: center; }
   .kx-cache-counts b { font-weight: 600; color: var(--kx-fg); }
   .kx-cache-counts span + span::before { content: "·"; margin: 0 6px; }
@@ -394,7 +415,10 @@
   <h1><span class="kx-n" data-testid="count" aria-live="polite">0</span> live Claude sessions</h1>
   <span class="kx-showing" data-testid="showing" hidden></span>
   <div class="kx-meter" data-testid="zones">
-    <div class="kx-meter-bar" role="img" aria-label="no sessions"></div>
+    <div class="kx-zscale" data-testid="zone-scale" role="img" aria-label="no sessions">
+      <div class="kx-zbands"><div class="kx-ztrack"></div></div>
+      <div class="kx-zlabels"></div>
+    </div>
     <div class="kx-meter-leg"></div>
   </div>
   <span class="kx-start-median" data-testid="start-median" hidden><b></b> start</span>
@@ -442,7 +466,10 @@
   const scopeMoreEl = document.querySelector('[data-testid="scope-more"]');
   const errorsEl = document.querySelector('[data-testid="errors"]');
   const listEl = document.querySelector('[data-testid="list"]');
-  const meterBarEl = document.querySelector(".kx-meter-bar");
+  const zoneScaleEl = document.querySelector('[data-testid="zone-scale"]');
+  const zoneBandsEl = document.querySelector(".kx-zbands");
+  const zoneTrackEl = document.querySelector(".kx-ztrack");
+  const zoneLabelsEl = document.querySelector(".kx-zlabels");
   const meterLegEl = document.querySelector(".kx-meter-leg");
   const cacheWarmEl = document.querySelector('[data-testid="cache-warm"]');
   const cacheColdEl = document.querySelector('[data-testid="cache-cold"]');
@@ -524,7 +551,7 @@
   }
 
   // ── The zones and the scale, as data. The core decides a session's zone (core.cjs zone()); this list
-  // orders the zones in the meter and the legend, names them, and picks the colour pair --kx-<zone> (text)
+  // orders the zones in the zone scale and its legend, names them, and picks the colour pair --kx-<zone> (text)
   // and --kx-<zone>-fill (fills) defined in the style above. LIMITS are the boundaries drawn as dashed lines
   // on the curve, gaps on the context bar and labels on the axis; SCALE is the full width of the bar.
   // A new zone is one entry here, one limit there and one colour pair in the style. ─────────────────
@@ -1588,16 +1615,51 @@
     return `${n === 1 ? "the 1 session" : `the ${n} sessions`} ${where}`;
   }
 
+  /** Where a zone runs, from LIMITS: "below 100K", "100K–125K", "above 150K". */
+  function zoneRange(i) {
+    if (i === 0) return `below ${tokensText(LIMITS[0])}`;
+    if (i >= LIMITS.length) return `above ${tokensText(LIMITS[LIMITS.length - 1])}`;
+    return `${tokensText(LIMITS[i - 1])}–${tokensText(LIMITS[i])}`;
+  }
+
+  /**
+   * The header's zone scale: the bands from 0 to SCALE split at LIMITS, the limits labelled, a dot per listed
+   * session with a known count (in the scope, before the view's filters, like every header counter), and the
+   * legend with the count per zone. A band's tooltip says what applies there (the core's zoneAdvice).
+   */
   function renderMeter(zoneCounts, data) {
     const counts = ZONES.map((z) => [z, Number.isFinite(zoneCounts[z]) ? zoneCounts[z] : 0]);
     const known = counts.reduce((sum, [, n]) => sum + n, 0);
-    meterBarEl.textContent = "";
+    const advice = data.zoneAdvice || {};
+    zoneTrackEl.textContent = "";
+    zoneBandsEl.replaceChildren(zoneTrackEl);
+    zoneLabelsEl.textContent = "";
     meterLegEl.textContent = "";
-    meterBarEl.setAttribute("aria-label", known ? counts.map(([z, n]) => `${n} ${ZONE_NAME[z]}`).join(", ") : "no sessions with a known zone");
+    const ranges = ZONES.map((z, i) => `${ZONE_NAME[z]} ${zoneRange(i)}`);
+    zoneScaleEl.setAttribute("aria-label", `Zones on a ${SCALE_TEXT} scale: ${listText(ranges)}. ${known ? counts.map(([z, n]) => `${n} ${ZONE_NAME[z]}`).join(", ") : "No sessions with a known zone"}`);
+    const edges = [0, ...LIMITS, SCALE];
+    ZONES.forEach((z, i) => {
+      const band = zoned(el("span", "kx-zband"), z);
+      band.dataset.testid = `band-${z}`;
+      band.style.setProperty("--w", pct((edges[i + 1] - edges[i]) / SCALE));
+      band.title = `${ZONE_NAME[z]} zone: ${zoneRange(i)}${advice[z] ? ` · ${advice[z]}` : ""}`;
+      zoneTrackEl.appendChild(band);
+    });
+    const marked = allSessions(data).filter((s) => Number.isFinite(s.tokens));
+    if (marked.some((s) => s.tokens > SCALE)) zoneTrackEl.appendChild(el("span", "kx-over"));
+    for (const s of marked) {
+      const mark = zoned(el("span", "kx-zmark"), s.zone);
+      mark.dataset.testid = "zone-mark";
+      mark.style.setProperty("--t", pct(share(s.tokens)));
+      mark.title = `${titleOf(s).text} · ${countLabel(s)}${s.tokens > SCALE ? `, over the ${tokensText(SCALE)} scale` : ""}`;
+      zoneBandsEl.appendChild(mark);
+    }
+    for (const v of edges) {
+      const label = el("span", "", tokensText(v));
+      label.style.setProperty("--t", pct(v / SCALE));
+      zoneLabelsEl.appendChild(label);
+    }
     for (const [z, n] of counts) {
-      const seg = zoned(el("span"), z);
-      seg.style.width = known ? `${pct(n / known)}%` : "0";
-      meterBarEl.appendChild(seg);
       const item = zoned(el("span"), z);
       const b = el("b", "", String(n));
       b.dataset.testid = `zone-${z}`;
