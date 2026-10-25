@@ -167,16 +167,16 @@ quality, not about the window limit. The header draws them, so the limits are in
 
 ### Header
 
-The count of live sessions and the zone scale: the row bar's 0–200K with each zone as a band at its true width,
-the limits labelled under it, and a dot per listed session at its count, in its zone colour, so you see at once
-where the limits are and how close each session is to the next one. Point at a band for what to do at the next
-phase boundary in that zone, at a dot for the session and its count; under the scale, how many sessions are in
-each zone. Then the warm and cold prompt
+The count of live sessions and how many are in each zone; the warm and cold prompt
 caches; the median start of the sessions that began fresh, so a CLAUDE.md that grew shows at a glance; and
 "3 idle over an hour" when there are such sessions. While a filter hides sessions it says "showing 4 of 10".
 At the right end, the compact switch and the refresh button: refresh reads the registry and every transcript
 again from the first byte, and says "updated 12:04:31" when done. Click it when you doubt what the list shows,
 for example right after a process was ended.
+
+Across the bottom of the header, the zone scale: a strip with the row bar's 0–200K, each zone a band at its true
+width with its range written inside ("below 100K", "100K–125K" …; "<100K", "100K+" … when the panel is narrow),
+so the limits are in view before any row. Point at a band for what to do at the next phase boundary in that zone.
 
 ### Groups
 

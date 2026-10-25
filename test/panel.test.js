@@ -196,50 +196,34 @@ describe("panel: the list", () => {
 });
 
 describe("panel: the zone scale", () => {
-  const marks = (p) => p.$$("zone-mark").map((m) => [m.style.getPropertyValue("--t"), m.dataset.zone]);
-
-  it("draws the zones at their true widths on 0–200K, the limits labelled, and says what applies in each", () => {
+  it("draws the zones at their true widths on 0–200K with each range inside, and says what applies in each", () => {
     const p = panel();
     p.send(list([session("a")]));
-    expect(["green", "yellow", "orange", "red"].map((z) => p.$(`band-${z}`).style.getPropertyValue("--w"))).toEqual(["50", "12.5", "12.5", "25"]);
-    expect([...p.doc.querySelectorAll(".kx-zlabels span")].map((s) => s.textContent)).toEqual(["0", "100K", "125K", "150K", "200K"]);
+    const bands = ["green", "yellow", "orange", "red"].map((z) => p.$(`band-${z}`));
+    expect(bands.map((b) => b.style.getPropertyValue("--w"))).toEqual(["50", "12.5", "12.5", "25"]);
+    expect(bands.map((b) => b.querySelector(".kx-zlong").textContent)).toEqual(["below 100K", "100K–125K", "125K–150K", "above 150K"]);
+    expect(bands.map((b) => b.querySelector(".kx-zshort").textContent)).toEqual(["<100K", "100K+", "125K+", ">150K"]);
     expect(p.$("band-green").title).toBe("green zone: below 100K");
     expect(p.$("band-yellow").title).toBe("yellow zone: 100K–125K · Plan to break at the next phase boundary.");
     expect(p.$("band-red").title).toMatch(/^red zone: above 150K · Do not start a new phase/);
   });
 
-  it("marks every session with a known count at its count in its zone colour, above the scale at the end", () => {
+  it("is the same with no sessions, and one image to assistive technology, its label naming the limits", () => {
     const p = panel();
-    p.send(list([session("a", { tokens: 39000 }), session("b", { tokens: 160000, title: "Big one" }), session("c", { tokens: null, turns: 0 })]));
-    expect(marks(p)).toEqual([["19.5", "green"], ["80", "red"]]);
-    expect(p.$$("zone-mark")[1].title).toBe("Big one · 160K tokens, zone red");
-    expect(p.doc.querySelector(".kx-ztrack .kx-over")).toBeNull();
-    p.send(list([session("a", { tokens: 250000 })]));
-    expect(marks(p)).toEqual([["100", "red"]]);
-    expect(p.$$("zone-mark")[0].title).toMatch(/over the 200K scale$/);
-    expect(p.doc.querySelector(".kx-ztrack .kx-over")).not.toBeNull();
+    p.send(list([]));
+    expect(p.$$("band-green")).toHaveLength(1);
+    expect(p.$("zone-scale").getAttribute("role")).toBe("img");
+    expect(p.$("zone-scale").getAttribute("aria-label")).toBe(
+      "Zones on a 0–200K scale: green below 100K, yellow 100K–125K, orange 125K–150K and red above 150K");
   });
 
-  it("follows the scope, and not the view's filters, as the counts do", () => {
+  it("keeps the count per zone beside the session count, for the scope", () => {
     const p = panel();
     const mine = session("a", { tokens: 39000 }), other = session("b", { tokens: 130000, cwd: OTHER });
     p.send(list([mine, other], { workspaceFolders: [MINE] }));
-    expect(marks(p)).toEqual([["19.5", "green"]]);
+    expect(["green", "orange"].map((z) => p.$(`zone-${z}`).textContent)).toEqual(["1", "0"]);
     p.send(list([mine, other], { workspaceFolders: [MINE], all: true }));
-    expect(marks(p).sort()).toEqual([["19.5", "green"], ["65", "orange"]]);
-    expect(p.$("zone-orange").textContent).toBe("1");
-    p.$("filter-hot").click(); // hides the green row, not its mark
-    expect(marks(p)).toHaveLength(2);
-  });
-
-  it("is one image to assistive technology, its label naming the limits and the counts", () => {
-    const p = panel();
-    p.send(list([session("a", { tokens: 39000 }), session("b", { tokens: 160000 })]));
-    expect(p.$("zone-scale").getAttribute("role")).toBe("img");
-    expect(p.$("zone-scale").getAttribute("aria-label")).toBe(
-      "Zones on a 0–200K scale: green below 100K, yellow 100K–125K, orange 125K–150K and red above 150K. 1 green, 0 yellow, 0 orange, 1 red");
-    p.send(list([]));
-    expect(p.$("zone-scale").getAttribute("aria-label")).toMatch(/\. No sessions with a known zone$/);
+    expect(["green", "orange"].map((z) => p.$(`zone-${z}`).textContent)).toEqual(["1", "1"]);
   });
 });
 
