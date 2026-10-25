@@ -325,9 +325,10 @@ cannot find shows as "unknown"; nothing throws.
 ## Development
 
 No dependencies, no build step. The code is in `src/`: `core.cjs` (the pure functions, and the reader and watcher
-of Claude Code's files), `panel.html` (the panel), and its two hosts, `extension.js` (VS Code) and `server.cjs`
-(the browser, with Node's own `http`; it also holds the browser stand-in for the webview that the demo uses). The
-root holds the docs and `package.json`, so VS Code installs the extension from the repo folder.
+of Claude Code's files), the panel in `panel.html`, `panel.css` and `panel.js` (its markup, style and script,
+which the core joins into one page with nothing to load), and its two hosts, `extension.js` (VS Code) and
+`server.cjs` (the browser, with Node's own `http`; it also holds the browser stand-in for the webview that the demo
+uses). The root holds the docs and `package.json`, so VS Code installs the extension from the repo folder.
 
 ```
 npm install

@@ -4,7 +4,7 @@ A VS Code panel, also served to a browser tab, that shows the context window of 
 on the machine. What the panel shows and why is in `README.md`; facts measured about Claude Code's files are in
 `NOTES.md`. Read those instead of guessing, and keep this file to what neither says.
 
-## The four files
+## The code
 
 No dependencies, no build step, and it stays that way: VS Code loads the folder as it is, and Node runs the
 server as it is. The code is in `src/`, one flat folder; the root keeps the docs and config, `package.json` among
@@ -24,10 +24,13 @@ them (its `main` and `bin` point into `src/`), so the repo folder is still what 
   the token made at start; refuse a `Host` that is not `127.0.0.1:<port>` or `localhost:<port>` and a `POST`
   from another `Origin`; send no CORS headers. A new route keeps all four, with a test. Its page host,
   `browserHost`, runs in the browser but is tested in Node with stand-ins for what the browser gives it.
-- `panel.html`: the webview, one file with its CSS and script. It cannot read files. The CSP allows only
-  nonce'd inline style and script (and, in the browser, `connect-src 'self'`), so no external resources. It is
-  tested in jsdom (`test/panel.test.js`) as a host loads it, fed lists from the real `buildSessions`; logic
-  that can be computed still belongs in `core.cjs`. Its words fit both hosts.
+- `panel.html`, `panel.css`, `panel.js`: the webview's markup, style and script. `panelPage` joins them into one
+  page for every load, the style and script inline in their nonce'd tags in place of the markers in `panel.html`,
+  and puts the source of the core functions `panel.js` names with `/* core: <name> */` (`PANEL_FROM_CORE`) in
+  place of each, so a rule both need has one copy. The page cannot read files. The CSP allows only nonce'd inline
+  style and script (and, in the browser, `connect-src 'self'`), so nothing is loaded and no file is served on its
+  own. It is tested in jsdom (`test/panel.test.js`) as a host loads it, fed lists from the real `buildSessions`;
+  logic that can be computed still belongs in `core.cjs`. Its words fit both hosts.
 
 ## Commands
 

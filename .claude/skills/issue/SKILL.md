@@ -23,9 +23,9 @@ Follow the rules and the workflow in `CLAUDE.md`. In order:
    If something is unclear, ask before writing code, not after.
 2. **Branch** from an up-to-date `main` (`git switch main && git pull`), named after the topic in a few
    kebab-case words. If the working tree is not clean, stop and ask.
-3. **Build.** Logic that can be computed goes in `src/core.cjs`; `src/panel.html` only draws. A fact about
-   Claude Code's files that the issue relies on is checked on real files first (`/facts` or a targeted
-   look, names and counts only) and written in `NOTES.md`.
+3. **Build.** Logic that can be computed goes in `src/core.cjs`; the panel (`src/panel.html`, `.css`, `.js`)
+   only draws. A fact about Claude Code's files that the issue relies on is checked on real files first
+   (`/facts` or a targeted look, names and counts only) and written in `NOTES.md`.
 4. **Test.** Every rule added to `src/core.cjs` gets a test in `test/core.test.js`, with a new hand-made
    fixture when a transcript shape is new. `npm test` must be green; show the summary line.
 5. **Docs and version.** Update `README.md` for anything the user can see, `NOTES.md` for anything

@@ -1,8 +1,8 @@
 // scripts/demo.cjs — the panel with invented sessions, for the README's screenshots. Real screenshots would show
 // the titles of real sessions, which hold the owner's conversations, so this writes invented, deterministic
 // transcripts and registry entries to a temporary Claude folder, reads them with the real SessionReader (so the
-// payload cannot drift from what the host sends) and wraps panel.html in a page that plays the host, with the browser
-// stand-in server.cjs serves the panel with.
+// payload cannot drift from what the host sends) and wraps the panel's page in one that plays the host, with the
+// browser stand-in server.cjs serves the panel with.
 //
 //   node scripts/demo.cjs          writes demo/light.html and demo/dark.html (open them in a browser)
 //   node scripts/demo.cjs --shoot  also takes the screenshots in media/ (dark theme) with a headless Chrome
@@ -188,8 +188,8 @@ function demoData() {
 }
 
 /**
- * panel.html in the browser stand-in shared with server.cjs, with a host that answers "ready", "scope", "refresh" and
- * "detail" from `data` as extension.js would. The webview state starts from the URL's hash, a JSON object such as
+ * The panel's page in the browser stand-in shared with server.cjs, with a host that answers "ready", "scope",
+ * "refresh" and "detail" from `data` as extension.js would. The webview state starts from the URL's hash, a JSON object such as
  * {"compact":true} or {"open":"<sessionId>","all":true}, so a screenshot can start in any view.
  */
 function demoPage(theme, data) {

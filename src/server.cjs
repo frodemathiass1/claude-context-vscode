@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // src/server.cjs — the browser host of the "Claude Context" panel, beside the VS Code one (extension.js): the same
-// SessionReader and SessionWatcher from core.cjs and the same panel.html, served to this machine only. The page
+// SessionReader and SessionWatcher from core.cjs and the same panel page, served to this machine only. The page
 // talks to it with the panel's messages: `ready`, `refresh`, `scope` and `detail` come in as POST /message,
 // `sessions` and `detail` go out as Server-Sent Events on GET /events (fetch and EventSource need no library; a
 // WebSocket would).
@@ -61,9 +61,9 @@ function themeCss(theme) {
 }
 
 /**
- * panel.html as a browser page: the theme's variables (see themeCss) and a stand-in for acquireVsCodeApi. `host` is
- * the source of a function that takes `deliver` (which hands a message to the panel, as the webview's host would)
- * and returns { getState, setState, postMessage }. `connect` lets the page reach its own origin (fetch,
+ * The panel's page (core.cjs panelPage) as a browser page: the theme's variables (see themeCss) and a stand-in for
+ * acquireVsCodeApi. `host` is the source of a function that takes `deliver` (which hands a message to the panel, as
+ * the webview's host would) and returns { getState, setState, postMessage }. `connect` lets the page reach its own origin (fetch,
  * EventSource); without it the CSP is the webview's.
  */
 function browserPage({ theme, host, connect = false, nonce = core.randomNonce() }) {
