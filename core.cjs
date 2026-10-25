@@ -388,7 +388,7 @@ function subagentStatus({ agentId, meta, writtenMs }, ends, startedMs) {
  * One row per subagent of a session, from what SessionReader.readSubagents read (`entries`): its type, description,
  * depth, model, tokens and zone (its own window: a subagent's tokens never count in the session's), turns, output,
  * last turn and the time since it at `now` (`sinceMs`), and status (subagentStatus, with the main transcript's `ends`
- * and the process start `startedMs`). Running first, then by last turn, newest first, unknown last.
+ * and the process start `startedMs`). Running first, then by last turn, newest first; one without a last turn last.
  */
 function subagentRows(entries, { ends = [], startedMs = null, now = null } = {}) {
   const ended = new Set(ends);
@@ -414,6 +414,19 @@ function subagentSummary(rows) {
   for (const r of rows) if (Number.isFinite(r.tokens) && (!largest || r.tokens > largest.tokens)) largest = r;
   return { count: rows.length, running: rows.filter((r) => r.status === "running").length, zone: largest ? largest.zone : null,
     largest: largest ? { type: largest.type, description: largest.description, tokens: largest.tokens } : null };
+}
+
+/**
+ * The earliest process start per sessionId (epoch ms), over every live process of the registry: a session can have
+ * two (a tab reopened while the old process lives on), and a subagent written since either started may be running.
+ */
+function firstStarts(registry) {
+  const out = new Map();
+  for (const r of registry) {
+    const ms = Number(r.startedAt);
+    if (r.sessionId && Number.isFinite(ms) && ms > 0 && !(out.get(r.sessionId) <= ms)) out.set(r.sessionId, ms);
+  }
+  return out;
 }
 
 function parseEntry(line) {
@@ -479,6 +492,7 @@ function userText(content) {
  */
 function buildSessions({ registry = [], transcripts = {}, subagents = {}, now, workspaceFolders = [], all = false }) {
   const nowMs = typeof now === "number" ? now : Date.parse(now);
+  const firstStart = firstStarts(registry);
   const sessions = registry
     .filter((r) => all || workspaceFolders.length === 0 || workspaceFolders.some((f) => inFolder(r.cwd, f)))
     .map((r) => {
@@ -512,7 +526,7 @@ function buildSessions({ registry = [], transcripts = {}, subagents = {}, now, w
         coldAt: Number.isFinite(coldMs) ? new Date(coldMs).toISOString() : null, coldInMs,
         cacheState: coldInMs === null ? null : coldInMs > 0 ? "warm" : "cold",
         busy, waiting, dimmed, abandoned: !busy && !waiting && quiet,
-        subagents: subagentSummary(subagentRows(subagents[r.sessionId], { ends: t.agentEnds, startedMs })),
+        subagents: subagentSummary(subagentRows(subagents[r.sessionId], { ends: t.agentEnds, startedMs: firstStart.get(r.sessionId) })),
         _lastMs: Number.isFinite(lastMs) ? lastMs : -Infinity,
       };
     })
@@ -616,6 +630,7 @@ class SessionReader {
     const subagents = {};
     const projectFolders = new Set();
     const live = new Set();
+    const starts = firstStarts(registry.sessions);
     const liveIds = new Set();
     this.files = new Map();
     this.agents = new Map();
@@ -634,7 +649,7 @@ class SessionReader {
       const agents = this.readSubagents(path.join(folder, s.sessionId), live);
       if (agents.watch) projectFolders.add(agents.watch);
       subagents[s.sessionId] = agents.entries;
-      this.agents.set(s.sessionId, { entries: agents.entries, startedMs: s.startedAt ? Date.parse(s.startedAt) : null });
+      this.agents.set(s.sessionId, { entries: agents.entries, startedMs: starts.get(s.sessionId) ?? null });
     }
     for (const file of this.cache.keys()) if (!live.has(file)) this.cache.delete(file);
     for (const file of this.metas.keys()) if (!live.has(file)) this.metas.delete(file);

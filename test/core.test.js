@@ -1105,6 +1105,31 @@ describe("subagents", () => {
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
+  it("two processes of one session: rows and detail measure from the earlier start, so they agree on running", () => {
+    const { dir, agents, reader } = rig({ startedAt: Date.now() - 2 * HOUR });
+    try {
+      writeFileSync(path.join(dir, "sessions", "1304.json"), JSON.stringify({ pid: 1304, sessionId: "bbbb-2", cwd: MINE, status: "idle", startedAt: Date.now() + HOUR }));
+      reader.alive = () => true;
+      const old = new Date(Date.now() - HOUR);
+      utimesSync(path.join(agents, "agent-a-running.jsonl"), old, old); // between the two starts
+      const list = readIt(reader);
+      expect(list.sessions.map((s) => s.subagents.running)).toEqual([4, 4]);
+      expect(reader.detail("bbbb-2").subagentList.find((r) => r.agentId === "a-running").status).toBe("running");
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it("read({ full: true }) forgets the meta files read, and reads them again", () => {
+    const { dir, agents, reader } = rig();
+    try {
+      readIt(reader);
+      const meta = path.join(agents, "agent-a-done.meta.json");
+      reader.metas.get(meta).meta.agentType = "stale";
+      expect(reader.detail("bbbb-2").subagentList.find((r) => r.agentId === "a-done").type).toBe("stale");
+      reader.read({ workspaceFolders: [MINE], all: false, full: true });
+      expect(reader.detail("bbbb-2").subagentList.find((r) => r.agentId === "a-done").type).toBe("Explore");
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
   it("a meta file that gains finished is read again, so the subagent turns finished", () => {
     const { dir, agents, reader } = rig();
     try {

@@ -227,7 +227,7 @@ One row per session:
   context was read from cache and how much was written.
 - Only when the session has subagents: "3 subagents · 1 running". A subagent has a context window of its own,
   so its tokens never count in the session's; the mark turns orange or red when the largest of them is in that
-  zone, and its tooltip names it ("largest: Explore "Find the slow query" at 236K, red zone"). A session that
+  zone, and its tooltip names it: its type, the description of its call and its count. A session that
   waits on a running subagent shows that here, though the session itself looks quiet.
 
 The rows stack in the narrow sidebar and spread over four columns when the panel is 620 px or wider.
