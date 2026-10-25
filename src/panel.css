@@ -30,13 +30,23 @@
   --kx-surface: var(--vscode-editorWidget-background, #f6f8fa); /* the field behind the detail view's curve */
   --kx-font: var(--vscode-font-family, system-ui, sans-serif);
   --kx-font-size: var(--vscode-font-size, 13px);
+  /* The text sizes, one per rank, as factors of the editor's font size. calc, not em: an em in a variable resolves
+     where it is used, so a label inside a table would shrink twice and two texts of one rank would differ. The wide
+     layout moves the row's count, the detail's context number and the facts' keys one step up. */
+  --kx-text-small: calc(var(--kx-font-size) * 0.78); /* labels: the upper-case headings, column heads, badges, pills, the zone strip, the zone name, the curve's axis,
+     the Esc hint, the facts' keys and the subagents' status in the narrow layout */
+  --kx-text-secondary: calc(var(--kx-font-size) * 0.86); /* muted lines, the controls, the detail's tables and facts */
+  --kx-text-body: var(--kx-font-size); /* titles, the error, the advice */
+  --kx-text-heading: calc(var(--kx-font-size) * 1.25); /* the session count, the detail's title, the row's count in the narrow layout */
+  --kx-text-count: calc(var(--kx-font-size) * 1.5); /* the row's count in the wide layout, the detail's context number in the narrow */
+  --kx-text-display: calc(var(--kx-font-size) * 2); /* the detail's context number in the wide layout */
   --kx-mono: var(--vscode-editor-font-family, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
 body {
   background: var(--kx-bg); color: var(--kx-fg);
-  font-family: var(--kx-font); font-size: var(--kx-font-size); line-height: 1.4;
+  font-family: var(--kx-font); font-size: var(--kx-text-body); line-height: 1.4;
   container-type: inline-size; /* the layout below follows the panel's width, not the window's */
 }
 
@@ -45,11 +55,11 @@ header {
   display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;
   padding: 10px 12px; border-bottom: 1px solid var(--kx-border);
 }
-header h1 { margin: 0; font-size: 1em; font-weight: 600; display: flex; align-items: baseline; gap: 6px; min-width: 0; }
-header h1 .kx-n { font-family: var(--kx-mono); font-size: 1.35em; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+header h1 { margin: 0; font-size: var(--kx-text-body); font-weight: 600; display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+header h1 .kx-n { font-family: var(--kx-mono); font-size: var(--kx-text-heading); font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
 /* the "updated 12:04:31" note and the refresh button, pushed to the right end of the header */
 .kx-tools { display: inline-flex; align-items: center; gap: 10px; margin-left: auto; }
-.kx-refreshed { font-size: 0.82em; color: var(--kx-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.kx-refreshed { font-size: var(--kx-text-secondary); color: var(--kx-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .kx-refresh, .kx-toggle {
   display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; margin: 0;
   border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--kx-muted); cursor: pointer;
@@ -67,7 +77,7 @@ header h1 .kx-n { font-family: var(--kx-mono); font-size: 1.35em; font-weight: 7
 .kx-zband {
   flex: var(--w) 1 0; min-width: 0; overflow: hidden; display: flex; align-items: center; justify-content: center;
   background: color-mix(in srgb, var(--kx-zone-fill, var(--kx-muted)) 24%, var(--kx-bg)); color: var(--kx-zone-text, var(--kx-muted));
-  font-size: 0.8em; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap;
+  font-size: var(--kx-text-small); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap;
 }
 .kx-zband:first-child { border-radius: 4px 0 0 4px; }
 .kx-zband:last-child { border-radius: 0 4px 4px 0; }
@@ -79,7 +89,7 @@ header h1 .kx-n { font-family: var(--kx-mono); font-size: 1.35em; font-weight: 7
 /* the header's counters beside the session count: the count per zone, the median start of the sessions that began
    fresh, how many sit in the folded "Idle over an hour" group (processes left running, most likely closed tabs), and
    the prompt cache's warm and cold; a bold number each, "·" between the parts of one */
-.kx-counter { font-size: 0.82em; font-variant-numeric: tabular-nums; color: var(--kx-muted); white-space: nowrap; }
+.kx-counter { font-size: var(--kx-text-secondary); font-variant-numeric: tabular-nums; color: var(--kx-muted); white-space: nowrap; }
 .kx-counter b { font-weight: 600; color: var(--kx-fg); }
 .kx-counter span + span::before { content: "·"; margin: 0 6px; }
 .kx-zone-counts { display: inline-flex; flex-wrap: wrap; }
@@ -87,12 +97,12 @@ header h1 .kx-n { font-family: var(--kx-mono); font-size: 1.35em; font-weight: 7
 .kx-cache-counts { display: inline-flex; align-items: center; }
 
 /* "showing 4 of 10" beside the count while a filter hides sessions */
-.kx-showing { font-size: 0.82em; color: var(--kx-muted); white-space: nowrap; }
+.kx-showing { font-size: var(--kx-text-secondary); color: var(--kx-muted); white-space: nowrap; }
 
 /* ── Controls: the sort and the filters, under the header; wraps to more lines in the narrow layout ── */
 .kx-controls {
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 6px 12px;
-  border-bottom: 1px solid var(--kx-border); font-size: 0.86em; color: var(--kx-muted);
+  border-bottom: 1px solid var(--kx-border); font-size: var(--kx-text-secondary); color: var(--kx-muted);
 }
 .kx-controls label { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
 .kx-controls select {
@@ -121,15 +131,15 @@ header h1 .kx-n { font-family: var(--kx-mono); font-size: 1.35em; font-weight: 7
 .kx-scope-name { color: var(--kx-fg); font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kx-scope-more { font: inherit; background: none; border: 0; padding: 0; color: var(--kx-accent); cursor: pointer; text-decoration: underline; white-space: nowrap; }
 .kx-scope-more:focus-visible { outline: 1px solid var(--kx-accent); outline-offset: 1px; }
-.kx-hidden-all { padding: 6px 4px 10px; color: var(--kx-muted); font-style: italic; font-size: 0.9em; }
+.kx-hidden-all { padding: 6px 4px 10px; color: var(--kx-muted); font-style: italic; font-size: var(--kx-text-secondary); }
 
 main { padding: 8px 12px 14px; }
 .kx-message { padding: 18px 4px; color: var(--kx-muted); text-align: center; }
-.kx-error { padding: 8px 12px; color: var(--kx-red); border-bottom: 1px solid var(--kx-border); font-size: 0.92em; }
+.kx-error { padding: 8px 12px; color: var(--kx-red); border-bottom: 1px solid var(--kx-border); font-size: var(--kx-text-body); }
 
 /* ── Groups: "Working now · n", "Waiting for you · n", "Idle · n", "Idle over an hour · n" and, with all projects, the project above them ── */
 .kx-group {
-  margin: 10px 0 4px; font-size: 0.78em; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;
+  margin: 10px 0 4px; font-size: var(--kx-text-small); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;
   color: var(--kx-heading); display: flex; align-items: center; gap: 6px;
 }
 .kx-group svg { width: 12px; height: 12px; }
@@ -167,7 +177,7 @@ main { padding: 8px 12px 14px; }
 @keyframes kx-pulse { from { transform: scale(1); opacity: 0.7; } to { transform: scale(2.6); opacity: 0; } }
 .kx-badge {
   display: inline-flex; align-items: center; gap: 3px; padding: 0 6px; border-radius: 9px;
-  font-size: 0.78em; font-weight: 600; line-height: 1.6; background: var(--kx-badge-bg); color: var(--kx-badge-fg); flex: none;
+  font-size: var(--kx-text-small); font-weight: 600; line-height: 1.6; background: var(--kx-badge-bg); color: var(--kx-badge-fg); flex: none;
 }
 .kx-badge svg { width: 10px; height: 10px; }
 /* waiting for the user: the same pill as busy, outlined instead of filled, and nothing moves */
@@ -176,12 +186,12 @@ main { padding: 8px 12px 14px; }
 .kx-count { grid-area: num; display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
 .kx-num {
   font-family: var(--kx-mono); font-variant-numeric: tabular-nums; font-weight: 700; line-height: 1; white-space: nowrap;
-  font-size: 1.25em; color: var(--kx-zone-text, var(--kx-muted));
+  font-size: var(--kx-text-heading); color: var(--kx-zone-text, var(--kx-muted));
 }
-.kx-num[data-zone="unknown"] { font-family: inherit; font-size: 1em; font-weight: 500; }
+.kx-num[data-zone="unknown"] { font-family: inherit; font-size: var(--kx-text-body); font-weight: 500; }
 /* a title the transcript did not give (core.cjs titleFallback), muted so it is not read as a message */
 .kx-title[data-fallback], .kx-d-head h1[data-fallback] { color: var(--kx-muted); font-weight: 500; }
-.kx-zone-txt { font-size: 0.78em; line-height: 1; color: var(--kx-muted); }
+.kx-zone-txt { font-size: var(--kx-text-small); line-height: 1; color: var(--kx-muted); }
 /* the context bar: a track scaled 0–300K, the fill in the zone's fill colour, a gap at every limit */
 .kx-bar-col { grid-area: bar; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .kx-bar { position: relative; height: 10px; border-radius: 5px; background: var(--kx-track); overflow: hidden; }
@@ -202,7 +212,7 @@ main { padding: 8px 12px 14px; }
 .kx-tick { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--kx-bg); left: calc(var(--t) * 1%); }
 .kx-over { position: absolute; right: 0; top: 0; bottom: 0; width: 14px; background: repeating-linear-gradient(135deg, transparent 0 3px, var(--kx-bg) 3px 5px); }
 /* under the bar: the top sources of the conversation's growth, an estimate */
-.kx-growth { font-size: 0.8em; color: var(--kx-muted); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kx-growth { font-size: var(--kx-text-secondary); color: var(--kx-muted); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* the sparkline fills its column; strokes stay 1 px although the viewBox is stretched */
 .kx-curve-wrap { grid-area: curve; min-width: 0; }
 .kx-curve { display: block; width: 100%; height: 18px; overflow: visible; color: var(--kx-zone-fill, var(--kx-muted)); }
@@ -212,12 +222,12 @@ main { padding: 8px 12px 14px; }
 /* a compaction (read from the transcript) is a solid mark; a dip (a guessed drop) is dotted */
 .kx-compact { stroke: var(--kx-fg); stroke-width: 1.5; opacity: 0.85; }
 .kx-dip { stroke: var(--kx-fg); stroke-width: 1; opacity: 0.7; stroke-dasharray: 2 2; }
-.kx-nocurve { font-size: 0.82em; color: var(--kx-muted); font-style: italic; }
+.kx-nocurve { font-size: var(--kx-text-secondary); color: var(--kx-muted); font-style: italic; }
 /* output per turn under the curve, on its own scale: the whole bar faint, the thinking part of it stronger */
 .kx-out { display: block; width: 100%; height: 7px; margin-top: 2px; color: var(--kx-muted); }
 .kx-out-all { fill: currentColor; opacity: 0.35; }
 .kx-out-think { fill: currentColor; opacity: 0.8; }
-.kx-meta { grid-area: meta; display: flex; flex-wrap: wrap; gap: 3px 10px; color: var(--kx-muted); font-size: 0.86em; min-width: 0; }
+.kx-meta { grid-area: meta; display: flex; flex-wrap: wrap; gap: 3px 10px; color: var(--kx-muted); font-size: var(--kx-text-secondary); min-width: 0; }
 .kx-meta span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 .kx-meta svg { width: 12px; height: 12px; opacity: 0.8; }
 /* the prompt cache: "warm · 47 min" with the TTL as a small outlined pill; a few minutes from cold the
@@ -226,7 +236,7 @@ main { padding: 8px 12px 14px; }
 .kx-cache[data-cache="soon"] svg { opacity: 1; }
 .kx-cache[data-cache="cold"] { color: var(--kx-fg); }
 .kx-ttl {
-  font-size: 0.82em; font-weight: 600; line-height: 1.4; padding: 0 4px; border-radius: 4px;
+  font-size: var(--kx-text-small); font-weight: 600; line-height: 1.4; padding: 0 4px; border-radius: 4px;
   border: 1px solid var(--kx-border-strong); color: var(--kx-muted); font-variant-numeric: tabular-nums;
 }
 .kx-ttl[data-ttl="5m"] { color: var(--kx-orange); border-color: currentColor; } /* a drop from 1h is the thing to notice */
@@ -250,17 +260,17 @@ main[data-compact] :is(.kx-zone-txt, .kx-growth, .kx-curve-wrap, .kx-meta, .kx-a
 .kx-detail { padding: 8px 12px 16px; }
 .kx-d-top { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; }
 .kx-d-back {
-  display: inline-flex; align-items: center; gap: 4px; font: inherit; font-size: 0.92em; color: var(--kx-muted);
+  display: inline-flex; align-items: center; gap: 4px; font: inherit; font-size: var(--kx-text-secondary); color: var(--kx-muted);
   background: transparent; border: 1px solid transparent; border-radius: 4px; padding: 2px 8px 2px 4px; cursor: pointer;
 }
 .kx-d-back:hover { background: var(--kx-row-hover); color: var(--kx-fg); }
 .kx-d-back:focus-visible, .kx-d-copy:focus-visible, .kx-d-turn:focus-visible { outline: 1px solid var(--kx-accent); outline-offset: 1px; }
 .kx-d-back svg { width: 14px; height: 14px; }
-.kx-d-esc { margin-left: auto; font-size: 0.78em; color: var(--kx-muted); font-family: var(--kx-mono); }
+.kx-d-esc { margin-left: auto; font-size: var(--kx-text-small); color: var(--kx-muted); font-family: var(--kx-mono); }
 .kx-d-head { display: flex; align-items: center; gap: 8px; min-width: 0; margin: 4px 0 2px; }
-.kx-d-head h1 { margin: 0; font-size: 1.15em; font-weight: 600; line-height: 1.3; min-width: 0; overflow-wrap: anywhere; }
+.kx-d-head h1 { margin: 0; font-size: var(--kx-text-heading); font-weight: 600; line-height: 1.3; min-width: 0; overflow-wrap: anywhere; }
 .kx-d-head .kx-dot { width: 12px; height: 12px; }
-.kx-d-meta { display: flex; flex-wrap: wrap; gap: 3px 12px; color: var(--kx-muted); font-size: 0.86em; margin: 0 0 8px; }
+.kx-d-meta { display: flex; flex-wrap: wrap; gap: 3px 12px; color: var(--kx-muted); font-size: var(--kx-text-secondary); margin: 0 0 8px; }
 .kx-d-meta span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; min-width: 0; }
 .kx-d-meta svg { width: 12px; height: 12px; opacity: 0.8; }
 .kx-d-sec { margin: 0 0 12px; }
@@ -269,29 +279,29 @@ main[data-compact] :is(.kx-zone-txt, .kx-growth, .kx-curve-wrap, .kx-meta, .kx-a
 .kx-d-curve { position: absolute; inset: 0; width: 100%; height: 100%; display: block; overflow: visible; color: var(--kx-zone-fill, var(--kx-muted)); }
 .kx-d-band { fill: var(--kx-band, transparent); opacity: 0.09; }
 .kx-d-axis {
-  position: absolute; right: 4px; font-size: 0.7em; color: var(--kx-muted); font-variant-numeric: tabular-nums; line-height: 1;
+  position: absolute; right: 4px; font-size: var(--kx-text-small); color: var(--kx-muted); font-variant-numeric: tabular-nums; line-height: 1;
   transform: translateY(-50%); pointer-events: none; background: color-mix(in srgb, var(--kx-surface) 80%, transparent); padding: 0 2px; border-radius: 2px;
 }
 .kx-d-field[data-axis="1"] .kx-d-axis-low { display: none; }
 .kx-d-hair { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--kx-fg); opacity: 0.6; pointer-events: none; display: none; }
 .kx-d-tip {
   position: absolute; top: 40px; max-width: min(260px, 80%); background: var(--kx-bg); border: 1px solid var(--kx-border-strong);
-  border-radius: 4px; padding: 4px 8px; font-size: 0.8em; line-height: 1.35; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18); pointer-events: none; display: none;
+  border-radius: 4px; padding: 4px 8px; font-size: var(--kx-text-secondary); line-height: 1.35; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18); pointer-events: none; display: none;
 }
 .kx-d-tip b { font-family: var(--kx-mono); font-variant-numeric: tabular-nums; }
 .kx-d-field.kx-d-hover .kx-d-hair, .kx-d-field.kx-d-hover .kx-d-tip { display: block; }
 /* the compaction's label on its own row under the top axis label, the segment's start at the bottom */
 .kx-d-mark {
-  position: absolute; top: 22px; font-size: 0.7em; color: var(--kx-fg); background: var(--kx-bg); border: 1px solid var(--kx-border-strong);
+  position: absolute; top: 22px; font-size: var(--kx-text-small); color: var(--kx-fg); background: var(--kx-bg); border: 1px solid var(--kx-border-strong);
   border-radius: 3px; padding: 0 4px; white-space: nowrap; transform: translateX(-50%); pointer-events: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis;
 }
 .kx-d-mark.kx-d-start { top: auto; bottom: 4px; color: var(--kx-muted); }
-.kx-d-lbl { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; font-size: 0.8em; color: var(--kx-muted); margin: 0 0 4px; }
+.kx-d-lbl { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; font-size: var(--kx-text-secondary); color: var(--kx-muted); margin: 0 0 4px; }
 .kx-d-leg { display: inline-flex; align-items: center; gap: 4px; }
 .kx-d-leg i { display: inline-block; width: 12px; height: 0; border-top: 2px solid var(--kx-fg); }
 .kx-d-leg i.kx-d-dash { border-top-style: dashed; border-top-width: 1px; border-color: var(--kx-grid); }
 /* the turn chooser: the keyboard's way to the same tooltip */
-.kx-d-turn-row { display: flex; align-items: center; gap: 8px; margin: 6px 0 0; font-size: 0.82em; color: var(--kx-muted); }
+.kx-d-turn-row { display: flex; align-items: center; gap: 8px; margin: 6px 0 0; font-size: var(--kx-text-secondary); color: var(--kx-muted); }
 .kx-d-turn { flex: 1 1 auto; min-width: 0; accent-color: var(--kx-accent); margin: 0; height: 18px; }
 .kx-d-turn-val { font-family: var(--kx-mono); font-variant-numeric: tabular-nums; white-space: nowrap; min-width: 9ch; text-align: right; }
 /* output per turn in its own field under the curve, half its height and on the same x-axis; the turn's column is
@@ -313,38 +323,38 @@ main[data-compact] :is(.kx-zone-txt, .kx-growth, .kx-curve-wrap, .kx-meta, .kx-a
   margin: 0 0 10px; padding: 8px 10px; border-left: 3px solid var(--kx-zone-fill, var(--kx-muted)); border-radius: 0 4px 4px 0;
   background: color-mix(in srgb, var(--kx-zone-fill, var(--kx-muted)) 8%, transparent);
 }
-.kx-d-ctx h2 { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 6px; font-size: 1em; font-weight: 600; line-height: 1.25; }
-.kx-d-ctx h2 .kx-num { font-size: 1.6em; }
+.kx-d-ctx h2 { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 6px; font-size: var(--kx-text-body); font-weight: 600; line-height: 1.25; }
+.kx-d-ctx h2 .kx-num { font-size: var(--kx-text-count); }
 .kx-d-ctx h2 .kx-d-zn { color: var(--kx-zone-text, var(--kx-muted)); }
-.kx-d-why { margin: 3px 0 0; font-size: 0.8em; color: var(--kx-muted); }
+.kx-d-why { margin: 3px 0 0; font-size: var(--kx-text-secondary); color: var(--kx-muted); }
 .kx-d-advice {
   margin: 6px 0 0; padding: 6px 0 0; border-top: 1px solid color-mix(in srgb, var(--kx-zone-fill, var(--kx-muted)) 30%, transparent);
-  font-size: 0.95em; font-weight: 600;
+  font-size: var(--kx-text-body); font-weight: 600;
 }
 /* the named facts under it, key muted and value in mono */
-.kx-d-named { display: flex; flex-wrap: wrap; gap: 2px 16px; margin: 0 0 10px; font-size: 0.9em; }
+.kx-d-named { display: flex; flex-wrap: wrap; gap: 2px 16px; margin: 0 0 10px; font-size: var(--kx-text-secondary); }
 .kx-d-named div { display: flex; align-items: baseline; gap: 6px; }
 .kx-d-named dt { color: var(--kx-muted); }
 .kx-d-named dd { margin: 0; font-family: var(--kx-mono); font-variant-numeric: tabular-nums; font-weight: 600; }
 /* where the context went: name · bar · tokens · share per source, the bars scaled to the largest; the caveat once under them */
-.kx-d-bars { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 4px 10px; align-items: center; font-size: 0.9em; font-variant-numeric: tabular-nums; }
+.kx-d-bars { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 4px 10px; align-items: center; font-size: var(--kx-text-secondary); font-variant-numeric: tabular-nums; }
 .kx-d-bar { height: 10px; border-radius: 5px; background: var(--kx-track); overflow: hidden; }
 .kx-d-bar i { display: block; height: 100%; width: calc(var(--p) * 1%); background: var(--kx-zone-fill, var(--kx-muted)); border-radius: 5px; }
 .kx-d-bar-n { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 16ch; } /* a long MCP name must not squeeze the bars */
 .kx-d-bar-v { font-family: var(--kx-mono); white-space: nowrap; }
 .kx-d-bar-s { color: var(--kx-muted); white-space: nowrap; min-width: 4ch; text-align: right; }
-.kx-d-note { margin: 6px 0 0; font-size: 0.8em; color: var(--kx-muted); font-style: italic; }
+.kx-d-note { margin: 6px 0 0; font-size: var(--kx-text-secondary); color: var(--kx-muted); font-style: italic; }
 /* the facts: two tables, key over value in the narrow layout so a long path never overflows */
 .kx-d-facts { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px 20px; }
-.kx-d-facts table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 0.9em; }
-.kx-d-facts caption { text-align: left; font-size: 0.78em; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--kx-heading); padding: 0 0 4px; }
+.kx-d-facts table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: var(--kx-text-secondary); }
+.kx-d-facts caption { text-align: left; font-size: var(--kx-text-small); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--kx-heading); padding: 0 0 4px; }
 .kx-d-facts tr { display: block; padding: 4px 0; border-bottom: 1px solid var(--kx-border); }
 .kx-d-facts th, .kx-d-facts td { display: block; text-align: left; padding: 0; border: 0; vertical-align: top; overflow-wrap: anywhere; }
-.kx-d-facts th { font-weight: 500; font-size: 0.86em; color: var(--kx-muted); }
+.kx-d-facts th { font-weight: 500; font-size: var(--kx-text-small); color: var(--kx-muted); }
 .kx-d-facts td { font-variant-numeric: tabular-nums; }
-.kx-d-facts td code { font-family: var(--kx-mono); font-size: 0.9em; overflow-wrap: anywhere; }
+.kx-d-facts td code { font-family: var(--kx-mono); overflow-wrap: anywhere; }
 .kx-d-copy {
-  font: inherit; font-size: 0.8em; color: var(--kx-muted); background: transparent; border: 1px solid var(--kx-border-strong);
+  font: inherit; font-size: var(--kx-text-small); color: var(--kx-muted); background: transparent; border: 1px solid var(--kx-border-strong);
   border-radius: 4px; padding: 0 6px; margin-left: 6px; cursor: pointer; vertical-align: 1px;
 }
 .kx-d-copy:hover { color: var(--kx-fg); background: var(--kx-row-hover); }
@@ -352,7 +362,7 @@ main[data-compact] :is(.kx-zone-txt, .kx-growth, .kx-curve-wrap, .kx-meta, .kx-a
 /* the subagents: a table from 620 px; below it each subagent is two lines, its status, what it is and its bar
    over the turns, output, model and last turn */
 .kx-d-agents .kx-d-why { margin: 0 0 6px; }
-.kx-d-agents table { width: 100%; border-collapse: collapse; font-size: 0.9em; font-variant-numeric: tabular-nums; }
+.kx-d-agents table { width: 100%; border-collapse: collapse; font-size: var(--kx-text-secondary); font-variant-numeric: tabular-nums; }
 .kx-d-agents thead { display: none; }
 .kx-d-agents tr { display: grid; grid-template-columns: 6.5em auto minmax(0, 1fr) auto; /* a fixed first column, so every description starts at one place */ gap: 2px 10px; align-items: center; padding: 5px 0; border-bottom: 1px solid var(--kx-border); }
 .kx-d-agents td { padding: 0; white-space: nowrap; }
@@ -362,10 +372,9 @@ main[data-compact] :is(.kx-zone-txt, .kx-growth, .kx-curve-wrap, .kx-meta, .kx-a
 .kx-d-a-ctx { width: 130px; }
 .kx-d-a-ctx > div { display: flex; align-items: center; gap: 6px; }
 .kx-d-a-ctx .kx-bar { flex: 1 1 auto; min-width: 50px; height: 8px; }
-.kx-d-a-ctx .kx-num { font-size: 1em; min-width: 4.5ch; text-align: right; }
+.kx-d-a-ctx .kx-num { font-size: var(--kx-text-secondary); min-width: 4.5ch; text-align: right; }
 .kx-d-a-fact { color: var(--kx-muted); }
-.kx-d-a-st { font-size: 0.86em; color: var(--kx-muted); }
-.kx-d-a-st[data-status="running"] .kx-badge { font-size: 1em; }
+.kx-d-a-st { font-size: var(--kx-text-small); color: var(--kx-muted); }
 .kx-d-a-st[data-status="unknown"] { font-style: italic; }
 
 @container (min-width: 620px) {
@@ -374,12 +383,12 @@ main[data-compact] :is(.kx-zone-txt, .kx-growth, .kx-curve-wrap, .kx-meta, .kx-a
     grid-template-areas: "title bar curve num" "meta bar curve num";
     gap: 2px 14px; padding: 8px 6px;
   }
-  .kx-num { font-size: 1.45em; }
+  .kx-num { font-size: var(--kx-text-count); }
   .kx-curve { height: 26px; }
   .kx-out { height: 9px; }
   .kx-axis {
     display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(160px, 1fr) minmax(140px, 0.8fr) minmax(72px, auto);
-    gap: 0 14px; padding: 2px 6px 4px; font-size: 0.74em; color: var(--kx-muted); text-transform: uppercase; letter-spacing: 0.05em;
+    gap: 0 14px; padding: 2px 6px 4px; font-size: var(--kx-text-small); color: var(--kx-muted); text-transform: uppercase; letter-spacing: 0.05em;
   }
   .kx-axis .kx-scale { position: relative; height: 1em; }
   .kx-axis .kx-scale span { position: absolute; top: 0; transform: translateX(-50%); left: calc(var(--t) * 1%); font-variant-numeric: tabular-nums; }
@@ -387,8 +396,7 @@ main[data-compact] :is(.kx-zone-txt, .kx-growth, .kx-curve-wrap, .kx-meta, .kx-a
   .kx-axis .kx-scale span:last-child { transform: translateX(-100%); }
   .kx-axis .kx-r { text-align: right; }
   .kx-detail { padding: 10px 16px 20px; }
-  .kx-d-head h1 { font-size: 1.35em; }
-  .kx-d-ctx h2 .kx-num { font-size: 2em; }
+  .kx-d-ctx h2 .kx-num { font-size: var(--kx-text-display); }
   .kx-d-field { height: 220px; }
   .kx-d-field[data-axis] .kx-d-axis { display: block; }
   .kx-d-field[data-axis-wide="1"] .kx-d-axis-low { display: none; }
@@ -397,19 +405,20 @@ main[data-compact] :is(.kx-zone-txt, .kx-growth, .kx-curve-wrap, .kx-meta, .kx-a
   .kx-d-facts { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .kx-d-facts tr { display: table-row; padding: 0; border: 0; }
   .kx-d-facts th, .kx-d-facts td { display: table-cell; padding: 3px 6px 3px 0; border-bottom: 1px solid var(--kx-border); }
-  .kx-d-facts th { width: 42%; font-size: 1em; }
+  .kx-d-facts th { width: 42%; font-size: var(--kx-text-secondary); } /* beside the value, the value's size */
   .kx-d-agents thead { display: table-header-group; }
   .kx-d-agents tr { display: table-row; }
   .kx-d-agents th, .kx-d-agents td { display: table-cell; padding: 4px 12px 4px 0; border-bottom: 1px solid var(--kx-border); text-align: left; vertical-align: middle; white-space: nowrap; }
-  .kx-d-agents th { font-weight: 500; font-size: 0.86em; color: var(--kx-muted); }
+  .kx-d-agents th { font-weight: 500; font-size: var(--kx-text-small); color: var(--kx-muted); }
   .kx-d-agents .kx-d-r { text-align: right; }
   .kx-d-a-who { width: 100%; max-width: 0; } /* takes what the other columns leave, cut with an ellipsis */
   .kx-d-a-ctx .kx-bar { flex: none; width: 120px; } /* a table cell gives a flexible bar no width: the description column takes it */
   .kx-d-u { display: none; } /* "turns", "out": the column heads say it */
 }
-/* with five marks the labels need about 240 px; until the bar column is that wide (a container of about
-   880 px), every second label drops to a second row so neighbours never overlap */
-@container (min-width: 620px) and (max-width: 879px) {
+/* with five marks the labels need about 240 px at 0.74 of the font size, so about 253 px at --kx-text-small (text
+   width follows the size); until the bar column is that wide (a container of about 920 px), every second label
+   drops to a second row so neighbours never overlap */
+@container (min-width: 620px) and (max-width: 919px) {
   .kx-axis .kx-scale { height: 2em; }
   .kx-axis .kx-scale span:nth-child(even) { top: 1em; }
 }

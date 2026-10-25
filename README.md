@@ -21,7 +21,9 @@ in real time. The same panel runs in a browser tab too, for Claude Code in a ter
 <img src="media/wide.png" alt="The panel at full width over all projects: ten sessions grouped by project, each with its context bar, sparkline and count in its zone colour">
 
 <sub>Every screenshot here is made from invented sessions (`scripts/demo.cjs`), not from real conversations, in VS Code's
-Dark Modern theme; the panel follows whatever theme the editor has, and in a browser the system's light or dark setting.</sub>
+Dark Modern theme; the panel follows whatever theme the editor has, and in a browser the system's light or dark setting.
+Its text follows the editor's font size, in six steps from the small labels to the detail view's context number, so
+two texts of the same rank are always the same size.</sub>
 
 ## Why
 
