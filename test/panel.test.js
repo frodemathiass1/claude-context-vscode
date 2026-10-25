@@ -286,6 +286,18 @@ describe("panel: lists update in place", () => {
     expect(p.row("a")).toBe(rows[0]);
   });
 
+  it("two processes of one session keep two full rows through an identical list", () => {
+    const one = session("a"), two = { ...session("a"), registry: { ...session("a").registry, pid: 2000 } };
+    const p = panel();
+    p.send(list([one, two, session("b", { ago: 2 * MIN })]));
+    p.send(list([one, two, session("b", { ago: 2 * MIN })]));
+    expect(p.rows()).toEqual(["a", "a", "b"]);
+    for (const row of p.doc.querySelectorAll('[data-testid="list"] .kx-session')) {
+      expect(row.hasAttribute("data-kept")).toBe(false);
+      expect(row.querySelector('[data-testid="tokens"]')).not.toBeNull();
+    }
+  });
+
   it("the scope line and the model chips keep their text and titles through an identical list", () => {
     const p = panel();
     const sessions = [session("a"), session("s", { model: "claude-sonnet-5-5" }), session("o", { cwd: OTHER })];
@@ -609,6 +621,30 @@ describe("panel: the detail view", () => {
     expect(p.rows()).toEqual(["a", "c"]);
     expect(p.row("a").querySelector('[data-testid="tokens"]').textContent).toBe("120K");
     expect(p.doc.activeElement).toBe(p.row("a"));
+  });
+
+  it("on the way back a moved row's bar is set to its new width once, not slid from the width it had", () => {
+    const p = panel();
+    p.send(list([session("a"), session("b", { tokens: 50000, ago: 2 * MIN })]));
+    p.row("a").click();
+    p.send(list([session("a"), session("b", { tokens: 120000, status: "busy" })])); // b moves to Working now
+    const fill = p.row("b").querySelector(".kx-fill");
+    const seen = new p.window.MutationObserver(() => {});
+    seen.observe(fill, { attributes: true, attributeFilter: ["style"] });
+    p.$("detail-back").click();
+    expect(p.row("b").closest(".kx-rows").id).toBe("kx-rows-busy");
+    expect(seen.takeRecords()).toHaveLength(1);
+    expect(fill.style.getPropertyValue("--p")).toBe("40");
+  });
+
+  it("says the session is gone at once, also after an answer has come", () => {
+    const one = session("a");
+    const p = panel();
+    p.send(list([one, session("b")]));
+    p.row("a").click();
+    p.send({ type: "detail", sessionId: "a", detail: { turns: 3, ...K.seriesFor(one.transcript) } });
+    p.send(list([session("b")]));
+    expect(p.$("detail-gone").textContent).toBe("That session is gone from the registry.");
   });
 
   it("draws once per list, from its answer, and keeps its elements, so their tooltips stay open", () => {

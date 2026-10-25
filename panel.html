@@ -1598,7 +1598,7 @@
       requestDetail();
       return;
     }
-    if (lastData) render(lastData); // the list rested while the detail was open
+    if (lastData) render(lastData, true); // the list rested while the detail was open
     scroller().scrollTop = listScroll;
     const row = closing && [...listEl.querySelectorAll(".kx-session[tabindex]")].find((r) => r.dataset.session === closing);
     if (row) row.focus({ preventScroll: true });
@@ -1800,12 +1800,14 @@
     refreshedTimer = setTimeout(() => { refreshedEl.hidden = true; }, REFRESHED_MS);
   }
 
-  function render(data) {
+  function render(data, still = false) {
     lastData = data;
     applyZones(data.zones); // first: the rows, the curves and the detail view draw the limits
     refreshDone(data);
     // with an answer for the open session, the next answer draws it, with the new list (onDetail): drawing now too
-    // would show the new count with the old curve for a moment. A session gone from the list is said at once
+    // would show the new count with the old curve for a moment. A session gone from the list is said at once. Both
+    // hosts answer every request (extension.js, server.cjs); an answer lost on the way (a dropped event stream) leaves
+    // the view one list behind until the next list's answer
     if (!detailAnswer || !allSessions(data).some((s) => s.sessionId === openId)) drawDetail();
     requestDetail(); // the new list's turns, all of them, for the open session
     setText(countEl, String(data.count || 0));
@@ -1840,7 +1842,8 @@
     const rowOf = (s) => {
       if (!s.sessionId) return rowFor(s);
       const key = rowKey(s);
-      const same = live.has(s.sessionId) && rowKeys.get(s.sessionId) === key;
+      // only the first row of an id: two processes can resume one session, and there is one live row to keep per key
+      const same = !keys.has(s.sessionId) && live.has(s.sessionId) && rowKeys.get(s.sessionId) === key;
       keys.set(s.sessionId, key);
       if (!same) return rowFor(s);
       const kept = el("article");
@@ -1873,8 +1876,10 @@
     patchChildren(listEl, [...next.childNodes], keyedIn(listEl), moved);
     // a moved node was out of the document for a moment, which takes the focus away: the row gets it back
     if (focused && focused.isConnected && document.activeElement !== focused) focused.focus({ preventScroll: true });
+    // on the way back from the detail view (`still`) the list was hidden until now, so a bar kept in place has no
+    // width to move from: none moves, or the moved rows alone would slide from where they were minutes ago
     const moving = [];
-    for (const row of moved.flatMap((m) => [...(m.matches(".kx-session") ? [m] : []), ...m.querySelectorAll(".kx-session")])) {
+    if (!still) for (const row of moved.flatMap((m) => [...(m.matches(".kx-session") ? [m] : []), ...m.querySelectorAll(".kx-session")])) {
       const fill = row.querySelector(".kx-fill"), from = previous.get(row);
       if (!fill || !from || from === fill.style.getPropertyValue("--p")) continue;
       moving.push([fill, fill.style.getPropertyValue("--p")]);
