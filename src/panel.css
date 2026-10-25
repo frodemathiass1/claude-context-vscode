@@ -33,7 +33,8 @@
   /* The text sizes, one per rank, as factors of the editor's font size. calc, not em: an em in a variable resolves
      where it is used, so a label inside a table would shrink twice and two texts of one rank would differ. The wide
      layout moves the row's count, the detail's context number and the facts' keys one step up. */
-  --kx-text-small: calc(var(--kx-font-size) * 0.78); /* labels: the upper-case headings, column heads, badges, pills, the zone strip, the curve's axis */
+  --kx-text-small: calc(var(--kx-font-size) * 0.78); /* labels: the upper-case headings, column heads, badges, pills, the zone strip, the zone name, the curve's axis,
+     the Esc hint, the facts' keys and the subagents' status in the narrow layout */
   --kx-text-secondary: calc(var(--kx-font-size) * 0.86); /* muted lines, the controls, the detail's tables and facts */
   --kx-text-body: var(--kx-font-size); /* titles, the error, the advice */
   --kx-text-heading: calc(var(--kx-font-size) * 1.25); /* the session count, the detail's title, the row's count in the narrow layout */
@@ -414,9 +415,10 @@ main[data-compact] :is(.kx-zone-txt, .kx-growth, .kx-curve-wrap, .kx-meta, .kx-a
   .kx-d-a-ctx .kx-bar { flex: none; width: 120px; } /* a table cell gives a flexible bar no width: the description column takes it */
   .kx-d-u { display: none; } /* "turns", "out": the column heads say it */
 }
-/* with five marks the labels need about 240 px; until the bar column is that wide (a container of about
-   880 px), every second label drops to a second row so neighbours never overlap */
-@container (min-width: 620px) and (max-width: 879px) {
+/* with five marks the labels need about 240 px at 0.74 of the font size, so about 253 px at --kx-text-small (text
+   width follows the size); until the bar column is that wide (a container of about 920 px), every second label
+   drops to a second row so neighbours never overlap */
+@container (min-width: 620px) and (max-width: 919px) {
   .kx-axis .kx-scale { height: 2em; }
   .kx-axis .kx-scale span:nth-child(even) { top: 1em; }
 }
