@@ -1,6 +1,6 @@
 ---
 name: issue
-description: Take one GitHub issue of this repo end to end — read it, branch, build, test, update README/NOTES and the version, commit and open the PR. Use when the user says "/issue 32" or asks to work on an issue by number.
+description: Take one GitHub issue of this repo end to end — read it, branch, build, test, update README/NOTES and the version, commit, open the PR and have it reviewed. Use when the user says "/issue 32" or asks to work on an issue by number.
 argument-hint: <issue number>
 ---
 
@@ -18,19 +18,20 @@ argument-hint: <issue number>
 
 Follow the rules and the workflow in `CLAUDE.md`. In order:
 
-1. **Read the issue to the end, comments included.** If it says that building waits for something (a
-   sketch, a decision, a comment from the owner) and that has not arrived, stop and say what is missing.
-   If something is unclear, ask before writing code, not after.
-2. **Branch** from an up-to-date `main` (`git switch main && git pull`), named after the topic in a few
-   kebab-case words. If the working tree is not clean, stop and ask.
-3. **Build.** Logic that can be computed goes in `src/core.cjs`; the panel (`src/panel.html`, `.css`, `.js`)
-   only draws. A fact about Claude Code's files that the issue relies on is checked on real files first
-   (`/facts` or a targeted look, names and counts only) and written in `NOTES.md`.
-4. **Test.** Every rule added to `src/core.cjs` gets a test in `test/core.test.js`, with a new hand-made
-   fixture when a transcript shape is new. `npm test` must be green; show the summary line.
-5. **Docs and version.** Update `README.md` for anything the user can see, `NOTES.md` for anything
-   measured, and bump the minor version in `package.json` when the change is visible.
+1. **Read the issue to the end, comments included.** Done when you can say what each numbered item builds and
+   what each test checks. If building waits for something (a sketch, a decision, a comment from the owner)
+   that has not arrived, stop and say what is missing; if something is unclear, ask before writing code.
+2. **Branch** as `CLAUDE.md`'s Workflow says (`git switch main && git pull` first). Done when `git status`
+   shows the new branch, clean, at `origin/main`.
+3. **Build** by the rules in `CLAUDE.md`. Done when every fact about Claude Code's files that the issue
+   relies on is measured on real files (`/facts` or a targeted look) and written in `NOTES.md`.
+4. **Test.** Done when every rule added to `src/core.cjs` has a test in `test/core.test.js` (a new hand-made
+   fixture for a new transcript shape) and `npm test` is green, its summary line shown.
+5. **Docs and version.** Done when `README.md` covers every change the user can see, `NOTES.md` every
+   measurement, and the minor version in `package.json` is bumped if the change is visible.
 6. **Hand over.** Commit as `#$ARGUMENTS <sentence>` with a prose body, push, and open the PR with
-   `Closes #$ARGUMENTS.` (formats in `CLAUDE.md`). Do not merge. End with what the owner should look at
-   in VS Code (**Developer: Reload Window** first): the rows, states and widths the change touches, in
+   `Closes #$ARGUMENTS.` (formats in `CLAUDE.md`); the owner merges. Done when the PR's link is shown.
+7. **Review.** A read-only subagent reviews the PR (`CLAUDE.md`, Workflow). Done when every defect it confirms
+   is fixed and pushed on the same branch, and your last message gives its findings and what the owner should
+   look at in VS Code (**Developer: Reload Window** first): the rows, states and widths the change touches, in
    light and dark theme.
